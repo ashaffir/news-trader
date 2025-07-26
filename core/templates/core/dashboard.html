@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>News Trader Dashboard</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { padding-top: 20px; }
+        .card { margin-bottom: 20px; }
+        #log { max-height: 400px; overflow-y: scroll; border: 1px solid #eee; padding: 10px; background-color: #f9f9f9; }
+        .log-entry { margin-bottom: 5px; border-bottom: 1px dotted #eee; padding-bottom: 3px; }
+        .log-entry.trade-executed { background-color: #d4edda; border-color: #badbcc; color: #155724; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="mb-4">News Trader Dashboard</h1>
+
+        <div class="row">
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-body">
+                        <h2 class="card-title">Scraper Status</h2>
+                        <p id="scraper-status" class="card-text">Idle</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-body">
+                        <h2 class="card-title">Analysis Status</h2>
+                        <p id="analysis-status" class="card-text">Waiting for posts...</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-body">
+                        <h2 class="card-title">Trade Status</h2>
+                        <p id="trade-status" class="card-text">No trades yet.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <h2 class="mt-4">Recent Activity Log</h2>
+        <div id="log" class="mb-4"></div>
+
+        <div class="mt-4">
+            <a href="{% url 'manual_close_trade' %}" class="btn btn-primary me-2">Manage Open Trades</a>
+            <a href="{% url 'test_page' %}" class="btn btn-info">Test Page</a>
+        </div>
+    </div>
+
+    <!-- Bootstrap 5 JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const scraperStatus = document.getElementById('scraper-status');
+        const analysisStatus = document.getElementById('analysis-status');
+        const tradeStatus = document.getElementById('trade-status');
+        const logDiv = document.getElementById('log');
+
+        const socket = new WebSocket(
+            'ws://' + window.location.host + '/ws/dashboard/'
+        );
+
+        socket.onmessage = function(e) {
+            const data = JSON.parse(e.data);
+            console.log('WebSocket message:', data);
+
+            const logEntry = document.createElement('div');
+            logEntry.classList.add('log-entry');
+
+            let logText = '';
+
+            if (data.type === 'message') {
+                logText = `System: ${data.message}`;
+            } else if (data.type === 'scraper_status') {
+                scraperStatus.textContent = data.data.status;
+                logText = `Scraper: ${data.data.status}`;
+            } else if (data.type === 'new_post') {
+                logText = `New Post: From ${data.data.source} - <a href="${data.data.url}" target="_blank">${data.data.content_preview}</a>`;
+            } else if (data.type === 'scraper_skipped') {
+                logText = `Scraper: Skipped <a href="${data.data.url}" target="_blank">${data.data.url}</a> (already exists)`;
+            } else if (data.type === 'scraper_error') {
+                logText = `Scraper Error: ${data.data.error}`;
+                logEntry.classList.add('text-danger');
+            } else if (data.type === 'analysis_status') {
+                analysisStatus.textContent = data.data.status;
+                logText = `Analysis: Post ${data.data.post_id} - ${data.data.status}`;
+            } else if (data.type === 'new_analysis') {
+                logText = `New Analysis: Post ${data.data.post_id} - ${data.data.symbol} ${data.data.direction} (Confidence: ${data.data.confidence})`;
+                if (data.data.trade_executed) {
+                    logEntry.classList.add('trade-executed');
+                    logText += ` - **TRADE EXECUTED**`;
+                }
+            } else if (data.type === 'analysis_error') {
+                logText = `Analysis Error: Post ${data.data.post_id} - ${data.data.error}`;
+                logEntry.classList.add('text-danger');
+            } else if (data.type === 'trade_status') {
+                tradeStatus.textContent = data.data.status;
+                logText = `Trade: Analysis ${data.data.analysis_id} - ${data.data.status}`;
+            } else if (data.type === 'new_trade') {
+                logText = `New Trade: ${data.data.direction} ${data.data.quantity} of ${data.data.symbol} (ID: ${data.data.trade_id})`;
+                logEntry.classList.add('text-success');
+            } else if (data.type === 'trade_skipped') {
+                logText = `Trade: Skipped for analysis ${data.data.analysis_id} - ${data.data.reason}`;
+            } else if (data.type === 'trade_error') {
+                logText = `Trade Error: Analysis ${data.data.analysis_id} - ${data.data.error}`;
+                logEntry.classList.add('text-danger');
+            } else if (data.type === 'trade_closed') {
+                logText = `Trade Closed: ${data.data.symbol} (ID: ${data.data.trade_id}) - ${data.data.message}`;
+                logEntry.classList.add('text-info');
+            }
+
+            logEntry.innerHTML = logText;
+            logDiv.prepend(logEntry); // Add new entries to the top
+        };
+
+        socket.onclose = function(e) {
+            console.error('WebSocket closed unexpectedly');
+            const errorEntry = document.createElement('div');
+            errorEntry.classList.add('log-entry', 'text-danger');
+            errorEntry.textContent = 'WebSocket disconnected. Please refresh.';
+            logDiv.prepend(errorEntry);
+        };
+
+        socket.onerror = function(e) {
+            console.error('WebSocket error', e);
+            const errorEntry = document.createElement('div');
+            errorEntry.classList.add('log-entry', 'text-danger');
+            errorEntry.textContent = 'WebSocket error occurred.';
+            logDiv.prepend(errorEntry);
+        };
+    </script>
+</body>
+</html>

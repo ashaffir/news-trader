@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    command: daphne -b 0.0.0.0 -p 8000 news_trader.asgi:application
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+      - redis
+
+  db:
+    image: postgres:13
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    environment:
+      - POSTGRES_DB=news_trader
+      - POSTGRES_USER=news_trader
+      - POSTGRES_PASSWORD=news_trader
+
+  redis:
+    image: redis:6.2-alpine
+
+  celery:
+    build: .
+    command: celery -A news_trader worker -l info
+    volumes:
+      - .:/app
+    depends_on:
+      - redis
+
+  celery-beat:
+    build: .
+    command: celery -A news_trader beat -l info
+    volumes:
+      - .:/app
+    depends_on:
+      - redis
+
+volumes:
+  postgres_data:

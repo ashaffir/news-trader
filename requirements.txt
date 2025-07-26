@@ -1,0 +1,16 @@
+Django==5.0.14
+psycopg2-binary==2.9.9
+celery==5.5.3
+redis==5.0.1
+django-cors-headers==4.3.1
+djangorestframework==3.14.0
+djangorestframework-simplejwt==5.3.1
+alpaca-trade-api==3.2.0
+python-dotenv==1.1.1
+openai==1.35.13
+requests==2.31.0
+beautifulsoup4==4.12.3
+channels==4.0.0
+daphne==4.1.2
+channels_redis==4.2.0
+whitenoise==6.6.0

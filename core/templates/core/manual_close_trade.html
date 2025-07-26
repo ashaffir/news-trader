@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Manual Close Trade</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        .close-form { display: inline-block; }
+        .close-button { background-color: #f44336; color: white; padding: 5px 10px; border: none; border-radius: 4px; cursor: pointer; }
+        .close-button:hover { background-color: #d32f2f; }
+    </style>
+</head>
+<body>
+    <h1>Manual Close Open Positions</h1>
+
+    {% if open_trades %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Trade ID</th>
+                    <th>Symbol</th>
+                    <th>Direction</th>
+                    <th>Quantity</th>
+                    <th>Entry Price</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for trade in open_trades %}
+                    <tr>
+                        <td>{{ trade.id }}</td>
+                        <td>{{ trade.symbol }}</td>
+                        <td>{{ trade.direction }}</td>
+                        <td>{{ trade.quantity }}</td>
+                        <td>{{ trade.entry_price }}</td>
+                        <td>{{ trade.status }}</td>
+                        <td>
+                            <form action="{% url 'manual_close_trade' %}" method="post" class="close-form">
+                                {% csrf_token %}
+                                <input type="hidden" name="trade_id" value="{{ trade.id }}">
+                                <button type="submit" class="close-button">Close</button>
+                            </form>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p>No open positions to close.</p>
+    {% endif %}
+
+    <p><a href="{% url 'dashboard' %}">Back to Dashboard</a></p>
+</body>
+</html>
