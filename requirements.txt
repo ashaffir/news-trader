@@ -5,7 +5,7 @@ redis==5.0.1
 django-cors-headers==4.3.1
 djangorestframework==3.14.0
 djangorestframework-simplejwt==5.3.1
-alpaca-trade-api==3.2.0
+alpaca-py==0.34.0
 python-dotenv==1.1.1
 openai==1.35.13
 requests==2.31.0

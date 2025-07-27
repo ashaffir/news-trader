@@ -88,3 +88,6 @@ local_settings.py
 .env
 .env.bak
 db.sqlite3
+
+.venv
+venv

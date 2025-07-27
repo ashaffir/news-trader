@@ -1,145 +1,422 @@
-# News Trader
+# News Trader - Automated Trading System
 
-## Project Goal
+A sophisticated, modular trading system that analyzes real-time news events using AI and executes trades automatically via the Alpaca API.
 
-This project aims to build a Django-based backend system that automates financial trading based on insights derived from social media posts. It scrapes posts from configurable sources, uses a Large Language Model (LLM) to assess potential financial impact, and executes trades via the Alpaca API. The system also provides a real-time dashboard for monitoring and allows manual intervention for closing positions.
+## 🎯 Overview
 
-## Tech Stack
+This Django-based system monitors multiple news sources, analyzes financial relevance using Large Language Models (LLMs), makes trade decisions, and executes them automatically. It features a real-time dashboard, comprehensive admin interface, and robust risk management.
 
-*   **Backend:** Python 3.11+, Django 4.x
-*   **Database:** PostgreSQL
-*   **Task Queue:** Celery + Redis
-*   **LLM Access:** OpenAI API (or compatible local server)
-*   **Trading:** Alpaca API
-*   **Containerization:** Docker, Docker Compose
+## 🏗️ Architecture
 
-## Core Modules
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   News Sources  │───▶│  Data Ingestion │───▶│  LLM Analysis   │───▶│ Trade Execution │
+│   • NewsAPI     │    │  • Web Scraping │    │  • OpenAI GPT   │    │  • Alpaca API   │
+│   • Truth Social│    │  • API Polling  │    │  • Sentiment    │    │  • Risk Mgmt    │
+│   • Reddit      │    │  • RSS Feeds    │    │  • Confidence   │    │  • P&L Tracking │
+│   • Yahoo Finance│   │  • Real-time    │    │  • Symbol ID    │    │  • Stop/Limit   │
+└─────────────────┘    └─────────────────┘    └─────────────────┘    └─────────────────┘
+                                 │                        │                        │
+                                 ▼                        ▼                        ▼
+                       ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+                       │   PostgreSQL    │    │   Django Admin  │    │  WebSocket API  │
+                       │   • Posts       │    │   • Config Mgmt │    │   • Real-time   │
+                       │   • Analysis    │    │   • Monitoring  │    │   • Dashboard   │
+                       │   • Trades      │    │   • Manual Ops  │    │   • Alerts      │
+                       │   • Sources     │    │   • Audit Trail │    │   • Live Updates│
+                       └─────────────────┘    └─────────────────┘    └─────────────────┘
+```
 
-*   **Web Scraper:** A Celery task that performs traditional web scraping from configurable URLs.
-*   **API Fetcher:** A Celery task that fetches data from configurable API endpoints.
-*   **Analysis Agent:** Sends new posts to an LLM for financial impact assessment and saves the analysis results.
-*   **Trader Service:** Places orders via Alpaca based on LLM insights and monitors open positions.
-*   **Admin + Real-Time Dashboard:** For configuration, monitoring, and manual trade management.
-*   **Post-Trade Linking:** Links every trade back to the triggering post and analysis for auditing and future LLM fine-tuning.
-
-## Setup and Running the Project
+## 🚀 Quick Start
 
 ### Prerequisites
 
-*   Docker and Docker Compose installed.
-*   Python 3.11+ (for local development, though Docker handles the environment).
+- Python 3.10+
+- Docker & Docker Compose
+- OpenAI API Key
+- Alpaca Trading API Keys
 
-### 1. Environment Variables
+### Quick Access (Default Credentials)
 
-Create a `.env` file in the project root directory with your API keys:
+| Service      | URL                              | Username | Password |
+| ------------ | -------------------------------- | -------- | -------- |
+| Dashboard    | http://localhost:8000/dashboard/ | -        | -        |
+| Django Admin | http://localhost:8000/admin/     | `admin`  | `admin`  |
+| API          | http://localhost:8000/api/       | -        | -        |
 
-```
-ALPACA_API_KEY=YOUR_ALPACA_API_KEY
-ALPACA_SECRET_KEY=YOUR_ALPACA_SECRET_KEY
-OPENAI_API_KEY=YOUR_OPENAI_API_KEY
-NEWSAPI_API_KEY=YOUR_ACTUAL_NEWSAPI_KEY # Example for NewsAPI
-```
-
-Replace `YOUR_ALPACA_API_KEY`, `YOUR_ALPACA_SECRET_KEY`, `YOUR_OPENAI_API_KEY`, and `YOUR_ACTUAL_NEWSAPI_KEY` with your actual credentials.
-
-### 2. Build and Run Docker Containers
-
-Navigate to the project root directory in your terminal and run:
+### 1. Environment Setup
 
 ```bash
-docker-compose up -d --build
+# Clone the repository
+git clone <your-repo-url>
+cd news-trader
+
+# Create environment file
+cp .env.example .env
+
+# Edit .env with your API keys
+nano .env
 ```
 
-This command will:
-
-*   Build the Docker images for the `web`, `celery`, and `celery-beat` services.
-*   Start the PostgreSQL database (`db`), Redis server (`redis`), Django web application (`web`), Celery worker (`celery`), and Celery beat scheduler (`celery-beat`) in detached mode.
-
-### 3. Apply Database Migrations
-
-Once the containers are running, apply the Django database migrations:
+### 2. Docker Deployment
 
 ```bash
+# Build and start all services
+docker-compose up -d
+
+# Run migrations
 docker-compose exec web python manage.py migrate
+
+# Create superuser
+docker-compose exec web python manage.py createsuperuser
+
+# Set up example sources
+docker-compose exec web python manage.py setup_example_sources
 ```
 
-### 4. Create Superuser
+### 3. Access the System
 
-Create a Django superuser to access the admin interface:
+- **Dashboard**: http://localhost:8000/dashboard/
+- **Admin Panel**: http://localhost:8000/admin/ (admin/admin)
+- **API**: http://localhost:8000/api/
 
-```bash
-docker-compose exec web python manage.py createsuperuser --noinput --username admin --email admin@example.com
-docker-compose exec web python manage.py shell -c "from django.contrib.auth import get_user_model; User = get_user_model(); u = User.objects.get(username='admin'); u.set_password('admin'); u.save()"
+#### Default Admin Credentials
+- **Username**: `admin`
+- **Password**: `admin`
+
+> ⚠️ **Security Note**: Change the default admin password in production environments!
+
+## 📋 Core Components
+
+### 1. Source Connector
+Handles data ingestion from multiple sources:
+
+- **API Sources**: NewsAPI, Truth Social, Reddit, AlphaVantage
+- **Web Scraping**: RSS feeds, HTML parsing
+- **Configuration**: Flexible JSON-based extraction rules
+
+### 2. Post Analyzer
+AI-powered financial analysis:
+
+- **LLM Integration**: OpenAI GPT models
+- **Configurable Prompts**: Custom analysis templates
+- **Output**: Symbol, direction (buy/sell/hold), confidence, reasoning
+
+### 3. Trading Engine
+Automated trade execution:
+
+- **Alpaca Integration**: Paper & live trading
+- **Risk Management**: Stop-loss, take-profit, position sizing
+- **Trade Tracking**: Real-time P&L, status updates
+
+### 4. Admin Interface
+Comprehensive management system:
+
+- **Source Configuration**: API endpoints, scraping rules
+- **Trading Parameters**: Risk settings, LLM configuration
+- **Monitoring**: Trade history, error logs, performance metrics
+
+### 5. Real-Time Dashboard
+Live monitoring interface:
+
+- **WebSocket Updates**: Real-time trade alerts
+- **Activity Log**: Scraping, analysis, trade events
+- **Manual Controls**: Close trades, trigger actions
+
+## 🔧 Configuration
+
+### Trading Configuration
+
+```python
+# Available via Django Admin
+{
+    "name": "Default Config",
+    "default_position_size": 100.0,      # USD per trade
+    "max_position_size": 1000.0,         # Maximum USD per trade
+    "stop_loss_percentage": 5.0,         # 5% stop loss
+    "take_profit_percentage": 10.0,      # 10% take profit
+    "min_confidence_threshold": 0.7,     # Minimum LLM confidence
+    "max_daily_trades": 10,              # Daily trade limit
+    "trading_enabled": true,             # Master trading switch
+    "market_hours_only": true           # Trade only during market hours
+}
 ```
 
-This creates a superuser with username `admin` and password `admin`.
+### Source Configuration Examples
 
-### 5. Access the Application
-
-*   **Django Admin:** Open your web browser and go to `http://localhost:8000/admin/`. Log in with the superuser credentials (`admin`/`admin`).
-*   **Dashboard:** `http://localhost:8000/dashboard/`
-*   **Test Page:** `http://localhost:8000/test-page/`
-
-### 6. Stopping the Project
-
-To stop all running Docker containers, run:
-
-```bash
-docker-compose down
-```
-
-To stop and remove all containers, networks, and volumes (including database data), run:
-
-```bash
-docker-compose down -v
-```
-
-## Configuring Sources
-
-Sources can be configured in the Django Admin (`http://localhost:8000/admin/core/source/`). Each source defines how posts are obtained.
-
-### Web Scraping Source Configuration
-
-For traditional web scraping, configure a `Source` with:
-
-*   **Name:** A descriptive name (e.g., `My Blog News`).
-*   **URL:** The URL of the website to scrape (e.g., `https://www.example.com/blog`).
-*   **Description:** (Optional) Notes about this source.
-*   **Scraping method:** Select `Web Scraping`.
-*   **Request Type:** `GET` (typically for web scraping).
-*   **Request Parameters:** (Optional) JSON for any specific query parameters if the URL itself doesn't contain them.
-
-### API Fetching Source Configuration (e.g., NewsAPI)
-
-To fetch posts from an API, configure a `Source` with:
-
-*   **Name:** A descriptive name for your API source (e.g., `NewsAPI - Tesla News`).
-*   **URL:** This field is still required but can be a base URL or a placeholder for API sources (e.g., `https://newsapi.org/`).
-*   **Description:** (Optional) Add any relevant notes about this API source.
-*   **Scraping method:** Select `API`.
-*   **Request Type:** Select `GET` or `POST` depending on the API's requirements.
-*   **API Endpoint:** The full API endpoint URL (e.g., `https://newsapi.org/v2/everything`).
-*   **API Key Field:** The name of the environment variable (from your `.env` file) that holds the API key (e.g., `NEWSAPI_API_KEY`). **Do NOT put your actual API key here.**
-*   **Request Parameters:** A JSON object representing the parameters for your API request. This can include query parameters for GET requests or body data for POST requests. For example, for NewsAPI's `/v2/everything` endpoint, you might use:
-
-    ```json
-    {
-        "q": "tesla",
-        "from": "2025-07-01",
-        "sortBy": "publishedAt"
+#### NewsAPI Source
+```python
+{
+    "name": "NewsAPI - Financial News",
+    "api_endpoint": "https://newsapi.org/v2/everything",
+    "api_key_field": "NEWSAPI_KEY",
+    "request_params": {
+        "q": "stock market OR NYSE OR earnings",
+        "sortBy": "publishedAt",
+        "language": "en",
+        "pageSize": 20
+    },
+    "data_extraction_config": {
+        "response_path": "articles",
+        "content_field": "title",
+        "url_field": "url"
     }
-    ```
+}
+```
 
-    **Important:** The `apiKey` parameter should NOT be included in `request_params` if you are using `api_key_field`. The system will automatically add the API key from the specified environment variable as an `Authorization: Bearer` header.
+#### Reddit Source
+```python
+{
+    "name": "Reddit - r/stocks",
+    "api_endpoint": "https://www.reddit.com/r/stocks/hot.json",
+    "data_extraction_config": {
+        "response_path": "data.children",
+        "content_field": "data.title",
+        "min_score": 10
+    }
+}
+```
 
-## Known Issues
+## 🛠️ Development
 
-*   **Direct Web Scraping of Dynamic Sites:** Direct web scraping of sites like `https://truthsocial.com/` often results in a `403 Forbidden` error due to anti-bot measures. For testing purposes, the `scrape_posts` task is configured to create a simulated post if a real web scraping attempt fails. This allows the downstream LLM analysis and trading components to be tested.
+### Local Development Setup
 
-## Next Steps / Development
+#### Using dev_manager.sh (Recommended)
 
-*   Refine LLM prompt and integrate more sophisticated analysis.
-*   Implement real-time dashboard using Django Channels or similar.
-*   Develop UI for manual trade closing.
-*   Add comprehensive error handling and logging.
-*   Implement unit and integration tests.
+```bash
+# Make script executable
+chmod +x dev_manager.sh
+
+# Set up everything automatically
+./dev_manager.sh setup
+
+# Start all services
+./dev_manager.sh start
+
+# Access the system
+# Dashboard: http://localhost:8000/dashboard/
+# Admin: http://localhost:8000/admin/ (admin/admin)
+```
+
+#### Manual Setup
+
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Set up database (SQLite for dev)
+python manage.py migrate
+
+# Create superuser
+python manage.py createsuperuser
+
+# Start development server
+python manage.py runserver
+
+# In separate terminals:
+# Start Celery worker
+celery -A news_trader worker -l info
+
+# Start Celery beat (scheduler)
+celery -A news_trader beat -l info
+```
+
+### Running Tests
+
+```bash
+# Run all tests
+python manage.py test
+
+# Run specific app tests
+python manage.py test core
+
+# Run with coverage
+coverage run --source='.' manage.py test
+coverage report
+```
+
+## 📊 API Usage
+
+### REST API Endpoints
+
+```bash
+# Get trading summary
+curl http://localhost:8000/api/trades/summary/
+
+# Trigger manual scraping
+curl -X POST http://localhost:8000/api/sources/1/trigger_scrape/
+
+# Close a trade manually
+curl -X POST http://localhost:8000/api/trades/123/close/
+
+# Get recent analyses
+curl http://localhost:8000/api/analyses/?direction=buy&min_confidence=0.8
+```
+
+### WebSocket Connection
+
+```javascript
+const socket = new WebSocket('ws://localhost:8000/ws/dashboard/');
+socket.onmessage = function(event) {
+    const data = JSON.parse(event.data);
+    console.log('Update:', data);
+};
+```
+
+## 🔐 Security & Production
+
+### Environment Variables
+
+```bash
+# Essential API Keys
+OPENAI_API_KEY=your-openai-key
+ALPACA_API_KEY=your-alpaca-key
+ALPACA_SECRET_KEY=your-alpaca-secret
+
+# Source-specific keys
+NEWSAPI_KEY=your-newsapi-key
+REDDIT_USER_AGENT=YourApp/1.0
+
+# Security settings
+DJANGO_SECRET_KEY=your-secret-key
+DJANGO_DEBUG=False
+SECURE_SSL_REDIRECT=True
+```
+
+### Production Checklist
+
+- [ ] Set `DEBUG=False`
+- [ ] Configure SSL certificates
+- [ ] Set up monitoring (logs, metrics)
+- [ ] Configure backup strategy
+- [ ] Set proper CORS origins
+- [ ] Enable rate limiting
+- [ ] Review API key permissions
+
+## 📈 Monitoring & Observability
+
+### Key Metrics
+
+1. **Trading Performance**
+   - Win rate percentage
+   - Average P&L per trade
+   - Sharpe ratio
+   - Maximum drawdown
+
+2. **System Health**
+   - Scraping success rate
+   - LLM analysis latency
+   - Trade execution time
+   - Error rates by component
+
+3. **Data Quality**
+   - Posts analyzed per hour
+   - Confidence score distribution
+   - Symbol identification accuracy
+
+### Logging
+
+```python
+# View logs
+docker-compose logs -f web
+docker-compose logs -f celery
+docker-compose logs -f celery-beat
+
+# Log files location
+./logs/news_trader.log
+```
+
+## 🎛️ Management Commands
+
+```bash
+# Set up example sources and configuration
+python manage.py setup_example_sources
+
+# Test Alpaca API connection
+python manage.py test_alpaca_connection
+
+# Analyze specific post
+python manage.py analyze_post <post_id>
+
+# Generate performance report
+python manage.py trading_report --days 7
+
+# Clean old data
+python manage.py cleanup_old_data --days 30
+```
+
+## 🐛 Troubleshooting
+
+### Common Issues
+
+1. **Database Connection Errors**
+   ```bash
+   # Check PostgreSQL is running
+   docker-compose ps db
+   
+   # Reset database
+   docker-compose down -v
+   docker-compose up -d db
+   ```
+
+2. **Celery Tasks Not Running**
+   ```bash
+   # Check Celery workers
+   docker-compose logs celery
+   
+   # Restart Celery
+   docker-compose restart celery celery-beat
+   ```
+
+3. **API Rate Limits**
+   ```bash
+   # Check source error logs
+   # Adjust scraping intervals
+   # Enable/disable sources via admin
+   ```
+
+### Debug Mode
+
+```bash
+# Enable debug logging
+export DJANGO_DEBUG=True
+export LOG_LEVEL=DEBUG
+
+# Monitor task execution
+celery -A news_trader flower  # Celery monitoring UI
+```
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests
+5. Submit a pull request
+
+### Code Style
+
+```bash
+# Format code
+black .
+isort .
+
+# Lint code
+flake8 .
+```
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## ⚠️ Disclaimer
+
+This software is for educational and research purposes only. Trading involves financial risk. Always:
+
+- Use paper trading for testing
+- Never invest more than you can afford to lose
+- Understand the risks of automated trading
+- Comply with all applicable regulations
+- Monitor your trades actively
+
+The developers are not responsible for any financial losses incurred through the use of this software.

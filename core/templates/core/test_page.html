@@ -1,111 +1,928 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>News Trader Test Page</title>
+    <title>News Trader - Testing & Monitoring</title>
     <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Font Awesome for icons -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
-        body { padding-top: 20px; }
-        .card { margin-bottom: 20px; }
+        body {
+            padding-top: 20px;
+            background-color: #f8f9fa;
+        }
+
+        .card {
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            border: none;
+        }
+
+        .workflow-step {
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .workflow-step.step-2 {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+
+        .workflow-step.step-3 {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        }
+
+        .action-card {
+            transition: transform 0.2s;
+            border-left: 4px solid #007bff;
+        }
+
+        .action-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+        }
+
+        .step-number {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            margin-right: 15px;
+        }
+
+        .quick-stats {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-item {
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: bold;
+            display: block;
+        }
+
+        .stat-label {
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+
+        .data-table {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .status-badge {
+            font-size: 0.8rem;
+            padding: 4px 8px;
+        }
+
+        .content-preview {
+            max-width: 300px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .action-buttons {
+            gap: 10px;
+        }
+
+        .recent-activity {
+            background-color: #f8f9fa;
+            border-left: 4px solid #28a745;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 0 8px 8px 0;
+        }
+
+        .activity-time {
+            font-size: 0.85rem;
+            color: #6c757d;
+            float: right;
+        }
+
+        .workflow-progress {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 30px;
+        }
+
+        .progress-step {
+            display: flex;
+            align-items: center;
+            margin-bottom: 15px;
+            padding: 10px;
+            border-radius: 8px;
+            background: #f8f9fa;
+        }
+
+        .progress-step.active {
+            background: #e3f2fd;
+            border: 2px solid #2196f3;
+        }
+
+        .progress-step.completed {
+            background: #e8f5e8;
+            border: 2px solid #4caf50;
+        }
+
+        .progress-icon {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 15px;
+            font-size: 14px;
+        }
+
+        .progress-icon.pending {
+            background: #e0e0e0;
+            color: #757575;
+        }
+
+        .progress-icon.active {
+            background: #2196f3;
+            color: white;
+        }
+
+        .progress-icon.completed {
+            background: #4caf50;
+            color: white;
+        }
+
+        .quick-action-btn {
+            margin: 5px;
+            min-width: 120px;
+        }
+
+        .refresh-indicator {
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
     </style>
 </head>
-<body>
-    <div class="container">
-        <h1 class="mb-4">News Trader Test Page</h1>
 
-        <div class="row">
-            <div class="col-md-6">
-                <div class="card">
-                    <div class="card-body">
-                        <h5 class="card-title">Trigger Scrape</h5>
-                        <form method="post">
-                            {% csrf_token %}
-                            <input type="hidden" name="action" value="trigger_scrape">
-                            <div class="mb-3">
-                                <label for="source_id_scrape" class="form-label">Select Source:</label>
-                                <select class="form-select" id="source_id_scrape" name="source_id" required>
-                                    {% for source in sources %}
-                                        <option value="{{ source.id }}">{{ source.name }} ({{ source.get_scraping_method_display }})</option>
-                                    {% empty %}
-                                        <option value="">No sources available. Please add one in Django Admin.</option>
-                                    {% endfor %}
-                                </select>
-                            </div>
-                            <button type="submit" class="btn btn-primary">Run Scraper Now</button>
-                        </form>
+<body>
+    <div class="container-fluid">
+        <!-- Header -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h1><i class="fas fa-flask"></i> Trading System Test Center</h1>
+                    <div class="d-flex gap-2">
+                        <button id="refresh-data" class="btn btn-outline-primary">
+                            <i id="refresh-icon" class="fas fa-sync-alt"></i> Refresh Data
+                        </button>
                     </div>
                 </div>
-            </div>
-            <div class="col-md-6">
-                <div class="card">
-                    <div class="card-body">
-                        <h5 class="card-title">Trigger Analysis for Post</h5>
-                        <form method="post">
-                            {% csrf_token %}
-                            <input type="hidden" name="action" value="trigger_analysis">
-                            <div class="mb-3">
-                                <label for="post_id_analysis" class="form-label">Post ID:</label>
-                                <input type="number" class="form-control" id="post_id_analysis" name="post_id" required>
+
+                <!-- PAGES NAVIGATION MENU AT TOP -->
+                <nav class="navbar navbar-expand-lg mb-4"
+                    style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 12px; padding: 12px 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
+                    <div class="container-fluid">
+                        <span class="navbar-brand mb-0 h5 text-white fw-bold">
+                            <i class="fas fa-sitemap me-2"></i>PAGES
+                        </span>
+                        <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
+                            data-bs-target="#pageNavigation">
+                            <span class="navbar-toggler-icon"></span>
+                        </button>
+                        <div class="collapse navbar-collapse" id="pageNavigation">
+                            <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+                                <li class="nav-item">
+                                    <a class="nav-link text-white fw-semibold" href="/dashboard/"
+                                        style="border-radius: 6px;"
+                                        onmouseover="this.style.background='rgba(255,255,255,0.2)'"
+                                        onmouseout="this.style.background='transparent'">
+                                        <i class="fas fa-chart-line me-1"></i> Dashboard
+                                    </a>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link text-white fw-semibold active" href="/test-page/"
+                                        style="border-radius: 6px; background: rgba(255,255,255,0.2);">
+                                        <i class="fas fa-flask me-1"></i> Test Center
+                                    </a>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link text-white fw-semibold" href="/close-trade/"
+                                        style="border-radius: 6px;"
+                                        onmouseover="this.style.background='rgba(255,255,255,0.2)'"
+                                        onmouseout="this.style.background='transparent'">
+                                        <i class="fas fa-times-circle me-1"></i> Open Trades
+                                    </a>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link text-white fw-semibold" href="/admin/" target="_blank"
+                                        style="border-radius: 6px;"
+                                        onmouseover="this.style.background='rgba(255,255,255,0.2)'"
+                                        onmouseout="this.style.background='transparent'">
+                                        <i class="fas fa-cogs me-1"></i> Admin Panel
+                                    </a>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link text-white fw-semibold" href="/api/" target="_blank"
+                                        style="border-radius: 6px;"
+                                        onmouseover="this.style.background='rgba(255,255,255,0.2)'"
+                                        onmouseout="this.style.background='transparent'">
+                                        <i class="fas fa-code me-1"></i> API Docs
+                                    </a>
+                                </li>
+                            </ul>
+                            <div class="d-flex">
+                                <div class="dropdown">
+                                    <button class="btn btn-outline-light btn-sm dropdown-toggle fw-semibold"
+                                        type="button" data-bs-toggle="dropdown" style="border-radius: 8px;">
+                                        <i class="fas fa-tools me-1"></i> Quick Tools
+                                    </button>
+                                    <ul class="dropdown-menu dropdown-menu-end">
+                                        <li><a class="dropdown-item" href="/admin/core/" target="_blank">
+                                                <i class="fas fa-database me-2"></i> Database Admin
+                                            </a></li>
+                                        <li><a class="dropdown-item" href="#" onclick="exportSystemData()">
+                                                <i class="fas fa-download me-2"></i> Export Data
+                                            </a></li>
+                                        <li>
+                                            <hr class="dropdown-divider">
+                                        </li>
+                                        <li><a class="dropdown-item" href="#" onclick="viewSystemLogs()">
+                                                <i class="fas fa-file-alt me-2"></i> System Logs
+                                            </a></li>
+                                        <li><a class="dropdown-item" href="#" onclick="clearSystemCache()">
+                                                <i class="fas fa-trash me-2"></i> Clear Cache
+                                            </a></li>
+                                    </ul>
+                                </div>
                             </div>
-                            <button type="submit" class="btn btn-primary">Analyze Post</button>
-                        </form>
+                        </div>
+                    </div>
+                </nav>
+            </div>
+        </div>
+
+        <!-- Quick Stats -->
+        <div class="quick-stats">
+            <div class="row">
+                <div class="col-md-3">
+                    <div class="stat-item">
+                        <span class="stat-value" id="total-sources">{{ sources.count }}</span>
+                        <span class="stat-label">Data Sources</span>
                     </div>
                 </div>
-            </div>
-            <div class="col-md-6">
-                <div class="card">
-                    <div class="card-body">
-                        <h5 class="card-title">Trigger Test Trade for Analysis</h5>
-                        <form method="post">
-                            {% csrf_token %}
-                            <input type="hidden" name="action" value="trigger_trade">
-                            <div class="mb-3">
-                                <label for="analysis_id_trade" class="form-label">Analysis ID:</label>
-                                <input type="number" class="form-control" id="analysis_id_trade" name="analysis_id" required>
-                            </div>
-                            <button type="submit" class="btn btn-primary">Execute Trade</button>
-                        </form>
+                <div class="col-md-3">
+                    <div class="stat-item">
+                        <span class="stat-value" id="total-posts">{{ recent_posts.count }}</span>
+                        <span class="stat-label">Total Posts</span>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="stat-item">
+                        <span class="stat-value" id="total-analyses">{{ recent_analyses.count }}</span>
+                        <span class="stat-label">Analyses Done</span>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="stat-item">
+                        <span class="stat-value" id="system-status">
+                            <i class="fas fa-check-circle"></i>
+                        </span>
+                        <span class="stat-label">System Status</span>
                     </div>
                 </div>
             </div>
         </div>
 
-        <h2 class="mt-4">Recent Posts</h2>
-        <ul class="list-group mb-4">
-            {% for post in recent_posts %}
-                <li class="list-group-item">
-                    <strong>ID:</strong> {{ post.id }}<br>
-                    <strong>Source:</strong> {{ post.source.name }}<br>
-                    <strong>Content:</strong> {{ post.content|truncatechars:150 }}<br>
-                    <strong>URL:</strong> <a href="{{ post.url }}" target="_blank">{{ post.url }}</a>
-                </li>
-            {% empty %}
-                <li class="list-group-item">No recent posts found.</li>
-            {% endfor %}
-        </ul>
+        <!-- Workflow Progress -->
+        <div class="workflow-progress">
+            <h5><i class="fas fa-tasks"></i> Complete Trading Workflow</h5>
+            <div class="row">
+                <div class="col-md-4">
+                    <div class="progress-step" id="step-scrape">
+                        <div class="progress-icon pending">
+                            <i class="fas fa-download"></i>
+                        </div>
+                        <div>
+                            <strong>1. Data Collection</strong>
+                            <div class="text-muted small">Scrape news from sources</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="progress-step" id="step-analyze">
+                        <div class="progress-icon pending">
+                            <i class="fas fa-brain"></i>
+                        </div>
+                        <div>
+                            <strong>2. AI Analysis</strong>
+                            <div class="text-muted small">LLM processes content</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="progress-step" id="step-trade">
+                        <div class="progress-icon pending">
+                            <i class="fas fa-chart-line"></i>
+                        </div>
+                        <div>
+                            <strong>3. Trade Execution</strong>
+                            <div class="text-muted small">Execute trading decisions</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
 
-        <h2 class="mt-4">Recent Analyses</h2>
-        <ul class="list-group mb-4">
-            {% for analysis in recent_analyses %}
-                <li class="list-group-item">
-                    <strong>ID:</strong> {{ analysis.id }}<br>
-                    <strong>Post ID:</strong> {{ analysis.post.id }}<br>
-                    <strong>Symbol:</strong> {{ analysis.symbol }}<br>
-                    <strong>Direction:</strong> {{ analysis.direction }}<br>
-                    <strong>Confidence:</strong> {{ analysis.confidence }}<br>
-                    <strong>Reason:</strong> {{ analysis.reason|truncatechars:150 }}
-                </li>
-            {% empty %}
-                <li class="list-group-item">No recent analyses found.</li>
-            {% endfor %}
-        </ul>
+        <div class="row">
+            <!-- Left Column: Actions -->
+            <div class="col-lg-6">
+                <!-- Step 1: Data Collection -->
+                <div class="workflow-step">
+                    <div class="d-flex align-items-center mb-3">
+                        <div class="step-number">1</div>
+                        <div>
+                            <h5 class="mb-1">Data Collection</h5>
+                            <small>Fetch latest news from configured sources</small>
+                        </div>
+                    </div>
 
-        <p><a href="{% url 'dashboard' %}" class="btn btn-secondary">Back to Dashboard</a></p>
+                    <div class="card action-card">
+                        <div class="card-body">
+                            <h6><i class="fas fa-rss"></i> Source Selection & Scraping</h6>
+                            <form method="post" class="mb-3">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="trigger_scrape">
+                                <div class="row">
+                                    <div class="col-md-8">
+                                        <select class="form-select" name="source_id" required>
+                                            <option value="">Choose a data source...</option>
+                                            {% for source in sources %}
+                                            <option value="{{ source.id }}"
+                                                data-method="{{ source.get_scraping_method_display }}"
+                                                data-enabled="{{ source.scraping_enabled }}">
+                                                {{ source.name }}
+                                                ({{ source.get_scraping_method_display }})
+                                                {% if not source.scraping_enabled %} - DISABLED{% endif %}
+                                            </option>
+                                            {% empty %}
+                                            <option value="">No sources configured</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <button type="submit" class="btn btn-primary w-100">
+                                            <i class="fas fa-play"></i> Start Scrape
+                                        </button>
+                                    </div>
+                                </div>
+                            </form>
+
+                            <div class="d-flex action-buttons">
+                                <div class="dropdown">
+                                    <button class="btn btn-outline-primary btn-sm dropdown-toggle quick-action-btn"
+                                        type="button" data-bs-toggle="dropdown">
+                                        <i class="fas fa-bolt"></i> Quick Actions
+                                    </button>
+                                    <ul class="dropdown-menu">
+                                        <li><a class="dropdown-item" href="#" onclick="scrapeAllSources()"><i
+                                                    class="fas fa-globe"></i> Scrape All Sources</a></li>
+                                        <li><a class="dropdown-item" href="#" onclick="viewSourceStatus()"><i
+                                                    class="fas fa-info-circle"></i> Source Status</a></li>
+                                        <li>
+                                            <hr class="dropdown-divider">
+                                        </li>
+                                        <li><a class="dropdown-item" href="#" onclick="testAllConnections()"><i
+                                                    class="fas fa-plug"></i> Test API Connections</a></li>
+                                        <li><a class="dropdown-item" href="#" onclick="clearCache()"><i
+                                                    class="fas fa-trash"></i> Clear Cache</a></li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 2: Analysis -->
+                <div class="workflow-step step-2">
+                    <div class="d-flex align-items-center mb-3">
+                        <div class="step-number">2</div>
+                        <div>
+                            <h5 class="mb-1">AI Analysis</h5>
+                            <small>Process posts with LLM for trading signals</small>
+                        </div>
+                    </div>
+
+                    <div class="card action-card">
+                        <div class="card-body">
+                            <h6><i class="fas fa-brain"></i> Post Analysis</h6>
+                            <form method="post" class="mb-3">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="trigger_analysis">
+                                <div class="row">
+                                    <div class="col-md-8">
+                                        <select class="form-select" name="post_id">
+                                            <option value="">Select a post to analyze...</option>
+                                            {% for post in recent_posts|slice:":20" %}
+                                            <option value="{{ post.id }}" data-source="{{ post.source.name }}">
+                                                Post #{{ post.id }} - {{ post.source.name }}
+                                                ({{ post.created_at|timesince }} ago)
+                                            </option>
+                                            {% empty %}
+                                            <option value="">No posts available</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <button type="submit" class="btn btn-primary w-100">
+                                            <i class="fas fa-magic"></i> Analyze
+                                        </button>
+                                    </div>
+                                </div>
+                            </form>
+
+                            <div class="d-flex action-buttons">
+                                <div class="dropdown">
+                                    <button class="btn btn-outline-primary btn-sm dropdown-toggle quick-action-btn"
+                                        type="button" data-bs-toggle="dropdown">
+                                        <i class="fas fa-brain"></i> Analysis Tools
+                                    </button>
+                                    <ul class="dropdown-menu">
+                                        <li><a class="dropdown-item" href="#" onclick="analyzeLatestPosts()"><i
+                                                    class="fas fa-fast-forward"></i> Analyze Latest Posts</a></li>
+                                        <li><a class="dropdown-item" href="#" onclick="reanalyzeAll()"><i
+                                                    class="fas fa-redo"></i> Re-analyze All Posts</a></li>
+                                        <li>
+                                            <hr class="dropdown-divider">
+                                        </li>
+                                        <li><a class="dropdown-item" href="#" onclick="batchAnalyze()"><i
+                                                    class="fas fa-layer-group"></i> Batch Analysis</a></li>
+                                        <li><a class="dropdown-item" href="#" onclick="analyzeBySource()"><i
+                                                    class="fas fa-filter"></i> Analyze by Source</a></li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 3: Trading -->
+                <div class="workflow-step step-3">
+                    <div class="d-flex align-items-center mb-3">
+                        <div class="step-number">3</div>
+                        <div>
+                            <h5 class="mb-1">Trade Execution</h5>
+                            <small>Execute trades based on analysis signals</small>
+                        </div>
+                    </div>
+
+                    <div class="card action-card">
+                        <div class="card-body">
+                            <h6><i class="fas fa-chart-line"></i> Trade Execution</h6>
+                            <form method="post" class="mb-3">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="trigger_trade">
+                                <div class="row">
+                                    <div class="col-md-8">
+                                        <select class="form-select" name="analysis_id">
+                                            <option value="">Select analysis for trading...</option>
+                                            {% for analysis in recent_analyses|slice:":20" %}
+                                            <option value="{{ analysis.id }}" data-symbol="{{ analysis.symbol }}"
+                                                data-direction="{{ analysis.direction }}"
+                                                data-confidence="{{ analysis.confidence }}">
+                                                Analysis #{{ analysis.id }} - {{ analysis.symbol }}
+                                                {{ analysis.direction|upper }} ({{ analysis.confidence|floatformat:2 }})
+                                            </option>
+                                            {% empty %}
+                                            <option value="">No analyses available</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <button type="submit" class="btn btn-primary w-100">
+                                            <i class="fas fa-rocket"></i> Execute
+                                        </button>
+                                    </div>
+                                </div>
+                            </form>
+
+                            <div class="d-flex action-buttons">
+                                <div class="dropdown">
+                                    <button class="btn btn-outline-success btn-sm dropdown-toggle quick-action-btn"
+                                        type="button" data-bs-toggle="dropdown">
+                                        <i class="fas fa-rocket"></i> Trading Tools
+                                    </button>
+                                    <ul class="dropdown-menu">
+                                        <li><a class="dropdown-item" href="#" onclick="executeHighConfidence()"><i
+                                                    class="fas fa-thumbs-up"></i> Execute High Confidence</a></li>
+                                        <li><a class="dropdown-item" href="#" onclick="viewOpenTrades()"><i
+                                                    class="fas fa-eye"></i> View Open Trades</a></li>
+                                        <li>
+                                            <hr class="dropdown-divider">
+                                        </li>
+                                        <li><a class="dropdown-item" href="#" onclick="executeBatch()"><i
+                                                    class="fas fa-layer-group"></i> Batch Execute</a></li>
+                                        <li><a class="dropdown-item" href="#" onclick="simulateTrades()"><i
+                                                    class="fas fa-play-circle"></i> Simulate Trades</a></li>
+                                        <li><a class="dropdown-item" href="#" onclick="riskAnalysis()"><i
+                                                    class="fas fa-shield-alt"></i> Risk Analysis</a></li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column: Data & Status -->
+            <div class="col-lg-6">
+                <!-- Recent Activity -->
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h6><i class="fas fa-history"></i> Recent Activity</h6>
+                    </div>
+                    <div class="card-body" style="max-height: 300px; overflow-y: auto;" id="recent-activity">
+                        <div class="text-center text-muted">
+                            <i class="fas fa-spinner fa-pulse"></i> Loading recent activity...
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Data Tables Tabs -->
+                <div class="card">
+                    <div class="card-header">
+                        <ul class="nav nav-tabs card-header-tabs" id="dataTabs" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active" id="posts-tab" data-bs-toggle="tab"
+                                    data-bs-target="#posts" type="button">
+                                    <i class="fas fa-newspaper"></i> Posts ({{ recent_posts.count }})
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="analyses-tab" data-bs-toggle="tab"
+                                    data-bs-target="#analyses" type="button">
+                                    <i class="fas fa-brain"></i> Analyses ({{ recent_analyses.count }})
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="sources-tab" data-bs-toggle="tab" data-bs-target="#sources"
+                                    type="button">
+                                    <i class="fas fa-rss"></i> Sources ({{ sources.count }})
+                                </button>
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="tab-content" id="dataTabsContent">
+                            <!-- Posts Tab -->
+                            <div class="tab-pane fade show active" id="posts" role="tabpanel">
+                                <div class="data-table">
+                                    {% for post in recent_posts|slice:":15" %}
+                                    <div class="border-bottom p-3">
+                                        <div class="d-flex justify-content-between align-items-start">
+                                            <div class="flex-grow-1">
+                                                <div class="d-flex align-items-center mb-2">
+                                                    <span class="badge bg-primary me-2">#{{ post.id }}</span>
+                                                    <strong>{{ post.source.name }}</strong>
+                                                    <span class="text-muted ms-2 small">{{ post.created_at|timesince }}
+                                                        ago</span>
+                                                </div>
+                                                <div class="content-preview text-muted">{{
+                                                    post.content|truncatechars:120 }}</div>
+                                                {% if post.url %}
+                                                <a href="{{ post.url }}" target="_blank"
+                                                    class="small text-decoration-none">
+                                                    <i class="fas fa-external-link-alt"></i> View Original
+                                                </a>
+                                                {% endif %}
+                                            </div>
+                                            <div class="ms-3">
+                                                <button class="btn btn-sm btn-outline-primary"
+                                                    onclick="analyzePost({{ post.id }})">
+                                                    <i class="fas fa-magic"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {% empty %}
+                                    <div class="text-center p-4 text-muted">
+                                        <i class="fas fa-inbox fa-2x mb-2"></i>
+                                        <div>No posts found. Try running a scraper first.</div>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+
+                            <!-- Analyses Tab -->
+                            <div class="tab-pane fade" id="analyses" role="tabpanel">
+                                <div class="data-table">
+                                    {% for analysis in recent_analyses|slice:":15" %}
+                                    <div class="border-bottom p-3">
+                                        <div class="d-flex justify-content-between align-items-start">
+                                            <div class="flex-grow-1">
+                                                <div class="d-flex align-items-center mb-2">
+                                                    <span class="badge bg-info me-2">#{{ analysis.id }}</span>
+                                                    <strong>{{ analysis.symbol|default:"N/A" }}</strong>
+                                                    <span
+                                                        class="badge bg-{{ analysis.direction|yesno:'success,danger,secondary' }} ms-2">
+                                                        {{ analysis.direction|upper }}
+                                                    </span>
+                                                    <span class="text-muted ms-2 small">{{ analysis.created_at|timesince
+                                                        }} ago</span>
+                                                </div>
+                                                <div class="small">
+                                                    <strong>Confidence:</strong> {{ analysis.confidence|floatformat:2 }}
+                                                    <span class="text-muted">| Post #{{ analysis.post.id }}</span>
+                                                </div>
+                                                {% if analysis.reason %}
+                                                <div class="content-preview text-muted small">{{
+                                                    analysis.reason|truncatechars:100 }}</div>
+                                                {% endif %}
+                                            </div>
+                                            <div class="ms-3">
+                                                <button class="btn btn-sm btn-outline-success"
+                                                    onclick="executeTrade({{ analysis.id }})">
+                                                    <i class="fas fa-rocket"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {% empty %}
+                                    <div class="text-center p-4 text-muted">
+                                        <i class="fas fa-brain fa-2x mb-2"></i>
+                                        <div>No analyses found. Try analyzing some posts first.</div>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+
+                            <!-- Sources Tab -->
+                            <div class="tab-pane fade" id="sources" role="tabpanel">
+                                <div class="data-table">
+                                    {% for source in sources %}
+                                    <div class="border-bottom p-3">
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <div class="flex-grow-1">
+                                                <div class="d-flex align-items-center mb-1">
+                                                    {% if source.scraping_enabled %}
+                                                    <i class="fas fa-play-circle text-success me-2"></i>
+                                                    {% else %}
+                                                    <i class="fas fa-pause-circle text-danger me-2"></i>
+                                                    {% endif %}
+                                                    <strong>{{ source.name }}</strong>
+                                                    <span class="badge bg-secondary ms-2">{{
+                                                        source.get_scraping_method_display }}</span>
+                                                </div>
+                                                <div class="small text-muted">
+                                                    Posts: {{ source.individual_posts.count }} |
+                                                    Last scraped: {% if source.last_scraped_at %}{{
+                                                    source.last_scraped_at|timesince }} ago{% else %}Never{% endif %}
+                                                </div>
+                                                {% if source.error_count > 0 %}
+                                                <div class="small text-danger">
+                                                    <i class="fas fa-exclamation-triangle"></i> {{ source.error_count }}
+                                                    error(s)
+                                                </div>
+                                                {% endif %}
+                                            </div>
+                                            <div class="ms-3">
+                                                <button class="btn btn-sm btn-outline-primary"
+                                                    onclick="scrapeSource({{ source.id }})">
+                                                    <i class="fas fa-download"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {% empty %}
+                                    <div class="text-center p-4 text-muted">
+                                        <i class="fas fa-rss fa-2x mb-2"></i>
+                                        <div>No sources configured. Add some in the admin panel.</div>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Bootstrap 5 JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // CSRF token for forms
+        const csrfToken = '{{ csrf_token }}';
+
+        // Quick action functions
+        function scrapeSource(sourceId) {
+            const form = document.createElement('form');
+            form.method = 'post';
+            form.innerHTML = '<input type="hidden" name="csrfmiddlewaretoken" value="' + csrfToken + '">' +
+                '<input type="hidden" name="action" value="trigger_scrape">' +
+                '<input type="hidden" name="source_id" value="' + sourceId + '">';
+            document.body.appendChild(form);
+            form.submit();
+        }
+
+        function analyzePost(postId) {
+            const form = document.createElement('form');
+            form.method = 'post';
+            form.innerHTML = '<input type="hidden" name="csrfmiddlewaretoken" value="' + csrfToken + '">' +
+                '<input type="hidden" name="action" value="trigger_analysis">' +
+                '<input type="hidden" name="post_id" value="' + postId + '">';
+            document.body.appendChild(form);
+            form.submit();
+        }
+
+        function executeTrade(analysisId) {
+            const form = document.createElement('form');
+            form.method = 'post';
+            form.innerHTML = '<input type="hidden" name="csrfmiddlewaretoken" value="' + csrfToken + '">' +
+                '<input type="hidden" name="action" value="trigger_trade">' +
+                '<input type="hidden" name="analysis_id" value="' + analysisId + '">';
+            document.body.appendChild(form);
+            form.submit();
+        }
+
+        function scrapeAllSources() {
+            if (confirm('This will trigger scraping for all enabled sources. Continue?')) {
+                // Submit form for each enabled source
+                window.location.href = '{{ request.build_absolute_uri|escapejs }}?action=scrape_all';
+            }
+        }
+
+        function analyzeLatestPosts() {
+            if (confirm('This will analyze the 5 most recent posts. Continue?')) {
+                window.location.href = '{{ request.build_absolute_uri|escapejs }}?action=analyze_latest';
+            }
+        }
+
+        function executeHighConfidence() {
+            if (confirm('This will execute trades for analyses with >80% confidence. Continue?')) {
+                window.location.href = '{{ request.build_absolute_uri|escapejs }}?action=execute_high_confidence';
+            }
+        }
+
+        function viewSourceStatus() {
+            window.open('/admin/core/source/', '_blank');
+        }
+
+        function viewOpenTrades() {
+            window.location.href = '/close-trade/';
+        }
+
+        function testAllConnections() {
+            if (confirm('This will test all API connections. Continue?')) {
+                // Implementation for testing connections
+                alert('Testing API connections... (Feature coming soon)');
+            }
+        }
+
+        function clearCache() {
+            if (confirm('This will clear the application cache. Continue?')) {
+                // Implementation for clearing cache
+                alert('Cache cleared successfully! (Feature coming soon)');
+            }
+        }
+
+        function batchAnalyze() {
+            if (confirm('This will analyze all unanalyzed posts. Continue?')) {
+                // Implementation for batch analysis
+                alert('Batch analysis started... (Feature coming soon)');
+            }
+        }
+
+        function analyzeBySource() {
+            // Implementation for source-specific analysis
+            alert('Source-specific analysis... (Feature coming soon)');
+        }
+
+        function executeBatch() {
+            if (confirm('This will execute all eligible trades. Continue?')) {
+                // Implementation for batch execution
+                alert('Batch execution started... (Feature coming soon)');
+            }
+        }
+
+        function simulateTrades() {
+            // Implementation for trade simulation
+            alert('Trade simulation... (Feature coming soon)');
+        }
+
+        function riskAnalysis() {
+            // Implementation for risk analysis
+            alert('Risk analysis... (Feature coming soon)');
+        }
+
+        function viewSystemLogs() {
+            // Implementation for viewing system logs
+            window.open('/admin/core/log/', '_blank');
+        }
+
+        function exportData() {
+            if (confirm('This will export system data to CSV. Continue?')) {
+                // Implementation for data export
+                alert('Data export started... (Feature coming soon)');
+            }
+        }
+
+        // Auto-refresh data
+        function refreshData() {
+            const refreshIcon = document.getElementById('refresh-icon');
+            refreshIcon.classList.add('refresh-indicator');
+
+            setTimeout(() => {
+                location.reload();
+            }, 1000);
+        }
+
+        document.getElementById('refresh-data').addEventListener('click', refreshData);
+
+        // Update progress indicators
+        function updateProgress() {
+            const totalPosts = {{ recent_posts.count }
+        };
+        const totalAnalyses = {{ recent_analyses.count }};
+
+        if (totalPosts > 0) {
+            document.getElementById('step-scrape').classList.add('completed');
+            document.querySelector('#step-scrape .progress-icon').className = 'progress-icon completed';
+        }
+
+        if (totalAnalyses > 0) {
+            document.getElementById('step-analyze').classList.add('completed');
+            document.querySelector('#step-analyze .progress-icon').className = 'progress-icon completed';
+        }
+        }
+
+        // Load recent activity
+        function loadRecentActivity() {
+            // This would typically load from an API endpoint
+            const activityDiv = document.getElementById('recent-activity');
+            activityDiv.innerHTML =
+                '<div class="recent-activity">' +
+                '<div class="activity-time">Just now</div>' +
+                '<strong>System Status:</strong> All services operational' +
+                '</div>' +
+                '<div class="recent-activity">' +
+                '<div class="activity-time">{% if recent_posts.first %}{{ recent_posts.first.created_at|timesince }} ago{% else %}Never{% endif %}</div>' +
+                '<strong>Latest Post:</strong> {% if recent_posts.first %}{{ recent_posts.first.source.name|escapejs }}{% else %}No posts yet{% endif %}' +
+                '</div>' +
+                '<div class="recent-activity">' +
+                '<div class="activity-time">{% if recent_analyses.first %}{{ recent_analyses.first.created_at|timesince }} ago{% else %}Never{% endif %}</div>' +
+                '<strong>Latest Analysis:</strong> {% if recent_analyses.first %}{{ recent_analyses.first.symbol|default:"N/A"|escapejs }} {{ recent_analyses.first.direction|upper }}{% else %}No analyses yet{% endif %}' +
+                '</div>';
+        }
+
+        // Quick Tools Functions for Page Navigation
+        function exportSystemData() {
+            if (confirm('Export system data to CSV? This may take a moment.')) {
+                alert('Data export functionality coming soon!');
+            }
+        }
+
+        function viewSystemLogs() {
+            window.open('/admin/core/', '_blank');
+        }
+
+        function clearSystemCache() {
+            if (confirm('Clear system cache? This will refresh all cached data.')) {
+                alert('Cache clearing functionality coming soon!');
+            }
+        }
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function () {
+            updateProgress();
+            loadRecentActivity();
+        });
+    </script>
 </body>
+
 </html>

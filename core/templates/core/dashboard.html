@@ -1,139 +1,948 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>News Trader Dashboard</title>
     <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Font Awesome for icons -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
-        body { padding-top: 20px; }
-        .card { margin-bottom: 20px; }
-        #log { max-height: 400px; overflow-y: scroll; border: 1px solid #eee; padding: 10px; background-color: #f9f9f9; }
-        .log-entry { margin-bottom: 5px; border-bottom: 1px dotted #eee; padding-bottom: 3px; }
-        .log-entry.trade-executed { background-color: #d4edda; border-color: #badbcc; color: #155724; }
+        body {
+            padding-top: 20px;
+            background-color: #f8f9fa;
+        }
+
+        .status-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            border-left: 4px solid #007bff;
+        }
+
+        .metric-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .log-entry {
+            padding: 8px 12px;
+            margin-bottom: 5px;
+            border-radius: 6px;
+            font-size: 14px;
+            border-left: 3px solid #007bff;
+            background-color: #f8f9fa;
+        }
+
+        .websocket-status {
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        .websocket-connected {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .websocket-disconnected {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .navbar {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 12px;
+            padding: 12px 20px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .nav-link {
+            border-radius: 6px;
+            color: white !important;
+            font-weight: 600;
+        }
+
+        .nav-link:hover {
+            background: rgba(255, 255, 255, 0.2) !important;
+        }
+
+        .nav-link.active {
+            background: rgba(255, 255, 255, 0.2) !important;
+        }
+
+        /* API Connection Cards */
+        #api-status-row .card {
+            border: 2px solid transparent;
+            transition: all 0.3s ease;
+            background: linear-gradient(145deg, #ffffff, #f8f9fa);
+            position: relative;
+            overflow: hidden;
+        }
+
+        #api-status-row .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        #api-status-row .card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+        }
+
+        #api-status-row .card:hover::before {
+            opacity: 1;
+        }
+
+        #api-status-row .card.border-success {
+            border-color: #28a745 !important;
+            box-shadow: 0 4px 20px rgba(40, 167, 69, 0.2);
+        }
+
+        #api-status-row .card.border-success::before {
+            background: #28a745;
+            opacity: 1;
+        }
+
+        #api-status-row .card.border-warning {
+            border-color: #ffc107 !important;
+            box-shadow: 0 4px 20px rgba(255, 193, 7, 0.2);
+        }
+
+        #api-status-row .card.border-warning::before {
+            background: #ffc107;
+            opacity: 1;
+        }
+
+        #api-status-row .card.border-danger {
+            border-color: #dc3545 !important;
+            box-shadow: 0 4px 20px rgba(220, 53, 69, 0.2);
+        }
+
+        #api-status-row .card.border-danger::before {
+            background: #dc3545;
+            opacity: 1;
+        }
+
+        .status-badge {
+            font-size: 0.8rem;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            transition: all 0.3s ease;
+        }
+
+        .status-badge.bg-warning {
+            color: #856404 !important;
+        }
+
+        #api-status-row .btn-outline-primary {
+            border-radius: 25px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            border-width: 2px;
+        }
+
+        #api-status-row .btn-outline-primary:hover {
+            transform: scale(1.05);
+            box-shadow: 0 4px 15px rgba(0, 123, 255, 0.3);
+        }
+
+        .card-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+            color: white;
+            border-radius: 0.375rem 0.375rem 0 0 !important;
+            border: none !important;
+        }
+
+        .card-header h5 {
+            color: white !important;
+        }
+
+        .card-header .text-primary {
+            color: white !important;
+        }
+
+        /* API Card Icons */
+        #api-status-row .fas {
+            transition: all 0.3s ease;
+        }
+
+        #api-status-row .card:hover .fas {
+            transform: scale(1.1);
+        }
     </style>
 </head>
-<body>
-    <div class="container">
-        <h1 class="mb-4">News Trader Dashboard</h1>
 
-        <div class="row">
-            <div class="col-md-4">
-                <div class="card">
-                    <div class="card-body">
-                        <h2 class="card-title">Scraper Status</h2>
-                        <p id="scraper-status" class="card-text">Idle</p>
+<body>
+    <div class="container-fluid">
+        <!-- PAGES NAVIGATION MENU AT TOP -->
+        <nav class="navbar navbar-expand-lg mb-4">
+            <div class="container-fluid">
+                <span class="navbar-brand mb-0 h5 text-white fw-bold">
+                    <i class="fas fa-sitemap me-2"></i>PAGES
+                </span>
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#pageNavigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+                <div class="collapse navbar-collapse" id="pageNavigation">
+                    <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+                        <li class="nav-item">
+                            <a class="nav-link active" href="/dashboard/">
+                                <i class="fas fa-chart-line me-1"></i> Dashboard
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="/test-page/">
+                                <i class="fas fa-flask me-1"></i> Test Center
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="/close-trade/">
+                                <i class="fas fa-times-circle me-1"></i> Open Trades
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="/admin/" target="_blank">
+                                <i class="fas fa-cogs me-1"></i> Admin Panel
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="/api/" target="_blank">
+                                <i class="fas fa-code me-1"></i> API Docs
+                            </a>
+                        </li>
+                    </ul>
+                    <div class="d-flex">
+                        <div class="dropdown">
+                            <button class="btn btn-outline-light btn-sm dropdown-toggle fw-semibold" type="button"
+                                data-bs-toggle="dropdown" style="border-radius: 8px;">
+                                <i class="fas fa-tools me-1"></i> Quick Tools
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-end">
+                                <li><a class="dropdown-item" href="/admin/core/" target="_blank">
+                                        <i class="fas fa-database me-2"></i> Database Admin
+                                    </a></li>
+                                <li><a class="dropdown-item" href="#" onclick="exportSystemData()">
+                                        <i class="fas fa-download me-2"></i> Export Data
+                                    </a></li>
+                                <li>
+                                    <hr class="dropdown-divider">
+                                </li>
+                                <li><a class="dropdown-item" href="#" onclick="viewSystemLogs()">
+                                        <i class="fas fa-file-alt me-2"></i> System Logs
+                                    </a></li>
+                                <li><a class="dropdown-item" href="#" onclick="clearSystemCache()">
+                                        <i class="fas fa-trash me-2"></i> Clear Cache
+                                    </a></li>
+                            </ul>
+                        </div>
                     </div>
                 </div>
             </div>
-            <div class="col-md-4">
-                <div class="card">
-                    <div class="card-body">
-                        <h2 class="card-title">Analysis Status</h2>
-                        <p id="analysis-status" class="card-text">Waiting for posts...</p>
+        </nav>
+
+        <!-- Header -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h1 class="mb-1">News Trading Dashboard</h1>
+                        <p class="text-muted mb-0">Real-time monitoring and control center</p>
                     </div>
-                </div>
-            </div>
-            <div class="col-md-4">
-                <div class="card">
-                    <div class="card-body">
-                        <h2 class="card-title">Trade Status</h2>
-                        <p id="trade-status" class="card-text">No trades yet.</p>
+                    <div>
+                        <span id="websocket-status" class="websocket-status websocket-disconnected">
+                            <i class="fas fa-circle me-1"></i>
+                            <span id="ws-status-text">WebSocket Disconnected</span>
+                        </span>
                     </div>
                 </div>
             </div>
         </div>
 
-        <h2 class="mt-4">Recent Activity Log</h2>
-        <div id="log" class="mb-4"></div>
+        <!-- Bot Status Toggle -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card" style="border-left: 4px solid #007bff;">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h5 class="mb-1">
+                                    <i class="fas fa-robot me-2"></i>Trading Bot Status
+                                </h5>
+                                <p class="mb-0 text-muted">
+                                    <span id="bot-status-text">Bot status loading...</span>
+                                </p>
+                            </div>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" role="switch" id="botToggle"
+                                    style="width: 3rem; height: 1.5rem;">
+                                <label class="form-check-label fw-bold ms-2" for="botToggle" id="bot-toggle-label">
+                                    LOADING...
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
 
-        <div class="mt-4">
-            <a href="{% url 'manual_close_trade' %}" class="btn btn-primary me-2">Manage Open Trades</a>
-            <a href="{% url 'test_page' %}" class="btn btn-info">Test Page</a>
+        <!-- API Status Section -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-white border-bottom">
+                        <h5 class="mb-0 d-flex align-items-center">
+                            <i class="fas fa-plug me-2 text-primary"></i>
+                            API Connections
+                        </h5>
+                    </div>
+                    <div class="card-body p-4">
+                        <div class="row g-4" id="api-status-row">
+                            <!-- OpenAI -->
+                            <div class="col-md-4">
+                                <div class="card h-100 border-0 bg-light">
+                                    <div class="card-body text-center p-4">
+                                        <div class="mb-3">
+                                            <i class="fas fa-brain text-primary" style="font-size: 2.5rem;"></i>
+                                        </div>
+                                        <h6 class="card-title mb-2">OpenAI</h6>
+                                        <div class="mb-3">
+                                            <span class="badge bg-secondary status-badge">Unknown</span>
+                                        </div>
+                                        <button class="btn btn-outline-primary btn-sm w-100"
+                                            onclick="checkConnection('openai')">
+                                            <i class="fas fa-sync-alt me-1"></i>Test Connection
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- News Sources -->
+                            <div class="col-md-4">
+                                <div class="card h-100 border-0 bg-light">
+                                    <div class="card-body text-center p-4">
+                                        <div class="mb-3">
+                                            <i class="fas fa-newspaper text-info" style="font-size: 2.5rem;"></i>
+                                        </div>
+                                        <h6 class="card-title mb-2">News Sources</h6>
+                                        <div class="mb-2">
+                                            <span class="badge bg-secondary status-badge">Unknown</span>
+                                        </div>
+                                        <div class="small text-muted mb-3" id="news-sources-details">Loading...</div>
+                                        <div class="small text-muted">
+                                            <i class="fas fa-sync-alt me-1"></i>Auto-updated
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Alpaca -->
+                            <div class="col-md-4">
+                                <div class="card h-100 border-0 bg-light">
+                                    <div class="card-body text-center p-4">
+                                        <div class="mb-3">
+                                            <i class="fas fa-chart-line text-success" style="font-size: 2.5rem;"></i>
+                                        </div>
+                                        <h6 class="card-title mb-2">Alpaca Trading</h6>
+                                        <div class="mb-3">
+                                            <span class="badge bg-secondary status-badge">Unknown</span>
+                                        </div>
+                                        <button class="btn btn-outline-primary btn-sm w-100"
+                                            onclick="checkConnection('alpaca')">
+                                            <i class="fas fa-sync-alt me-1"></i>Test Connection
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- System Metrics -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="metric-card">
+                    <h6 class="mb-1">Posts (24h)</h6>
+                    <h3 class="mb-0" id="posts-count">-</h3>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="metric-card">
+                    <h6 class="mb-1">Analyses (24h)</h6>
+                    <h3 class="mb-0" id="analyses-count">-</h3>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="metric-card">
+                    <h6 class="mb-1">Trades (24h)</h6>
+                    <h3 class="mb-0" id="trades-count">-</h3>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="metric-card">
+                    <h6 class="mb-1">Win Rate</h6>
+                    <h3 class="mb-0" id="win-rate">-</h3>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content Row -->
+        <div class="row">
+            <!-- Left Column: Status Cards -->
+            <div class="col-md-8">
+                <!-- Scraper Status -->
+                <div class="status-card">
+                    <h5 class="mb-3">
+                        <i class="fas fa-spider me-2"></i>Scraper Status
+                    </h5>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="text-center">
+                                <div class="badge bg-info fs-6 p-2">
+                                    <span id="sources-active">-</span>
+                                </div>
+                                <p class="mt-2 mb-0 text-muted">Active Sources</p>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="text-center">
+                                <div class="badge bg-success fs-6 p-2">
+                                    <span id="last-scrape">-</span>
+                                </div>
+                                <p class="mt-2 mb-0 text-muted">Last Scrape</p>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="text-center">
+                                <div class="badge bg-warning fs-6 p-2">
+                                    <span id="next-scrape">-</span>
+                                </div>
+                                <p class="mt-2 mb-0 text-muted">Next Scrape</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Analysis Status -->
+                <div class="status-card">
+                    <h5 class="mb-3">
+                        <i class="fas fa-brain me-2"></i>Analysis Status
+                    </h5>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="text-center">
+                                <div class="badge bg-primary fs-6 p-2">
+                                    <span id="pending-analysis">-</span>
+                                </div>
+                                <p class="mt-2 mb-0 text-muted">Pending</p>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="text-center">
+                                <div class="badge bg-success fs-6 p-2">
+                                    <span id="avg-confidence">-</span>
+                                </div>
+                                <p class="mt-2 mb-0 text-muted">Avg Confidence</p>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="text-center">
+                                <div class="badge bg-info fs-6 p-2">
+                                    <span id="last-analysis">-</span>
+                                </div>
+                                <p class="mt-2 mb-0 text-muted">Last Analysis</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Trading Status -->
+                <div class="status-card">
+                    <h5 class="mb-3">
+                        <i class="fas fa-chart-line me-2"></i>Trading Status
+                    </h5>
+                    <div class="row">
+                        <div class="col-md-3">
+                            <div class="text-center">
+                                <div class="badge bg-success fs-6 p-2">
+                                    <span id="open-positions">-</span>
+                                </div>
+                                <p class="mt-2 mb-0 text-muted">Open Positions</p>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="text-center">
+                                <div class="badge bg-info fs-6 p-2">
+                                    <span id="total-pnl">-</span>
+                                </div>
+                                <p class="mt-2 mb-0 text-muted">Total P&L</p>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="text-center">
+                                <div class="badge bg-warning fs-6 p-2">
+                                    <span id="day-pnl">-</span>
+                                </div>
+                                <p class="mt-2 mb-0 text-muted">Day P&L</p>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="text-center">
+                                <div class="badge bg-primary fs-6 p-2">
+                                    <span id="account-value">-</span>
+                                </div>
+                                <p class="mt-2 mb-0 text-muted">Account Value</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column: Activity Log -->
+            <div class="col-md-4">
+                <div class="status-card">
+                    <h5 class="mb-3">
+                        <i class="fas fa-list me-2"></i>Activity Log
+                    </h5>
+                    <div id="log" style="max-height: 400px; overflow-y: auto;">
+                        <div class="log-entry">
+                            <i class="fas fa-info-circle me-2"></i>Dashboard initialized
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Auto-refresh indicator -->
+        <div class="row mt-3">
+            <div class="col-12">
+                <p class="text-muted text-center">
+                    <i class="fas fa-sync me-1"></i>Auto-refreshing every 30 seconds
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Connection Check Modal -->
+    <div class="modal fade" id="connectionCheckModal" tabindex="-1" aria-labelledby="connectionCheckModalLabel"
+        aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="connectionCheckModalLabel">
+                        <i class="fas fa-link me-2"></i>Connection Check Result
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="connectionCheckResult">
+                        <div class="text-center">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Checking connection...</span>
+                            </div>
+                            <p class="mt-2">Checking connection...</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-primary" id="recheckButton" onclick="recheckConnection()">
+                        <i class="fas fa-refresh me-1"></i>Check Again
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 
     <!-- Bootstrap 5 JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
     <script>
-        const scraperStatus = document.getElementById('scraper-status');
-        const analysisStatus = document.getElementById('analysis-status');
-        const tradeStatus = document.getElementById('trade-status');
+        // Initialize variables
         const logDiv = document.getElementById('log');
+        const wsStatusDiv = document.getElementById('websocket-status');
+        const wsStatusText = document.getElementById('ws-status-text');
+        const botToggle = document.getElementById('botToggle');
+        const botStatusText = document.getElementById('bot-status-text');
+        const botToggleLabel = document.getElementById('bot-toggle-label');
 
-        const socket = new WebSocket(
-            'ws://' + window.location.host + '/ws/dashboard/'
-        );
+        // WebSocket connection
+        let socket = null;
+        let reconnectAttempts = 0;
+        const maxReconnectAttempts = 5;
 
-        socket.onmessage = function(e) {
-            const data = JSON.parse(e.data);
-            console.log('WebSocket message:', data);
+        function connectWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/ws/dashboard/`;
 
-            const logEntry = document.createElement('div');
-            logEntry.classList.add('log-entry');
+            socket = new WebSocket(wsUrl);
 
-            let logText = '';
+            socket.onopen = function (e) {
+                console.log('WebSocket connected');
+                wsStatusDiv.className = 'websocket-status websocket-connected';
+                wsStatusText.textContent = 'WebSocket Connected';
+                reconnectAttempts = 0;
+                addLogEntry('WebSocket connected successfully', 'text-success');
+            };
 
-            if (data.type === 'message') {
-                logText = `System: ${data.message}`;
-            } else if (data.type === 'scraper_status') {
-                scraperStatus.textContent = data.data.status;
-                logText = `Scraper: ${data.data.status}`;
-            } else if (data.type === 'new_post') {
-                logText = `New Post: From ${data.data.source} - <a href="${data.data.url}" target="_blank">${data.data.content_preview}</a>`;
-            } else if (data.type === 'scraper_skipped') {
-                logText = `Scraper: Skipped <a href="${data.data.url}" target="_blank">${data.data.url}</a> (already exists)`;
-            } else if (data.type === 'scraper_error') {
-                logText = `Scraper Error: ${data.data.error}`;
-                logEntry.classList.add('text-danger');
-            } else if (data.type === 'analysis_status') {
-                analysisStatus.textContent = data.data.status;
-                logText = `Analysis: Post ${data.data.post_id} - ${data.data.status}`;
-            } else if (data.type === 'new_analysis') {
-                logText = `New Analysis: Post ${data.data.post_id} - ${data.data.symbol} ${data.data.direction} (Confidence: ${data.data.confidence})`;
-                if (data.data.trade_executed) {
-                    logEntry.classList.add('trade-executed');
-                    logText += ` - **TRADE EXECUTED**`;
+            socket.onclose = function (e) {
+                console.log('WebSocket disconnected');
+                wsStatusDiv.className = 'websocket-status websocket-disconnected';
+                wsStatusText.textContent = 'WebSocket Disconnected';
+                addLogEntry('WebSocket disconnected', 'text-warning');
+
+                // Auto-reconnect
+                if (reconnectAttempts < maxReconnectAttempts) {
+                    reconnectAttempts++;
+                    setTimeout(() => {
+                        addLogEntry(`Reconnecting... (${reconnectAttempts}/${maxReconnectAttempts})`, 'text-info');
+                        connectWebSocket();
+                    }, 3000);
                 }
-            } else if (data.type === 'analysis_error') {
-                logText = `Analysis Error: Post ${data.data.post_id} - ${data.data.error}`;
-                logEntry.classList.add('text-danger');
-            } else if (data.type === 'trade_status') {
-                tradeStatus.textContent = data.data.status;
-                logText = `Trade: Analysis ${data.data.analysis_id} - ${data.data.status}`;
-            } else if (data.type === 'new_trade') {
-                logText = `New Trade: ${data.data.direction} ${data.data.quantity} of ${data.data.symbol} (ID: ${data.data.trade_id})`;
-                logEntry.classList.add('text-success');
-            } else if (data.type === 'trade_skipped') {
-                logText = `Trade: Skipped for analysis ${data.data.analysis_id} - ${data.data.reason}`;
-            } else if (data.type === 'trade_error') {
-                logText = `Trade Error: Analysis ${data.data.analysis_id} - ${data.data.error}`;
-                logEntry.classList.add('text-danger');
-            } else if (data.type === 'trade_closed') {
-                logText = `Trade Closed: ${data.data.symbol} (ID: ${data.data.trade_id}) - ${data.data.message}`;
-                logEntry.classList.add('text-info');
+            };
+
+            socket.onmessage = function (e) {
+                const data = JSON.parse(e.data);
+                addLogEntry(`Real-time update: ${data.message}`, 'text-info');
+            };
+
+            socket.onerror = function (e) {
+                console.error('WebSocket error:', e);
+                addLogEntry('WebSocket error occurred', 'text-danger');
+            };
+        }
+
+        // Add log entry function
+        function addLogEntry(message, className = 'text-primary') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.className = 'log-entry ' + className;
+            logEntry.innerHTML = `
+                <i class="fas fa-circle me-2" style="font-size: 6px;"></i>
+                <small class="text-muted">${timestamp}</small> ${message}
+            `;
+            logDiv.insertBefore(logEntry, logDiv.firstChild);
+
+            // Keep only last 20 entries
+            while (logDiv.children.length > 20) {
+                logDiv.removeChild(logDiv.lastChild);
+            }
+        }
+
+        // Refresh data function
+        function refreshData() {
+            fetch('/api/system-status/')
+                .then(response => response.json())
+                .then(data => {
+                    // Update API status
+                    updateAPIStatus(data.api_status);
+
+                    // Update metrics
+                    document.getElementById('posts-count').textContent = data.statistics.posts_24h || 0;
+                    document.getElementById('analyses-count').textContent = data.statistics.analyses_24h || 0;
+                    document.getElementById('trades-count').textContent = data.statistics.trades_24h || 0;
+                    document.getElementById('win-rate').textContent = (data.performance.win_rate || 0) + '%';
+
+                    // Update status sections
+                    document.getElementById('sources-active').textContent = data.statistics.active_sources || 0;
+                    document.getElementById('last-scrape').textContent = 'Recently';
+                    document.getElementById('next-scrape').textContent = 'Scheduled';
+
+                    document.getElementById('pending-analysis').textContent = (data.statistics.total_posts - data.statistics.total_analyses) || 0;
+                    document.getElementById('avg-confidence').textContent = (data.performance.avg_confidence || 0) + '%';
+                    document.getElementById('last-analysis').textContent = 'Recently';
+
+                    document.getElementById('open-positions').textContent = data.statistics.open_trades || 0;
+                    document.getElementById('total-pnl').textContent = '$' + (data.performance.total_pnl_24h || 0).toFixed(2);
+                    document.getElementById('day-pnl').textContent = '$' + (data.performance.total_pnl_24h || 0).toFixed(2);
+                    document.getElementById('account-value').textContent = '$10,000';
+
+                    // Update bot status
+                    if (data.trading_config && data.trading_config.bot_enabled !== undefined) {
+                        const botEnabled = data.trading_config.bot_enabled;
+                        botToggle.checked = botEnabled;
+                        botStatusText.textContent = botEnabled ?
+                            'Bot is currently active and monitoring markets' :
+                            'Bot is currently disabled';
+                        botToggleLabel.textContent = botEnabled ? 'ENABLED' : 'DISABLED';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching system status:', error);
+                    addLogEntry('Failed to refresh system data', 'text-danger');
+                });
+        }
+
+        // Update API status badges
+        function updateAPIStatus(apiStatus) {
+            const statusMap = {
+                'openai': { element: 'OpenAI', index: 0 },
+                'news_sources': { element: 'News Sources', index: 1 },
+                'alpaca': { element: 'Alpaca', index: 2 }
+            };
+
+            const badges = document.querySelectorAll('#api-status-row .status-badge');
+
+            Object.keys(statusMap).forEach(api => {
+                const statusInfo = apiStatus[api];
+                const badge = badges[statusMap[api].index];
+                if (badge && statusInfo) {
+                    const statusText = statusInfo.status;
+                    const isOk = statusText === 'ok';
+
+                    // Update badge
+                    badge.className = 'badge status-badge ' + (isOk ? 'bg-success' : statusText === 'warning' ? 'bg-warning text-dark' : 'bg-danger');
+                    badge.textContent = isOk ? 'Connected' : (statusText === 'warning' ? 'Warning' : 'Error');
+
+                    // Update card border based on status
+                    const cardContainer = badge.closest('.col-md-4');
+                    const card = cardContainer ? cardContainer.querySelector('.card') : null;
+                    if (card) {
+                        // Remove existing border classes
+                        card.classList.remove('border-success', 'border-warning', 'border-danger');
+                        // Add new border class
+                        if (isOk) {
+                            card.classList.add('border-success');
+                        } else if (statusText === 'warning') {
+                            card.classList.add('border-warning');
+                        } else {
+                            card.classList.add('border-danger');
+                        }
+                    }
+
+                    // Update News Sources details
+                    if (api === 'news_sources') {
+                        const detailsElement = document.getElementById('news-sources-details');
+                        if (detailsElement && statusInfo.count !== undefined) {
+                            detailsElement.textContent = `${statusInfo.active_count}/${statusInfo.count} active`;
+                        }
+                    }
+                }
+            });
+        }
+
+        // Bot status toggle handler
+        function updateBotStatus() {
+            fetch('/api/toggle-bot-status/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCookie('csrftoken')
+                }
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        const statusText = data.bot_enabled ? 'enabled' : 'disabled';
+                        addLogEntry(`Bot ${statusText} successfully`, 'text-success');
+                    } else {
+                        addLogEntry(`Failed to update bot status: ${data.error}`, 'text-danger');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    addLogEntry('Failed to update bot status', 'text-danger');
+                });
+        }
+
+        // Get CSRF token
+        function getCookie(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+
+        // Quick Tools Functions
+        function exportSystemData() {
+            if (confirm('Export system data to CSV? This may take a moment.')) {
+                alert('Data export functionality coming soon!');
+            }
+        }
+
+        function viewSystemLogs() {
+            window.open('/admin/core/', '_blank');
+        }
+
+        function clearSystemCache() {
+            if (confirm('Clear system cache? This will refresh all cached data.')) {
+                alert('Cache clearing functionality coming soon!');
+            }
+        }
+
+        // Initialize dashboard
+        document.addEventListener('DOMContentLoaded', function () {
+            // Connect WebSocket
+            connectWebSocket();
+
+            // Initial data refresh
+            refreshData();
+
+            // Set up auto-refresh
+            setInterval(refreshData, 30000);
+
+            // Bot toggle event listener
+            if (botToggle) {
+                botToggle.addEventListener('change', function () {
+                    const isEnabled = this.checked;
+                    const statusText = isEnabled ?
+                        'Bot is currently active and monitoring markets' :
+                        'Bot is currently disabled';
+                    const labelText = isEnabled ? 'ENABLED' : 'DISABLED';
+
+                    botStatusText.textContent = statusText;
+                    botToggleLabel.textContent = labelText;
+                    updateBotStatus();
+                    addLogEntry(`Bot status changed to: ${labelText}`, 'text-info');
+                });
             }
 
-            logEntry.innerHTML = logText;
-            logDiv.prepend(logEntry); // Add new entries to the top
-        };
+            addLogEntry('Dashboard fully loaded and ready', 'text-success');
+        });
 
-        socket.onclose = function(e) {
-            console.error('WebSocket closed unexpectedly');
-            const errorEntry = document.createElement('div');
-            errorEntry.classList.add('log-entry', 'text-danger');
-            errorEntry.textContent = 'WebSocket disconnected. Please refresh.';
-            logDiv.prepend(errorEntry);
-        };
+        // Connection check functions
+        let currentService = null;
 
-        socket.onerror = function(e) {
-            console.error('WebSocket error', e);
-            const errorEntry = document.createElement('div');
-            errorEntry.classList.add('log-entry', 'text-danger');
-            errorEntry.textContent = 'WebSocket error occurred.';
-            logDiv.prepend(errorEntry);
-        };
+        function checkConnection(service) {
+            currentService = service;
+            const modal = new bootstrap.Modal(document.getElementById('connectionCheckModal'));
+
+            // Reset modal content
+            document.getElementById('connectionCheckResult').innerHTML = `
+                <div class="text-center">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Checking connection...</span>
+                    </div>
+                    <p class="mt-2">Checking ${service.toUpperCase()} connection...</p>
+                </div>
+            `;
+
+            // Update modal title
+            document.getElementById('connectionCheckModalLabel').innerHTML = `
+                <i class="fas fa-link me-2"></i>${service.toUpperCase()} Connection Check
+            `;
+
+            modal.show();
+
+            // Make API call to check specific service
+            fetch(`/api/check-connection/${service}`)
+                .then(response => response.json())
+                .then(data => {
+                    displayConnectionResult(data, service);
+                })
+                .catch(error => {
+                    displayConnectionResult({
+                        status: 'error',
+                        message: 'Failed to check connection: ' + error.message
+                    }, service);
+                });
+        }
+
+        function recheckConnection() {
+            if (currentService) {
+                checkConnection(currentService);
+            }
+        }
+
+        function displayConnectionResult(data, service) {
+            const resultDiv = document.getElementById('connectionCheckResult');
+
+            let statusIcon, statusClass, statusText;
+
+            switch (data.status) {
+                case 'ok':
+                    statusIcon = 'fas fa-check-circle';
+                    statusClass = 'text-success';
+                    statusText = 'Connected';
+                    break;
+                case 'warning':
+                    statusIcon = 'fas fa-exclamation-triangle';
+                    statusClass = 'text-warning';
+                    statusText = 'Warning';
+                    break;
+                case 'error':
+                    statusIcon = 'fas fa-times-circle';
+                    statusClass = 'text-danger';
+                    statusText = 'Error';
+                    break;
+                default:
+                    statusIcon = 'fas fa-question-circle';
+                    statusClass = 'text-secondary';
+                    statusText = 'Unknown';
+            }
+
+            let resultHtml = `
+                <div class="text-center mb-3">
+                    <i class="${statusIcon} ${statusClass}" style="font-size: 3rem;"></i>
+                    <h4 class="mt-2 ${statusClass}">${statusText}</h4>
+                </div>
+                <div class="alert alert-${data.status === 'ok' ? 'success' : data.status === 'warning' ? 'warning' : 'danger'}">
+                    <strong>Status:</strong> ${data.message}
+                </div>
+            `;
+
+            // Add additional details if available
+            if (data.account_status) {
+                resultHtml += `
+                    <div class="row">
+                        <div class="col-6">
+                            <strong>Account Status:</strong><br>
+                            <span class="badge bg-info">${data.account_status}</span>
+                        </div>
+                `;
+                if (data.buying_power) {
+                    resultHtml += `
+                        <div class="col-6">
+                            <strong>Buying Power:</strong><br>
+                            <span class="text-success">$${data.buying_power}</span>
+                        </div>
+                    `;
+                }
+                resultHtml += `</div>`;
+            }
+
+            if (data.count !== undefined) {
+                resultHtml += `
+                    <div class="mt-2">
+                        <strong>Sources:</strong> ${data.active_count}/${data.count} active
+                    </div>
+                `;
+            }
+
+            resultDiv.innerHTML = resultHtml;
+        }
     </script>
 </body>
+
 </html>
