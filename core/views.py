@@ -82,6 +82,9 @@ def system_status_api(request):
             "alpaca": check_alpaca_api(),
         }
 
+        # Get real Alpaca trading data
+        alpaca_data = get_alpaca_trading_data()
+
         # System Statistics
         stats = {
             "total_sources": Source.objects.count(),
@@ -92,11 +95,11 @@ def system_status_api(request):
             "total_analyses": Analysis.objects.count(),
             "analyses_24h": Analysis.objects.filter(created_at__gte=last_24h).count(),
             "total_trades": Trade.objects.count(),
-            "open_trades": Trade.objects.filter(status="open").count(),
+            "open_trades": alpaca_data["open_positions"],  # Real Alpaca positions
             "trades_24h": Trade.objects.filter(created_at__gte=last_24h).count(),
         }
 
-        # Trading Performance
+        # Trading Performance from Alpaca
         recent_trades = Trade.objects.filter(created_at__gte=last_24h)
         winning_trades = recent_trades.filter(realized_pnl__gt=0).count()
         total_recent_trades = recent_trades.count()
@@ -106,12 +109,16 @@ def system_status_api(request):
             else 0
         )
 
-        total_pnl = sum(trade.realized_pnl or 0 for trade in recent_trades)
-
         performance = {
             "win_rate": round(win_rate, 1),
-            "total_pnl_24h": round(total_pnl, 2),
+            "total_pnl_24h": round(alpaca_data["total_pnl"], 2),  # Real Alpaca P&L
+            "day_pnl": round(alpaca_data["day_pnl"], 2),  # Real day P&L
             "avg_confidence": get_avg_confidence(),
+            "account_value": round(
+                alpaca_data["account_value"], 2
+            ),  # Real account value
+            "buying_power": round(alpaca_data.get("buying_power", 0), 2),
+            "alpaca_positions": alpaca_data.get("positions", []),
         }
 
         # Source Status
@@ -279,18 +286,84 @@ def check_alpaca_api():
     except ImportError:
         return {"status": "error", "message": "alpaca-py package not installed"}
     except Exception as e:
-        error_msg = str(e).lower()
-        if "unauthorized" in error_msg or "authentication" in error_msg:
-            return {"status": "error", "message": "Invalid API credentials"}
-        elif "forbidden" in error_msg or "access" in error_msg:
-            return {
-                "status": "error",
-                "message": "Access forbidden - check permissions",
-            }
-        elif "timeout" in error_msg or "connection" in error_msg:
-            return {"status": "warning", "message": "Connection timeout"}
-        else:
-            return {"status": "error", "message": f"Connection error: {str(e)}"}
+        return {"status": "error", "message": f"Connection failed: {str(e)}"}
+
+
+def get_alpaca_trading_data():
+    """Get real trading data from Alpaca API."""
+    api_key = os.getenv("ALPACA_API_KEY")
+    secret_key = os.getenv("ALPACA_SECRET_KEY")
+
+    if not api_key or not secret_key:
+        return {
+            "open_positions": 0,
+            "account_value": 10000,
+            "total_pnl": 0.0,
+            "day_pnl": 0.0,
+            "error": "API keys not configured",
+        }
+
+    try:
+        from alpaca.trading.client import TradingClient
+
+        trading_client = TradingClient(
+            api_key=api_key, secret_key=secret_key, paper=True
+        )
+
+        # Get account info
+        account = trading_client.get_account()
+
+        # Get positions
+        positions = trading_client.get_all_positions()
+
+        # Calculate metrics
+        open_positions = len(positions)
+        account_value = (
+            float(account.portfolio_value) if account.portfolio_value else 10000
+        )
+        total_pnl = (
+            float(account.total_profit_loss)
+            if hasattr(account, "total_profit_loss") and account.total_profit_loss
+            else 0.0
+        )
+        day_pnl = (
+            float(account.day_profit_loss)
+            if hasattr(account, "day_profit_loss") and account.day_profit_loss
+            else 0.0
+        )
+
+        return {
+            "open_positions": open_positions,
+            "account_value": account_value,
+            "total_pnl": total_pnl,
+            "day_pnl": day_pnl,
+            "buying_power": (
+                float(account.buying_power) if account.buying_power else 0.0
+            ),
+            "positions": [
+                {
+                    "symbol": pos.symbol,
+                    "qty": float(pos.qty),
+                    "market_value": (
+                        float(pos.market_value) if pos.market_value else 0.0
+                    ),
+                    "unrealized_pl": (
+                        float(pos.unrealized_pl) if pos.unrealized_pl else 0.0
+                    ),
+                }
+                for pos in positions
+            ],
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting Alpaca trading data: {e}")
+        return {
+            "open_positions": 0,
+            "account_value": 10000,
+            "total_pnl": 0.0,
+            "day_pnl": 0.0,
+            "error": str(e),
+        }
 
 
 def check_news_sources_status():
@@ -370,11 +443,61 @@ def check_single_connection(request, service):
 
 def manual_close_trade_view(request):
     logger.info("Manual close trade view accessed.")
-    open_trades = Trade.objects.filter(status="open")
+
+    # Get real Alpaca positions instead of just local database
+    alpaca_data = get_alpaca_trading_data()
+    alpaca_positions = alpaca_data.get("positions", [])
+
+    # Convert Alpaca positions to trade-like objects for the template
+    open_trades = []
+    for pos in alpaca_positions:
+        # Create a proper object with all necessary attributes
+        class AlpacaTrade:
+            def __init__(self, position_data):
+                self.id = f"alpaca_{position_data['symbol']}"
+                self.symbol = position_data["symbol"]
+                self.direction = "buy" if float(position_data["qty"]) > 0 else "sell"
+                self.quantity = abs(float(position_data["qty"]))
+                qty = float(position_data["qty"])
+                market_value = float(position_data["market_value"])
+                # For short positions, market_value is negative, so we need absolute value
+                self.entry_price = abs(market_value) / abs(qty) if qty != 0 else 0
+                self.status = "open"
+                self.unrealized_pnl = float(position_data["unrealized_pl"])
+                self.created_at = timezone.now()
+                self.alpaca_position = True
+                # Initialize TP/SL as None for new positions
+                self.take_profit_price = None
+                self.stop_loss_price = None
+
+                # Check if we have stored TP/SL settings for this symbol
+                try:
+                    stored_trade = Trade.objects.get(
+                        symbol=self.symbol,
+                        status="open",
+                        alpaca_order_id=f"position_{self.symbol}",
+                    )
+                    self.take_profit_price = stored_trade.take_profit_price
+                    self.stop_loss_price = stored_trade.stop_loss_price
+                except Trade.DoesNotExist:
+                    pass  # No stored settings
+
+        trade_obj = AlpacaTrade(pos)
+        open_trades.append(trade_obj)
+
+    # Also include local database trades that might have Alpaca order IDs
+    local_trades = Trade.objects.filter(status="open")
+    for trade in local_trades:
+        # Only add if not already represented by Alpaca position
+        if not any(pos["symbol"] == trade.symbol for pos in alpaca_positions):
+            trade.alpaca_position = False
+            open_trades.append(trade)
 
     if request.method == "POST":
+        action = request.POST.get("action")
         trade_id = request.POST.get("trade_id")
-        if trade_id:
+
+        if action == "close_trade" and trade_id:
             logger.info(f"Attempting to close trade with ID: {trade_id}")
             try:
                 trade = Trade.objects.get(id=trade_id, status="open")
@@ -392,7 +515,126 @@ def manual_close_trade_view(request):
                     f"An unexpected error occurred while processing manual close for trade {trade_id}: {e}"
                 )
 
-    return render(request, "core/manual_close_trade.html", {"open_trades": open_trades})
+        elif action == "edit_trade" and trade_id:
+            logger.info(f"Attempting to edit trade settings for ID: {trade_id}")
+            try:
+                take_profit_percent = request.POST.get("take_profit_percent")
+                stop_loss_percent = request.POST.get("stop_loss_percent")
+
+                # Handle Alpaca positions (they have alpaca_ prefix)
+                if trade_id.startswith("alpaca_"):
+                    symbol = trade_id.replace("alpaca_", "")
+                    logger.info(
+                        f"Updating take profit/stop loss for Alpaca position: {symbol}"
+                    )
+
+                    # Get current position data to calculate entry price
+                    alpaca_data = get_alpaca_trading_data()
+                    alpaca_positions = alpaca_data.get("positions", [])
+                    position = next(
+                        (p for p in alpaca_positions if p["symbol"] == symbol), None
+                    )
+
+                    if position:
+                        entry_price = (
+                            float(position["market_value"])
+                            / abs(float(position["qty"]))
+                            if float(position["qty"]) != 0
+                            else 0
+                        )
+
+                        # Calculate actual prices from percentages
+                        take_profit_price = None
+                        stop_loss_price = None
+
+                        if take_profit_percent:
+                            take_profit_price = entry_price * (
+                                1 + float(take_profit_percent) / 100
+                            )
+
+                        if stop_loss_percent:
+                            stop_loss_price = entry_price * (
+                                1 - float(stop_loss_percent) / 100
+                            )
+
+                        # Find or create a basic analysis for this Alpaca position
+                        from .models import Analysis
+
+                        analysis, _ = Analysis.objects.get_or_create(
+                            symbol=symbol,
+                            defaults={
+                                "post_id": 1,  # We'll use the first post as placeholder
+                                "direction": (
+                                    "buy" if float(position["qty"]) > 0 else "sell"
+                                ),
+                                "confidence": 0.8,  # Default confidence for manual settings
+                                "reason": f"Manual take profit/stop loss settings for {symbol} position",
+                            },
+                        )
+
+                        # Create or update a local trade record to store the settings
+                        trade, created = Trade.objects.get_or_create(
+                            symbol=symbol,
+                            status="open",
+                            alpaca_order_id=f"position_{symbol}",
+                            defaults={
+                                "analysis": analysis,
+                                "direction": (
+                                    "buy" if float(position["qty"]) > 0 else "sell"
+                                ),
+                                "quantity": abs(float(position["qty"])),
+                                "entry_price": entry_price,
+                            },
+                        )
+
+                        # Update the take profit and stop loss prices
+                        if take_profit_price:
+                            trade.take_profit_price = take_profit_price
+                        if stop_loss_price:
+                            trade.stop_loss_price = stop_loss_price
+                        trade.save()
+
+                        logger.info(
+                            f"Updated trade settings for {symbol}: TP=${take_profit_price:.2f if take_profit_price else 'None'}, SL=${stop_loss_price:.2f if stop_loss_price else 'None'}"
+                        )
+
+                        # TODO: Implement actual Alpaca bracket order creation here
+                        # This would involve canceling existing position and creating new bracket order
+
+                else:
+                    # Handle local database trades
+                    trade = Trade.objects.get(id=trade_id, status="open")
+
+                    # Calculate actual prices from percentages
+                    if take_profit_percent:
+                        trade.take_profit_price = trade.entry_price * (
+                            1 + float(take_profit_percent) / 100
+                        )
+
+                    if stop_loss_percent:
+                        trade.stop_loss_price = trade.entry_price * (
+                            1 - float(stop_loss_percent) / 100
+                        )
+
+                    trade.save()
+                    logger.info(f"Updated trade settings for trade {trade.id}")
+
+                return redirect("manual_close_trade")
+
+            except Exception as e:
+                logger.error(f"Error updating trade settings for {trade_id}: {e}")
+                # Could add error message to be displayed to user
+
+    # Calculate total unrealized P&L for summary
+    total_unrealized_pnl = sum(
+        getattr(trade, "unrealized_pnl", 0) for trade in open_trades
+    )
+
+    return render(
+        request,
+        "core/manual_close_trade.html",
+        {"open_trades": open_trades, "total_unrealized_pnl": total_unrealized_pnl},
+    )
 
 
 def test_page_view(request):

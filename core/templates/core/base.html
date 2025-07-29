@@ -1,0 +1,48 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- Dynamic Favicon based on color scheme -->
+    <link rel="icon" href="{% static 'img/logo-b.png' %}" media="(prefers-color-scheme: light)">
+    <link rel="icon" href="{% static 'img/logo-w.png' %}" media="(prefers-color-scheme: dark)">
+    <link rel="icon" href="{% static 'img/logo-b.png' %}"> <!-- Default fallback -->
+
+    <!-- Apple Touch Icon variants -->
+    <link rel="apple-touch-icon" href="{% static 'img/logo-b.png' %}" media="(prefers-color-scheme: light)">
+    <link rel="apple-touch-icon" href="{% static 'img/logo-w.png' %}" media="(prefers-color-scheme: dark)">
+
+    <title>{% block title %}News Trader{% endblock %}</title>
+
+    {% block extra_head %}{% endblock %}
+</head>
+
+<body>
+    {% block content %}{% endblock %}
+
+    <script>
+        // JavaScript fallback for browsers that don't support CSS media queries in link tags
+        function updateFavicon() {
+            const isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            const favicon = document.querySelector('link[rel="icon"]:not([media])');
+            if (favicon) {
+                favicon.href = isDark ? '{% static "img/logo-w.png" %}' : '{% static "img/logo-b.png" %}';
+            }
+        }
+
+        // Update favicon on page load
+        updateFavicon();
+
+        // Listen for color scheme changes
+        if (window.matchMedia) {
+            window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', updateFavicon);
+        }
+    </script>
+
+    {% block extra_scripts %}{% endblock %}
+</body>
+
+</html>

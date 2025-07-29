@@ -1,475 +1,436 @@
-<!DOCTYPE html>
-<html lang="en">
+{% extends 'core/base.html' %}
 
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Open Trades - News Trader</title>
-    <!-- Bootstrap 5 CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Font Awesome for icons -->
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <style>
-        body {
-            padding-top: 20px;
-            background-color: #f8f9fa;
-        }
+{% block title %}Open Trades - News Trader{% endblock %}
 
-        .trade-card {
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-            margin-bottom: 20px;
-            overflow: hidden;
-        }
+{% block extra_head %}
+<!-- Bootstrap 5 CSS -->
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<!-- Font Awesome for icons -->
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+<style>
+    body {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
 
-        .profit-positive {
-            color: #28a745;
-            font-weight: bold;
-        }
+    .main-container {
+        padding-top: 20px;
+        max-width: 1400px;
+        margin: 0 auto;
+    }
 
-        .profit-negative {
-            color: #dc3545;
-            font-weight: bold;
-        }
+    .header-section {
+        background: rgba(255, 255, 255, 0.95);
+        border-radius: 15px;
+        padding: 30px;
+        margin-bottom: 30px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        backdrop-filter: blur(10px);
+    }
 
-        .profit-neutral {
-            color: #6c757d;
-            font-weight: bold;
-        }
+    .card {
+        background: rgba(255, 255, 255, 0.95);
+        border: none;
+        border-radius: 15px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        margin-bottom: 20px;
+        overflow: hidden;
+    }
 
-        .status-badge {
-            padding: 6px 12px;
-            border-radius: 20px;
-            font-size: 0.85rem;
-            font-weight: 600;
-        }
+    .profit-positive {
+        color: #28a745;
+        font-weight: bold;
+    }
 
-        .status-open {
-            background-color: #e3f2fd;
-            color: #1976d2;
-        }
+    .profit-negative {
+        color: #dc3545;
+        font-weight: bold;
+    }
 
-        .status-pending {
-            background-color: #fff3e0;
-            color: #f57c00;
-        }
+    .profit-neutral {
+        color: #6c757d;
+    }
 
-        .close-btn {
-            background: linear-gradient(45deg, #f44336, #d32f2f);
-            border: none;
-            border-radius: 8px;
-            color: white;
-            padding: 8px 16px;
-            font-weight: 600;
-            transition: all 0.3s ease;
-        }
+    .direction-long {
+        color: #28a745;
+        font-weight: bold;
+    }
 
-        .close-btn:hover {
-            background: linear-gradient(45deg, #d32f2f, #b71c1c);
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(244, 67, 54, 0.3);
-            color: white;
-        }
+    .direction-short {
+        color: #dc3545;
+        font-weight: bold;
+    }
 
-        .trade-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 1rem;
-        }
+    .status-badge {
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 0.85em;
+        font-weight: 500;
+    }
 
-        .trade-stats {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 1rem;
-            padding: 1rem;
-        }
+    .status-open {
+        background-color: #d4edda;
+        color: #155724;
+    }
 
-        .stat-item {
-            text-align: center;
-            padding: 0.5rem;
-        }
+    .close-btn {
+        background: linear-gradient(45deg, #dc3545, #c82333);
+        border: none;
+        color: white;
+        border-radius: 8px;
+        padding: 6px 12px;
+        transition: all 0.3s ease;
+    }
 
-        .stat-label {
-            font-size: 0.8rem;
-            color: #6c757d;
-            text-transform: uppercase;
-            font-weight: 600;
-            margin-bottom: 0.25rem;
-        }
+    .close-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(220, 53, 69, 0.3);
+        color: white;
+    }
 
-        .stat-value {
-            font-size: 1.1rem;
-            font-weight: bold;
-            color: #2c3e50;
-        }
+    .edit-btn {
+        transition: all 0.3s ease;
+    }
 
-        .empty-state {
-            text-align: center;
-            padding: 4rem 2rem;
-            color: #6c757d;
-        }
+    .edit-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0, 123, 255, 0.3);
+    }
 
-        .empty-state i {
-            font-size: 4rem;
-            margin-bottom: 1rem;
-            opacity: 0.5;
-        }
+    .table {
+        margin-bottom: 0;
+    }
 
-        .table-responsive {
-            border-radius: 12px;
-            overflow: hidden;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-        }
+    .table thead th {
+        background: linear-gradient(45deg, #667eea, #764ba2);
+        color: white;
+        border: none;
+        font-weight: 600;
+        text-transform: uppercase;
+        font-size: 0.9em;
+        letter-spacing: 0.5px;
+    }
 
-        .table thead th {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            font-weight: 600;
-            padding: 1rem 0.75rem;
-        }
+    .table td {
+        vertical-align: middle;
+        border-color: #e9ecef;
+        padding: 15px 12px;
+    }
 
-        .table tbody tr {
-            transition: background-color 0.2s ease;
-        }
+    .tp-sl-badge {
+        display: inline-block;
+        background: #e3f2fd;
+        color: #1976d2;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 0.7em;
+        margin-left: 5px;
+    }
 
-        .table tbody tr:hover {
-            background-color: #f8f9fa;
-        }
+    .duration {
+        font-size: 0.9em;
+        color: #6c757d;
+    }
 
-        .duration {
-            font-size: 0.9rem;
-            color: #6c757d;
-        }
+    .metric-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 20px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    }
 
-        .symbol-badge {
-            background: linear-gradient(45deg, #4facfe 0%, #00f2fe 100%);
-            color: white;
-            padding: 4px 8px;
-            border-radius: 6px;
-            font-weight: bold;
-            font-size: 0.9rem;
-        }
+    .symbol-badge {
+        background: linear-gradient(45deg, #4facfe 0%, #00f2fe 100%);
+        color: white;
+        padding: 4px 8px;
+        border-radius: 6px;
+        font-weight: bold;
+        font-size: 0.9rem;
+    }
+</style>
+{% endblock %}
 
-        .direction-long {
-            color: #28a745;
-            font-weight: bold;
-        }
-
-        .direction-short {
-            color: #dc3545;
-            font-weight: bold;
-        }
-    </style>
-</head>
-
-<body>
-    <div class="container-fluid">
-        <!-- Header -->
-        <div class="row mb-4">
-            <div class="col-12">
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                    <h1><i class="fas fa-chart-line text-primary"></i> Open Trades</h1>
-                    <div class="d-flex gap-2">
-                        <button id="refresh-trades" class="btn btn-outline-primary">
-                            <i id="refresh-icon" class="fas fa-sync-alt"></i> Refresh
-                        </button>
-                    </div>
-                </div>
-
-                <!-- PAGES NAVIGATION MENU AT TOP -->
-                <nav class="navbar navbar-expand-lg mb-4"
-                    style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 12px; padding: 12px 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
-                    <div class="container-fluid">
-                        <span class="navbar-brand mb-0 h5 text-white fw-bold">
-                            <i class="fas fa-sitemap me-2"></i>PAGES
-                        </span>
-                        <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
-                            data-bs-target="#pageNavigation">
-                            <span class="navbar-toggler-icon"></span>
-                        </button>
-                        <div class="collapse navbar-collapse" id="pageNavigation">
-                            <ul class="navbar-nav me-auto mb-2 mb-lg-0">
-                                <li class="nav-item">
-                                    <a class="nav-link text-white fw-semibold" href="/dashboard/"
-                                        style="border-radius: 6px;"
-                                        onmouseover="this.style.background='rgba(255,255,255,0.2)'"
-                                        onmouseout="this.style.background='transparent'">
-                                        <i class="fas fa-chart-line me-1"></i> Dashboard
-                                    </a>
-                                </li>
-                                <li class="nav-item">
-                                    <a class="nav-link text-white fw-semibold" href="/test-page/"
-                                        style="border-radius: 6px;"
-                                        onmouseover="this.style.background='rgba(255,255,255,0.2)'"
-                                        onmouseout="this.style.background='transparent'">
-                                        <i class="fas fa-flask me-1"></i> Test Center
-                                    </a>
-                                </li>
-                                <li class="nav-item">
-                                    <a class="nav-link text-white fw-semibold active" href="/close-trade/"
-                                        style="border-radius: 6px; background: rgba(255,255,255,0.2);">
-                                        <i class="fas fa-times-circle me-1"></i> Open Trades
-                                    </a>
-                                </li>
-                                <li class="nav-item">
-                                    <a class="nav-link text-white fw-semibold" href="/admin/" target="_blank"
-                                        style="border-radius: 6px;"
-                                        onmouseover="this.style.background='rgba(255,255,255,0.2)'"
-                                        onmouseout="this.style.background='transparent'">
-                                        <i class="fas fa-cogs me-1"></i> Admin Panel
-                                    </a>
-                                </li>
-                                <li class="nav-item">
-                                    <a class="nav-link text-white fw-semibold" href="/api/" target="_blank"
-                                        style="border-radius: 6px;"
-                                        onmouseover="this.style.background='rgba(255,255,255,0.2)'"
-                                        onmouseout="this.style.background='transparent'">
-                                        <i class="fas fa-code me-1"></i> API Docs
-                                    </a>
-                                </li>
-                            </ul>
-                            <div class="d-flex">
-                                <div class="dropdown">
-                                    <button class="btn btn-outline-light btn-sm dropdown-toggle fw-semibold"
-                                        type="button" data-bs-toggle="dropdown" style="border-radius: 8px;">
-                                        <i class="fas fa-tools me-1"></i> Quick Tools
-                                    </button>
-                                    <ul class="dropdown-menu dropdown-menu-end">
-                                        <li><a class="dropdown-item" href="/admin/core/" target="_blank">
-                                                <i class="fas fa-database me-2"></i> Database Admin
-                                            </a></li>
-                                        <li><a class="dropdown-item" href="#" onclick="exportTradesData()">
-                                                <i class="fas fa-download me-2"></i> Export Trades
-                                            </a></li>
-                                        <li>
-                                            <hr class="dropdown-divider">
-                                        </li>
-                                        <li><a class="dropdown-item" href="#" onclick="closeAllTrades()">
-                                                <i class="fas fa-times-circle me-2"></i> Close All Trades
-                                            </a></li>
-                                        <li><a class="dropdown-item" href="#" onclick="refreshTradeData()">
-                                                <i class="fas fa-sync-alt me-2"></i> Refresh Data
-                                            </a></li>
-                                    </ul>
-                                </div>
+{% block content %}
+<div class="container-fluid main-container">
+    <!-- Header Section -->
+    <div class="header-section">
+        <div class="row align-items-center">
+            <div class="col-md-6">
+                <h1 class="mb-3">
+                    <i class="fas fa-chart-line me-3"></i>Open Trades Management
+                </h1>
+                <p class="mb-0 text-muted">Monitor and manage your active trading positions</p>
+            </div>
+            <div class="col-md-6">
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="card text-center">
+                            <div class="card-body">
+                                <h5 class="card-title">{{ open_trades|length }}</h5>
+                                <p class="card-text text-muted">Open Positions</p>
                             </div>
                         </div>
                     </div>
-                </nav>
-            </div>
-        </div>
-
-        {% if open_trades %}
-        <!-- Summary Cards -->
-        <div class="row mb-4">
-            <div class="col-md-3">
-                <div class="card text-center">
-                    <div class="card-body">
-                        <h5 class="card-title text-primary">{{ open_trades|length }}</h5>
-                        <p class="card-text text-muted">Open Positions</p>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card text-center">
-                    <div class="card-body">
-                        <h5 class="card-title profit-neutral">$0.00</h5>
-                        <p class="card-text text-muted">Total P&L</p>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card text-center">
-                    <div class="card-body">
-                        <h5 class="card-title text-info">
-                            {% for trade in open_trades %}
-                            {{ trade.symbol }}{% if not forloop.last %}, {% endif %}
-                            {% endfor %}
-                        </h5>
-                        <p class="card-text text-muted">Symbols</p>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card text-center">
-                    <div class="card-body">
-                        <h5 class="card-title text-warning">
-                            {% if open_trades %}
-                            {{ open_trades.0.created_at|timesince }}
-                            {% endif %}
-                        </h5>
-                        <p class="card-text text-muted">Oldest Trade</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Open Trades Table -->
-        <div class="row">
-            <div class="col-12">
-                <div class="card trade-card">
-                    <div class="trade-header">
-                        <h5 class="mb-0"><i class="fas fa-chart-bar me-2"></i>Open Positions</h5>
-                    </div>
-                    <div class="card-body p-0">
-                        <div class="table-responsive">
-                            <table class="table table-hover mb-0">
-                                <thead>
-                                    <tr>
-                                        <th><i class="fas fa-hashtag me-1"></i>ID</th>
-                                        <th><i class="fas fa-chart-line me-1"></i>Symbol</th>
-                                        <th><i class="fas fa-exchange-alt me-1"></i>Direction</th>
-                                        <th><i class="fas fa-coins me-1"></i>Quantity</th>
-                                        <th><i class="fas fa-dollar-sign me-1"></i>Entry Price</th>
-                                        <th><i class="fas fa-clock me-1"></i>Duration</th>
-                                        <th><i class="fas fa-info-circle me-1"></i>Status</th>
-                                        <th><i class="fas fa-chart-area me-1"></i>P&L</th>
-                                        <th><i class="fas fa-cogs me-1"></i>Action</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {% for trade in open_trades %}
-                                    <tr>
-                                        <td>
-                                            <span class="badge bg-secondary">#{{ trade.id }}</span>
-                                        </td>
-                                        <td>
-                                            <span class="symbol-badge">{{ trade.symbol }}</span>
-                                        </td>
-                                        <td>
-                                            <span
-                                                class="{% if trade.direction == 'long' %}direction-long{% else %}direction-short{% endif %}">
-                                                {% if trade.direction == 'long' %}
-                                                <i class="fas fa-arrow-up me-1"></i>LONG
-                                                {% else %}
-                                                <i class="fas fa-arrow-down me-1"></i>SHORT
-                                                {% endif %}
-                                            </span>
-                                        </td>
-                                        <td>
-                                            <strong>{{ trade.quantity|floatformat:0 }}</strong>
-                                        </td>
-                                        <td>
-                                            <strong>${{ trade.entry_price|floatformat:2 }}</strong>
-                                        </td>
-                                        <td>
-                                            <span class="duration">
-                                                <i class="fas fa-clock me-1"></i>{{ trade.created_at|timesince }}
-                                            </span>
-                                        </td>
-                                        <td>
-                                            <span class="status-badge status-{{ trade.status }}">
-                                                {{ trade.status|capfirst }}
-                                            </span>
-                                        </td>
-                                        <td>
-                                            <span class="profit-neutral">
-                                                <i class="fas fa-minus me-1"></i>$0.00
-                                            </span>
-                                        </td>
-                                        <td>
-                                            <form method="post" style="display: inline;">
-                                                {% csrf_token %}
-                                                <input type="hidden" name="trade_id" value="{{ trade.id }}">
-                                                <button type="submit" class="close-btn"
-                                                    onclick="return confirm('Are you sure you want to close this trade?')">
-                                                    <i class="fas fa-times me-1"></i>Close
-                                                </button>
-                                            </form>
-                                        </td>
-                                    </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
+                    <div class="col-md-6">
+                        <div class="card text-center">
+                            <div class="card-body">
+                                <h5
+                                    class="card-title {% if total_unrealized_pnl > 0 %}profit-positive{% elif total_unrealized_pnl < 0 %}profit-negative{% else %}profit-neutral{% endif %}">
+                                    {% if total_unrealized_pnl > 0 %}
+                                    +${{ total_unrealized_pnl|floatformat:2 }}
+                                    {% elif total_unrealized_pnl < 0 %} ${{ total_unrealized_pnl|floatformat:2 }} {%
+                                        else %} $0.00 {% endif %} </h5>
+                                        <p class="card-text text-muted">Total P&L</p>
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
-        </div>
-
-        {% else %}
-        <!-- Empty State -->
-        <div class="row">
-            <div class="col-12">
-                <div class="card trade-card">
-                    <div class="empty-state">
-                        <i class="fas fa-chart-line"></i>
-                        <h3>No Open Trades</h3>
-                        <p class="lead">You currently have no open positions to manage.</p>
-                        <div class="mt-4">
-                            <a href="/test-page/" class="btn btn-primary me-3">
-                                <i class="fas fa-flask me-1"></i> Test Trading
-                            </a>
-                            <a href="/dashboard/" class="btn btn-outline-secondary">
-                                <i class="fas fa-chart-line me-1"></i> View Dashboard
-                            </a>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        {% endif %}
-
-        <!-- Status Footer -->
-        <div class="row mt-4">
-            <div class="col-12 text-center">
-                <small class="text-muted">
-                    <i class="fas fa-clock me-1"></i> Page refreshes automatically every 30 seconds
-                </small>
             </div>
         </div>
     </div>
 
-    <!-- Bootstrap 5 JS -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- Open Trades Table -->
+    <div class="card">
+        <div class="card-header" style="background: linear-gradient(45deg, #667eea, #764ba2); color: white;">
+            <h5 class="mb-0">
+                <i class="fas fa-coins me-2"></i>Active Positions
+                <span class="badge bg-light text-dark ms-2">{{ open_trades|length }}</span>
+            </h5>
+        </div>
+        <div class="card-body p-0">
+            {% if open_trades %}
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th><i class="fas fa-tag me-1"></i>Symbol</th>
+                            <th><i class="fas fa-exchange-alt me-1"></i>Direction</th>
+                            <th><i class="fas fa-coins me-1"></i>Quantity</th>
+                            <th><i class="fas fa-dollar-sign me-1"></i>Entry Price</th>
+                            <th><i class="fas fa-info-circle me-1"></i>Status</th>
+                            <th><i class="fas fa-chart-area me-1"></i>P&L</th>
+                            <th><i class="fas fa-cogs me-1"></i>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for trade in open_trades %}
+                        <tr>
+                            <td>
+                                <span class="symbol-badge">{{ trade.symbol }}</span>
+                                {% if trade.take_profit_price %}
+                                <span class="tp-sl-badge"
+                                    title="Take Profit: ${{ trade.take_profit_price|floatformat:2 }}">TP</span>
+                                {% endif %}
+                                {% if trade.stop_loss_price %}
+                                <span class="tp-sl-badge"
+                                    title="Stop Loss: ${{ trade.stop_loss_price|floatformat:2 }}">SL</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <span
+                                    class="{% if trade.direction == 'buy' %}direction-long{% else %}direction-short{% endif %}">
+                                    {% if trade.direction == 'buy' %}
+                                    <i class="fas fa-arrow-up me-1"></i>LONG
+                                    {% else %}
+                                    <i class="fas fa-arrow-down me-1"></i>SHORT
+                                    {% endif %}
+                                </span>
+                            </td>
+                            <td><strong>{{ trade.quantity|floatformat:0 }}</strong></td>
+                            <td><strong>${{ trade.entry_price|floatformat:2 }}</strong></td>
+                            <td>
+                                <span class="status-badge status-open">{{ trade.status|capfirst }}</span>
+                            </td>
+                            <td>
+                                {% if trade.alpaca_position %}
+                                {% if trade.unrealized_pnl > 0 %}
+                                <span class="profit-positive">
+                                    <i class="fas fa-arrow-up me-1"></i>+${{ trade.unrealized_pnl|floatformat:2 }}
+                                </span>
+                                {% elif trade.unrealized_pnl < 0 %}
+                                    <span class="profit-negative">
+                                    <i class="fas fa-arrow-down me-1"></i>${{ trade.unrealized_pnl|floatformat:2 }}
+                                    </span>
+                                    {% else %}
+                                    <span class="profit-neutral">
+                                        <i class="fas fa-minus me-1"></i>$0.00
+                                    </span>
+                                    {% endif %}
+                                    {% else %}
+                                    <span class="profit-neutral">
+                                        <i class="fas fa-minus me-1"></i>$0.00
+                                    </span>
+                                    {% endif %}
+                            </td>
+                            <td>
+                                <div class="btn-group" role="group">
+                                    <button type="button" class="btn btn-outline-primary btn-sm edit-btn"
+                                        data-bs-toggle="modal" data-bs-target="#editTradeModal"
+                                        data-trade-id="{{ trade.id }}" data-symbol="{{ trade.symbol }}"
+                                        data-entry-price="{{ trade.entry_price }}"
+                                        data-current-pnl="{{ trade.unrealized_pnl|default:0 }}"
+                                        data-quantity="{{ trade.quantity }}">
+                                        <i class="fas fa-pencil-alt me-1"></i>Edit
+                                    </button>
+                                    <button type="button" class="close-btn btn-sm" data-bs-toggle="modal"
+                                        data-bs-target="#closeTradeModal" data-trade-id="{{ trade.id }}"
+                                        data-symbol="{{ trade.symbol }}" data-quantity="{{ trade.quantity }}"
+                                        data-pnl="{{ trade.unrealized_pnl|default:0 }}">
+                                        <i class="fas fa-times me-1"></i>Close
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center py-5">
+                <i class="fas fa-chart-line fa-3x text-muted mb-3"></i>
+                <h5 class="text-muted">No Open Trades</h5>
+                <p class="text-muted">All positions have been closed or no trades have been executed yet.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
 
-    <script>
-        // Refresh trades data
-        function refreshTradeData() {
-            location.reload();
-        }
+<!-- Close Trade Confirmation Modal -->
+<div class="modal fade" id="closeTradeModal" tabindex="-1" aria-labelledby="closeTradeModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="closeTradeModalLabel">
+                    <i class="fas fa-exclamation-triangle text-warning me-2"></i>Confirm Trade Closure
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle me-2"></i>
+                    <strong>You are about to close this position:</strong>
+                </div>
+                <div class="row">
+                    <div class="col-md-6">
+                        <p><strong>Symbol:</strong> <span id="close-symbol">-</span></p>
+                        <p><strong>Quantity:</strong> <span id="close-quantity">-</span> shares</p>
+                    </div>
+                    <div class="col-md-6">
+                        <p><strong>Current P&L:</strong> <span id="close-pnl" class="fw-bold">-</span></p>
+                        <p><strong>Status:</strong> <span class="badge bg-warning">Will be closed</span></p>
+                    </div>
+                </div>
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    <strong>This action cannot be undone.</strong> The position will be closed at the current market
+                    price.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="fas fa-times me-1"></i>Cancel
+                </button>
+                <form method="post" style="display: inline;" id="closeTradeForm">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="close_trade">
+                    <input type="hidden" name="trade_id" value="" id="close-trade-id">
+                    <button type="submit" class="btn btn-danger">
+                        <i class="fas fa-times me-1"></i>Close Position
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
 
-        // Export trades data
-        function exportTradesData() {
-            if (confirm('Export all trades data to CSV?')) {
-                alert('Export functionality coming soon!');
+<!-- Edit Trade Modal -->
+<div class="modal fade" id="editTradeModal" tabindex="-1" aria-labelledby="editTradeModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="editTradeModalLabel">
+                    <i class="fas fa-pencil-alt me-2"></i>Edit Trade Settings
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form method="post" id="editTradeForm">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="edit_trade">
+                    <input type="hidden" name="trade_id" id="edit-trade-id">
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="take_profit_percent" class="form-label">Take Profit (%)</label>
+                            <input type="number" class="form-control" name="take_profit_percent"
+                                id="take_profit_percent" step="0.1" min="0" max="100" placeholder="e.g., 5.0">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="stop_loss_percent" class="form-label">Stop Loss (%)</label>
+                            <input type="number" class="form-control" name="stop_loss_percent" id="stop_loss_percent"
+                                step="0.1" min="0" max="100" placeholder="e.g., 2.0">
+                        </div>
+                    </div>
+
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle me-2"></i>
+                        <strong>Current P&L:</strong> <span id="edit-current-pnl">-</span>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" form="editTradeForm" class="btn btn-primary">Save Changes</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Close trade modal
+    document.addEventListener('DOMContentLoaded', function () {
+        const closeTradeModal = document.getElementById('closeTradeModal');
+        closeTradeModal.addEventListener('show.bs.modal', function (event) {
+            const button = event.relatedTarget;
+            const tradeId = button.getAttribute('data-trade-id');
+            const symbol = button.getAttribute('data-symbol');
+            const quantity = button.getAttribute('data-quantity');
+            const pnl = parseFloat(button.getAttribute('data-pnl')) || 0;
+
+            document.getElementById('close-symbol').textContent = symbol;
+            document.getElementById('close-quantity').textContent = quantity;
+            document.getElementById('close-trade-id').value = tradeId;
+
+            const pnlElement = document.getElementById('close-pnl');
+            if (pnl > 0) {
+                pnlElement.textContent = '+$' + pnl.toFixed(2);
+                pnlElement.className = 'fw-bold text-success';
+            } else if (pnl < 0) {
+                pnlElement.textContent = '$' + pnl.toFixed(2);
+                pnlElement.className = 'fw-bold text-danger';
+            } else {
+                pnlElement.textContent = '$0.00';
+                pnlElement.className = 'fw-bold text-muted';
             }
-        }
-
-        // Close all trades
-        function closeAllTrades() {
-            if (confirm('⚠️ WARNING: This will close ALL open trades immediately. Are you sure?')) {
-                if (confirm('This action cannot be undone. Proceed with closing all trades?')) {
-                    alert('Close all trades functionality coming soon!');
-                }
-            }
-        }
-
-        // Auto-refresh every 30 seconds
-        document.getElementById('refresh-trades').addEventListener('click', function () {
-            const icon = document.getElementById('refresh-icon');
-            icon.classList.add('fa-spin');
-            setTimeout(() => {
-                location.reload();
-            }, 500);
         });
 
-        // Auto refresh every 30 seconds
-        setInterval(function () {
-            location.reload();
-        }, 30000);
+        // Edit trade modal
+        const editTradeModal = document.getElementById('editTradeModal');
+        editTradeModal.addEventListener('show.bs.modal', function (event) {
+            const button = event.relatedTarget;
+            const tradeId = button.getAttribute('data-trade-id');
+            const pnl = parseFloat(button.getAttribute('data-current-pnl')) || 0;
 
-        // Add confirmation to all close buttons
-        document.querySelectorAll('.close-btn').forEach(btn => {
-            btn.addEventListener('click', function (e) {
-                if (!confirm('Are you sure you want to close this trade?')) {
-                    e.preventDefault();
-                }
-            });
+            document.getElementById('edit-trade-id').value = tradeId;
+            document.getElementById('edit-current-pnl').textContent = '$' + pnl.toFixed(2);
         });
-    </script>
-</body>
+    });
+</script>
 
-</html>
+<!-- Bootstrap 5 JavaScript Bundle -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+{% endblock %}

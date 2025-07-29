@@ -616,6 +616,59 @@ check_postgresql() {
     return 0
 }
 
+# Function to start PostgreSQL automatically
+start_postgresql() {
+    print_status "Attempting to start PostgreSQL..."
+    
+    # Try different methods based on system
+    if command_exists brew; then
+        # macOS with Homebrew
+        print_process "Starting PostgreSQL with Homebrew..."
+        if brew services start postgresql@14 >/dev/null 2>&1 || brew services start postgresql >/dev/null 2>&1; then
+            print_success "PostgreSQL started with Homebrew"
+            # Wait a moment for service to be ready
+            sleep 3
+            return 0
+        else
+            print_warning "Failed to start PostgreSQL with Homebrew, trying manual start..."
+        fi
+    fi
+    
+    # Try manual start with pg_ctl
+    if command_exists pg_ctl; then
+        local data_dir=""
+        # Common PostgreSQL data directories
+        for dir in "/usr/local/var/postgres" "/opt/homebrew/var/postgres" "/var/lib/postgresql/data" "/usr/local/pgsql/data"; do
+            if [ -d "$dir" ]; then
+                data_dir="$dir"
+                break
+            fi
+        done
+        
+        if [ -n "$data_dir" ]; then
+            print_process "Starting PostgreSQL manually with data directory: $data_dir"
+            if pg_ctl -D "$data_dir" -l "$data_dir/postgresql.log" start >/dev/null 2>&1; then
+                print_success "PostgreSQL started manually"
+                sleep 3
+                return 0
+            fi
+        fi
+    fi
+    
+    # Try systemctl (Linux)
+    if command_exists systemctl; then
+        print_process "Starting PostgreSQL with systemctl..."
+        if sudo systemctl start postgresql >/dev/null 2>&1; then
+            print_success "PostgreSQL started with systemctl"
+            sleep 3
+            return 0
+        fi
+    fi
+    
+    print_error "Failed to start PostgreSQL automatically"
+    return 1
+}
+
 # Function to check if Redis is running
 check_redis() {
     if ! redis-cli ping >/dev/null 2>&1; then
@@ -624,6 +677,48 @@ check_redis() {
         return 1
     fi
     return 0
+}
+
+# Function to start Redis automatically
+start_redis() {
+    print_status "Attempting to start Redis..."
+    
+    # Try different methods based on system
+    if command_exists brew; then
+        # macOS with Homebrew
+        print_process "Starting Redis with Homebrew..."
+        if brew services start redis >/dev/null 2>&1; then
+            print_success "Redis started with Homebrew"
+            # Wait a moment for service to be ready
+            sleep 2
+            return 0
+        else
+            print_warning "Failed to start Redis with Homebrew, trying manual start..."
+        fi
+    fi
+    
+    # Try manual start with redis-server
+    if command_exists redis-server; then
+        print_process "Starting Redis manually..."
+        if redis-server --daemonize yes >/dev/null 2>&1; then
+            print_success "Redis started manually"
+            sleep 2
+            return 0
+        fi
+    fi
+    
+    # Try systemctl (Linux)
+    if command_exists systemctl; then
+        print_process "Starting Redis with systemctl..."
+        if sudo systemctl start redis >/dev/null 2>&1 || sudo systemctl start redis-server >/dev/null 2>&1; then
+            print_success "Redis started with systemctl"
+            sleep 2
+            return 0
+        fi
+    fi
+    
+    print_error "Failed to start Redis automatically"
+    return 1
 }
 
 # Function to check if a port is in use
@@ -766,6 +861,27 @@ check_required_ports() {
 setup_database() {
     print_status "Setting up local database..."
     
+    # Ensure PostgreSQL is running
+    if ! check_postgresql; then
+        print_warning "PostgreSQL is not running and is required for database setup."
+        read -p "Would you like to start PostgreSQL automatically? (y/N): " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            if ! start_postgresql; then
+                print_error "Failed to start PostgreSQL. Please start it manually and try again."
+                return 1
+            fi
+            # Verify it started successfully
+            if ! check_postgresql; then
+                print_error "PostgreSQL started but is not responding. Please check the service status."
+                return 1
+            fi
+        else
+            print_error "PostgreSQL is required for database setup. Please start it manually."
+            return 1
+        fi
+    fi
+    
     # Check if database exists
     if ! psql -h localhost -U "$USER" -lqt | cut -d \| -f 1 | grep -qw news_trader; then
         print_status "Creating database and user..."
@@ -809,10 +925,46 @@ EOF
 start_services() {
     create_directories
     
-    # Check dependencies
-    if ! check_postgresql || ! check_redis; then
-        print_error "Required services are not running. Please start PostgreSQL and Redis first."
-        return 1
+    # Check and start PostgreSQL if needed
+    if ! check_postgresql; then
+        print_warning "PostgreSQL is not running."
+        read -p "Would you like to start PostgreSQL automatically? (y/N): " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            if ! start_postgresql; then
+                print_error "Failed to start PostgreSQL. Please start it manually and try again."
+                return 1
+            fi
+            # Verify it started successfully
+            if ! check_postgresql; then
+                print_error "PostgreSQL started but is not responding. Please check the service status."
+                return 1
+            fi
+        else
+            print_error "PostgreSQL is required to run the application. Please start it manually."
+            return 1
+        fi
+    fi
+    
+    # Check and start Redis if needed
+    if ! check_redis; then
+        print_warning "Redis is not running."
+        read -p "Would you like to start Redis automatically? (y/N): " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            if ! start_redis; then
+                print_error "Failed to start Redis. Please start it manually and try again."
+                return 1
+            fi
+            # Verify it started successfully
+            if ! check_redis; then
+                print_error "Redis started but is not responding. Please check the service status."
+                return 1
+            fi
+        else
+            print_error "Redis is required for WebSocket functionality. Please start it manually."
+            return 1
+        fi
     fi
     
     # Check for port conflicts and resolve them
@@ -1352,13 +1504,14 @@ troubleshoot_menu() {
         echo "  5) 🚪 Check port conflicts"
         echo "  6) 📋 View all logs"
         echo "  7) 🔄 Restart all services"
-        echo "  8) 🆘 Emergency cleanup"
-        echo "  9) 📦 Recreate local settings"
+        echo "  8) 🚀 Start PostgreSQL/Redis automatically"
+        echo "  9) 🆘 Emergency cleanup"
+        echo " 10) 📦 Recreate local settings"
         echo
         echo "  b) ⬅️  Back to main menu"
         echo
         
-        read -p "Select an option (1-9, b): " choice
+        read -p "Select an option (1-10, b): " choice
         echo
         
         case "$choice" in
@@ -1436,6 +1589,43 @@ setTimeout(() => {
                 pause_for_user
                 ;;
             8)
+                print_status "Checking and starting required services..."
+                
+                # Check and start PostgreSQL
+                if ! check_postgresql; then
+                    print_warning "PostgreSQL is not running."
+                    read -p "Start PostgreSQL automatically? (y/N): " -n 1 -r
+                    echo
+                    if [[ $REPLY =~ ^[Yy]$ ]]; then
+                        if start_postgresql && check_postgresql; then
+                            print_success "PostgreSQL started successfully!"
+                        else
+                            print_error "Failed to start PostgreSQL."
+                        fi
+                    fi
+                else
+                    print_success "PostgreSQL is already running."
+                fi
+                
+                # Check and start Redis
+                if ! check_redis; then
+                    print_warning "Redis is not running."
+                    read -p "Start Redis automatically? (y/N): " -n 1 -r
+                    echo
+                    if [[ $REPLY =~ ^[Yy]$ ]]; then
+                        if start_redis && check_redis; then
+                            print_success "Redis started successfully!"
+                        else
+                            print_error "Failed to start Redis."
+                        fi
+                    fi
+                else
+                    print_success "Redis is already running."
+                fi
+                
+                pause_for_user
+                ;;
+            9)
                 print_warning "Emergency cleanup will:"
                 echo "• Stop all services"
                 echo "• Clear all logs and PID files"
@@ -1457,7 +1647,7 @@ setTimeout(() => {
                 fi
                 pause_for_user
                 ;;
-            9)
+            10)
                 print_warning "This will recreate local_settings.py with WebSocket support."
                 read -p "Recreate local settings? (y/N): " -n 1 -r
                 echo
@@ -1490,12 +1680,58 @@ full_setup() {
     create_local_settings
     setup_virtualenv
     
-    if check_postgresql && check_redis; then
-        setup_database
-        print_success "🎉 Setup completed! You can now start services from the main menu."
+    # Check PostgreSQL and offer to start it
+    local postgresql_ready=false
+    if check_postgresql; then
+        postgresql_ready=true
     else
-        print_warning "Setup completed, but PostgreSQL and/or Redis are not running."
-        print_warning "Please start them before using the database features."
+        print_warning "PostgreSQL is not running and is needed for database setup."
+        read -p "Would you like to start PostgreSQL automatically? (y/N): " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            if start_postgresql && check_postgresql; then
+                postgresql_ready=true
+                print_success "PostgreSQL is now running!"
+            else
+                print_error "Failed to start PostgreSQL."
+            fi
+        fi
+    fi
+    
+    # Check Redis and offer to start it
+    local redis_ready=false
+    if check_redis; then
+        redis_ready=true
+    else
+        print_warning "Redis is not running and is needed for WebSocket functionality."
+        read -p "Would you like to start Redis automatically? (y/N): " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            if start_redis && check_redis; then
+                redis_ready=true
+                print_success "Redis is now running!"
+            else
+                print_error "Failed to start Redis."
+            fi
+        fi
+    fi
+    
+    # Setup database if PostgreSQL is ready
+    if [ "$postgresql_ready" = true ]; then
+        setup_database
+        if [ "$redis_ready" = true ]; then
+            print_success "🎉 Complete setup finished! All services are ready."
+            print_success "You can now start the application with: $0 start"
+        else
+            print_success "🎉 Setup completed! PostgreSQL is ready."
+            print_warning "Redis is not running - WebSocket features will be limited."
+        fi
+    else
+        print_warning "Setup completed, but PostgreSQL is not running."
+        print_warning "Please start PostgreSQL manually before using the database features."
+        if [ "$redis_ready" = false ]; then
+            print_warning "Redis is also not running - please start it for WebSocket functionality."
+        fi
     fi
 }
 
@@ -1519,6 +1755,7 @@ SERVICE COMMANDS:
     status          Show service status and URLs
     check-ports     Check for port conflicts and optionally resolve them
     monitor         Monitor services in real-time
+    start-db        Start PostgreSQL and Redis automatically
 
 DATABASE COMMANDS:
     db-reset        Reset database (removes all data)
@@ -1538,6 +1775,7 @@ UTILITY COMMANDS:
 EXAMPLES:
     $0                          # Launch interactive menu
     $0 setup                    # Initial setup
+    $0 start-db                 # Start PostgreSQL and Redis
     $0 start                    # Start development environment
     $0 check-ports              # Check for port conflicts
     $0 logs django              # Show Django logs
@@ -1598,6 +1836,44 @@ main() {
             ;;
         "monitor")
             monitor_services
+            ;;
+        "start-db")
+            clear_screen
+            print_status "Starting database services..."
+            
+            # Start PostgreSQL
+            if ! check_postgresql; then
+                print_warning "PostgreSQL is not running."
+                read -p "Start PostgreSQL automatically? (Y/n): " -n 1 -r
+                echo
+                if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+                    if start_postgresql && check_postgresql; then
+                        print_success "PostgreSQL started successfully!"
+                    else
+                        print_error "Failed to start PostgreSQL."
+                    fi
+                fi
+            else
+                print_success "PostgreSQL is already running."
+            fi
+            
+            # Start Redis
+            if ! check_redis; then
+                print_warning "Redis is not running."
+                read -p "Start Redis automatically? (Y/n): " -n 1 -r
+                echo
+                if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+                    if start_redis && check_redis; then
+                        print_success "Redis started successfully!"
+                    else
+                        print_error "Failed to start Redis."
+                    fi
+                fi
+            else
+                print_success "Redis is already running."
+            fi
+            
+            pause_for_user
             ;;
         "check-ports")
             clear_screen

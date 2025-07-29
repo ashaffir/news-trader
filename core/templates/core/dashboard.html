@@ -1,9 +1,20 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="en">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- Dynamic Favicon based on color scheme -->
+    <link rel="icon" href="{% static 'img/logo-b.png' %}" media="(prefers-color-scheme: light)">
+    <link rel="icon" href="{% static 'img/logo-w.png' %}" media="(prefers-color-scheme: dark)">
+    <link rel="icon" href="{% static 'img/logo-b.png' %}"> <!-- Default fallback -->
+
+    <!-- Apple Touch Icon variants -->
+    <link rel="apple-touch-icon" href="{% static 'img/logo-b.png' %}" media="(prefers-color-scheme: light)">
+    <link rel="apple-touch-icon" href="{% static 'img/logo-w.png' %}" media="(prefers-color-scheme: dark)">
+
     <title>News Trader Dashboard</title>
     <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -598,41 +609,68 @@
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const wsUrl = `${protocol}//${window.location.host}/ws/dashboard/`;
 
-            socket = new WebSocket(wsUrl);
+            try {
+                socket = new WebSocket(wsUrl);
 
-            socket.onopen = function (e) {
-                console.log('WebSocket connected');
-                wsStatusDiv.className = 'websocket-status websocket-connected';
-                wsStatusText.textContent = 'WebSocket Connected';
-                reconnectAttempts = 0;
-                addLogEntry('WebSocket connected successfully', 'text-success');
-            };
+                socket.onopen = function (e) {
+                    console.log('WebSocket connected');
+                    wsStatusDiv.className = 'websocket-status websocket-connected';
+                    wsStatusText.textContent = 'WebSocket Connected';
+                    reconnectAttempts = 0;
+                    addLogEntry('WebSocket connected successfully', 'text-success');
+                };
 
-            socket.onclose = function (e) {
-                console.log('WebSocket disconnected');
+                socket.onclose = function (e) {
+                    console.log('WebSocket disconnected', e.code, e.reason);
+                    wsStatusDiv.className = 'websocket-status websocket-disconnected';
+                    wsStatusText.textContent = 'WebSocket Disconnected';
+
+                    if (e.code !== 1000) {  // Not a normal close
+                        addLogEntry('WebSocket connection lost', 'text-warning');
+                    }
+
+                    // Auto-reconnect with exponential backoff
+                    if (reconnectAttempts < maxReconnectAttempts) {
+                        reconnectAttempts++;
+                        const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+                        setTimeout(() => {
+                            addLogEntry(`Reconnecting... (${reconnectAttempts}/${maxReconnectAttempts})`, 'text-info');
+                            connectWebSocket();
+                        }, delay);
+                    } else {
+                        addLogEntry('Max reconnection attempts reached. Manual refresh required.', 'text-danger');
+                    }
+                };
+
+                socket.onmessage = function (e) {
+                    try {
+                        const data = JSON.parse(e.data);
+                        if (data.message) {
+                            // Simple message
+                            addLogEntry(`Real-time update: ${data.message}`, 'text-info');
+                        } else if (data.type && data.data) {
+                            // Structured update
+                            handleStructuredUpdate(data.type, data.data);
+                        } else {
+                            console.log('Received WebSocket data:', data);
+                        }
+                    } catch (error) {
+                        console.error('Error parsing WebSocket message:', error);
+                        addLogEntry('Error processing real-time update', 'text-warning');
+                    }
+                };
+
+                socket.onerror = function (e) {
+                    console.error('WebSocket error:', e);
+                    addLogEntry('WebSocket connection error', 'text-danger');
+                };
+
+            } catch (error) {
+                console.error('Failed to create WebSocket:', error);
+                addLogEntry('WebSocket initialization failed', 'text-danger');
                 wsStatusDiv.className = 'websocket-status websocket-disconnected';
-                wsStatusText.textContent = 'WebSocket Disconnected';
-                addLogEntry('WebSocket disconnected', 'text-warning');
-
-                // Auto-reconnect
-                if (reconnectAttempts < maxReconnectAttempts) {
-                    reconnectAttempts++;
-                    setTimeout(() => {
-                        addLogEntry(`Reconnecting... (${reconnectAttempts}/${maxReconnectAttempts})`, 'text-info');
-                        connectWebSocket();
-                    }, 3000);
-                }
-            };
-
-            socket.onmessage = function (e) {
-                const data = JSON.parse(e.data);
-                addLogEntry(`Real-time update: ${data.message}`, 'text-info');
-            };
-
-            socket.onerror = function (e) {
-                console.error('WebSocket error:', e);
-                addLogEntry('WebSocket error occurred', 'text-danger');
-            };
+                wsStatusText.textContent = 'WebSocket Failed';
+            }
         }
 
         // Add log entry function
@@ -649,6 +687,49 @@
             // Keep only last 20 entries
             while (logDiv.children.length > 20) {
                 logDiv.removeChild(logDiv.lastChild);
+            }
+        }
+
+        // Handle structured WebSocket updates
+        function handleStructuredUpdate(type, data) {
+            let message, className;
+
+            switch (type) {
+                case 'new_post':
+                    message = `📰 New post from ${data.source}: ${data.content_preview}`;
+                    className = 'text-success';
+                    break;
+                case 'analysis_complete':
+                    message = `🧠 Analysis: ${data.symbol} ${data.direction.toUpperCase()} (${Math.round(data.confidence * 100)}% confidence)`;
+                    className = 'text-info';
+                    break;
+                case 'trade_executed':
+                    message = `💰 Trade: ${data.direction.toUpperCase()} ${data.quantity} ${data.symbol} @ $${data.price}`;
+                    className = 'text-warning';
+                    break;
+                case 'trade_closed':
+                    const pnl = data.pnl > 0 ? `+$${data.pnl.toFixed(2)}` : `-$${Math.abs(data.pnl).toFixed(2)}`;
+                    message = `🎯 Trade closed: ${data.symbol} P&L: ${pnl}`;
+                    className = data.pnl > 0 ? 'text-success' : 'text-danger';
+                    break;
+                case 'scraper_error':
+                    message = `⚠️ Scraping error from ${data.source}: ${data.error}`;
+                    className = 'text-danger';
+                    break;
+                case 'trade_status':
+                    message = `📊 ${data.status}`;
+                    className = 'text-info';
+                    break;
+                default:
+                    message = `🔄 Update: ${JSON.stringify(data)}`;
+                    className = 'text-muted';
+            }
+
+            addLogEntry(message, className);
+
+            // Auto-refresh dashboard data when important events occur
+            if (['analysis_complete', 'trade_executed', 'trade_closed'].includes(type)) {
+                setTimeout(refreshData, 1000);
             }
         }
 
@@ -677,8 +758,8 @@
 
                     document.getElementById('open-positions').textContent = data.statistics.open_trades || 0;
                     document.getElementById('total-pnl').textContent = '$' + (data.performance.total_pnl_24h || 0).toFixed(2);
-                    document.getElementById('day-pnl').textContent = '$' + (data.performance.total_pnl_24h || 0).toFixed(2);
-                    document.getElementById('account-value').textContent = '$10,000';
+                    document.getElementById('day-pnl').textContent = '$' + (data.performance.day_pnl || 0).toFixed(2);
+                    document.getElementById('account-value').textContent = '$' + (data.performance.account_value || 10000).toLocaleString();
 
                     // Update bot status
                     if (data.trading_config && data.trading_config.bot_enabled !== undefined) {
@@ -941,6 +1022,25 @@
             }
 
             resultDiv.innerHTML = resultHtml;
+        }
+    </script>
+
+    <script>
+        // JavaScript fallback for browsers that don't support CSS media queries in link tags
+        function updateFavicon() {
+            const isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            const favicon = document.querySelector('link[rel="icon"]:not([media])');
+            if (favicon) {
+                favicon.href = isDark ? '{% static "img/logo-w.png" %}' : '{% static "img/logo-b.png" %}';
+            }
+        }
+
+        // Update favicon on page load
+        updateFavicon();
+
+        // Listen for color scheme changes
+        if (window.matchMedia) {
+            window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', updateFavicon);
         }
     </script>
 </body>
