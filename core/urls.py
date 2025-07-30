@@ -32,6 +32,7 @@ urlpatterns = [
         views.check_single_connection,
         name="check_single_connection",
     ),
+    path("api/recent-activities/", views.recent_activities_api, name="recent_activities"),
     # API URLs
     path("api/", include(router.urls)),
     path("api-auth/", include("rest_framework.urls")),

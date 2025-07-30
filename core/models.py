@@ -278,3 +278,32 @@ class Trade(models.Model):
         if self.status == "closed" and self.realized_pnl is not None:
             return self.realized_pnl
         return self.unrealized_pnl or 0.0
+
+
+class ActivityLog(models.Model):
+    """Database-based activity log for dashboard activities."""
+    ACTIVITY_TYPES = [
+        ('new_post', 'New Post'),
+        ('analysis_complete', 'Analysis Complete'),
+        ('trade_executed', 'Trade Executed'),
+        ('trade_closed', 'Trade Closed'),
+        ('trade_close_requested', 'Trade Close Requested'),
+        ('scraper_error', 'Scraper Error'),
+        ('trade_status', 'Trade Status'),
+        ('system_event', 'System Event'),
+    ]
+    
+    activity_type = models.CharField(max_length=50, choices=ACTIVITY_TYPES)
+    message = models.TextField()
+    data = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['created_at']),
+            models.Index(fields=['activity_type']),
+        ]
+    
+    def __str__(self):
+        return f"{self.activity_type}: {self.message[:100]}"

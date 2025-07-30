@@ -554,6 +554,13 @@
                     wsStatusText.textContent = 'WebSocket Connected';
                     reconnectAttempts = 0;
                     addLogEntry('WebSocket connected successfully', 'text-success');
+                    
+                    // Load recent activities from database to populate the log initially
+                    setTimeout(() => {
+                        if (logDiv.children.length <= 2) { // Only dashboard initialized message
+                            refreshActivitiesFromDatabase();
+                        }
+                    }, 1000);
                 };
 
                 socket.onclose = function (e) {
@@ -606,6 +613,11 @@
                 addLogEntry('WebSocket initialization failed', 'text-danger');
                 wsStatusDiv.className = 'websocket-status websocket-disconnected';
                 wsStatusText.textContent = 'WebSocket Failed';
+                
+                // Load activities from database since WebSocket failed
+                setTimeout(() => {
+                    refreshActivitiesFromDatabase();
+                }, 2000);
             }
         }
 
@@ -715,6 +727,44 @@
                 .catch(error => {
                     console.error('Error fetching system status:', error);
                     addLogEntry('Failed to refresh system data', 'text-danger');
+                });
+            
+            // Also refresh activities from database if WebSocket is disconnected
+            if (wsStatusDiv.className.includes('websocket-disconnected')) {
+                refreshActivitiesFromDatabase();
+            }
+        }
+
+        // Function to refresh activities from database
+        function refreshActivitiesFromDatabase() {
+            fetch('/api/recent-activities/')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success && data.activities && data.activities.length > 0) {
+                        // Clear existing log entries except the first one (Dashboard initialized)
+                        while (logDiv.children.length > 1) {
+                            logDiv.removeChild(logDiv.lastChild);
+                        }
+                        
+                        // Add recent activities from database
+                        data.activities.slice(0, 20).forEach(activity => {
+                            const logEntry = document.createElement('div');
+                            logEntry.className = 'log-entry text-secondary';
+                            logEntry.innerHTML = `
+                                <i class="fas fa-database me-2" style="font-size: 6px;"></i>
+                                <small class="text-muted">${activity.created_at}</small> ${activity.message}
+                            `;
+                            logDiv.appendChild(logEntry);
+                        });
+                        
+                        // Add notice that these are from database
+                        if (logDiv.children.length > 1) {
+                            addLogEntry('📁 Showing recent activities from database (WebSocket offline)', 'text-info');
+                        }
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching activities from database:', error);
                 });
         }
 

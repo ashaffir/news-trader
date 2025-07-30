@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.0/ref/settings/
 """
 
+import os
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -49,14 +50,30 @@ INSTALLED_APPS = [
 
 ASGI_APPLICATION = "news_trader.asgi.application"
 
-CHANNEL_LAYERS = {
-    "default": {
-        "BACKEND": "channels_redis.pubsub.RedisPubSubChannelLayer",
-        "CONFIG": {
-            "hosts": [("redis", 6379)],
+# WebSocket Channel Layers Configuration with Redis fallback
+try:
+    import redis
+    # Test Redis connection
+    redis_host = os.getenv('REDIS_HOST', 'localhost')
+    r = redis.Redis(host=redis_host, port=6379, db=0, socket_connect_timeout=1)
+    r.ping()
+    
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels_redis.pubsub.RedisPubSubChannelLayer",
+            "CONFIG": {
+                "hosts": [(redis_host, 6379)],
+            },
         },
-    },
-}
+    }
+    print(f"✅ Redis WebSocket backend configured for {redis_host}:6379")
+except Exception as e:
+    print(f"⚠️ Redis not available ({e}), falling back to in-memory WebSocket backend")
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels.layers.InMemoryChannelLayer",
+        },
+    }
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",

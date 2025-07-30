@@ -7,7 +7,7 @@ from bs4 import BeautifulSoup
 from celery import shared_task
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
-from .models import Source, ApiResponse, Post, Analysis, Trade, TradingConfig
+from .models import Source, ApiResponse, Post, Analysis, Trade, TradingConfig, ActivityLog
 from django.utils import timezone
 from django.db.models import Q
 import logging
@@ -17,16 +17,56 @@ from datetime import datetime, timedelta
 logger = logging.getLogger(__name__)
 
 
+def format_activity_message(message_type, data):
+    """Format activity message for consistent display."""
+    messages = {
+        'new_post': f"📰 New post from {data.get('source', 'Unknown')}: {data.get('content_preview', '')[:100]}...",
+        'analysis_complete': f"🧠 Analysis: {data.get('symbol', 'N/A')} {data.get('direction', '').upper()} ({round(data.get('confidence', 0) * 100)}% confidence)",
+        'trade_executed': f"💰 Trade: {data.get('direction', '').upper()} {data.get('quantity', 0)} {data.get('symbol', 'N/A')} @ ${data.get('price', 0)}",
+        'trade_closed': f"🎯 Trade closed: {data.get('symbol', 'N/A')} P&L: ${data.get('pnl', 0):.2f}",
+        'trade_close_requested': f"🚨 Close request: {data.get('symbol', 'N/A')} order submitted (ID: {data.get('order_id', 'N/A')})",
+        'scraper_error': f"⚠️ Scraping error from {data.get('source', 'Unknown')}: {data.get('error', 'Unknown error')}",
+        'trade_status': f"📊 {data.get('status', 'Status update')}",
+    }
+    return messages.get(message_type, f"🔄 Update: {data}")
+
+
 def send_dashboard_update(message_type, data):
-    channel_layer = get_channel_layer()
-    async_to_sync(channel_layer.group_send)(
-        "dashboard_updates",
-        {
-            "type": "send_update",
-            "message_type": message_type,
-            "data": data,
-        },
-    )
+    """Send a real-time update to the dashboard via WebSocket and save to database."""
+    try:
+        # Format the message for display
+        message = format_activity_message(message_type, data)
+        
+        # Save to database as backup
+        try:
+            ActivityLog.objects.create(
+                activity_type=message_type,
+                message=message,
+                data=data
+            )
+            logger.debug(f"Activity logged to database: {message_type}")
+        except Exception as db_error:
+            logger.error(f"Failed to save activity to database: {db_error}")
+        
+        # Send via WebSocket
+        channel_layer = get_channel_layer()
+        if channel_layer is None:
+            logger.warning("Channel layer not available - using database backup only")
+            return
+            
+        async_to_sync(channel_layer.group_send)(
+            "dashboard_updates",
+            {
+                "type": "send_update",
+                "message_type": message_type,
+                "data": data,
+            },
+        )
+        logger.debug(f"Dashboard update sent via WebSocket: {message_type}")
+        
+    except Exception as e:
+        logger.error(f"Failed to send dashboard update ({message_type}): {e}")
+        # Continue execution even if both WebSocket and database fail
 
 
 def _create_simulated_post(source, error_message, method):

@@ -1,6 +1,6 @@
 from django.shortcuts import render, redirect
 from django.http import JsonResponse
-from .models import Trade, Post, Analysis, Source, TradingConfig
+from .models import Trade, Post, Analysis, Source, TradingConfig, ActivityLog
 from .tasks import (
     close_trade_manually,
     close_all_trades_manually,
@@ -907,3 +907,34 @@ def test_page_view(request):
             "sources": sources,  # Pass sources to the template
         },
     )
+
+
+def recent_activities_api(request):
+    """API endpoint to get recent activity logs from database."""
+    try:
+        # Get the last 50 activities
+        recent_activities = ActivityLog.objects.order_by('-created_at')[:50]
+        
+        activities_data = []
+        for activity in recent_activities:
+            activities_data.append({
+                'id': activity.id,
+                'type': activity.activity_type,
+                'message': activity.message,
+                'data': activity.data,
+                'timestamp': activity.created_at.isoformat(),
+                'created_at': activity.created_at.strftime('%H:%M:%S')  # Formatted time
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'activities': activities_data,
+            'count': len(activities_data)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error fetching recent activities: {e}")
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
