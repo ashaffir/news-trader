@@ -284,6 +284,7 @@
                             <th><i class="fas fa-dollar-sign me-1"></i>Entry Price</th>
                             <th><i class="fas fa-info-circle me-1"></i>Status</th>
                             <th><i class="fas fa-chart-area me-1"></i>P&L</th>
+                            <th><i class="fas fa-percentage me-1"></i>P&L</th>
                             <th class="actions-column"><i class="fas fa-cogs me-1"></i>Actions</th>
                         </tr>
                     </thead>
@@ -337,6 +338,27 @@
                                     {% endif %}
                             </td>
                             <td>
+                                {% if trade.alpaca_position and trade.entry_price > 0 and trade.quantity > 0 %}
+                                    {% if trade.pnl_percentage > 0 %}
+                                    <span class="profit-positive">
+                                        <i class="fas fa-arrow-up me-1"></i>+{{ trade.pnl_percentage|floatformat:1 }}%
+                                    </span>
+                                    {% elif trade.pnl_percentage < 0 %}
+                                    <span class="profit-negative">
+                                        <i class="fas fa-arrow-down me-1"></i>{{ trade.pnl_percentage|floatformat:1 }}%
+                                    </span>
+                                    {% else %}
+                                    <span class="profit-neutral">
+                                        <i class="fas fa-minus me-1"></i>0.0%
+                                    </span>
+                                    {% endif %}
+                                {% else %}
+                                    <span class="profit-neutral">
+                                        <i class="fas fa-minus me-1"></i>0.0%
+                                    </span>
+                                {% endif %}
+                            </td>
+                            <td>
                                 <div class="action-buttons">
                                     <button type="button" class="edit-btn" data-bs-toggle="modal"
                                         data-bs-target="#editTradeModal" data-trade-id="{{ trade.id }}"
@@ -348,7 +370,8 @@
                                     <button type="button" class="close-btn" data-bs-toggle="modal"
                                         data-bs-target="#closeTradeModal" data-trade-id="{{ trade.id }}"
                                         data-symbol="{{ trade.symbol }}" data-quantity="{{ trade.quantity }}"
-                                        data-pnl="{{ trade.unrealized_pnl|default:0 }}">
+                                        data-pnl="{{ trade.unrealized_pnl|default:0 }}"
+                                        data-entry-price="{{ trade.entry_price }}">
                                         <i class="fas fa-times"></i>Close
                                     </button>
                                 </div>
@@ -401,15 +424,21 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" id="close-cancel-btn">
                     <i class="fas fa-times me-1"></i>Cancel
                 </button>
                 <form method="post" style="display: inline;" id="closeTradeForm">
                     {% csrf_token %}
                     <input type="hidden" name="action" value="close_trade">
                     <input type="hidden" name="trade_id" value="" id="close-trade-id">
-                    <button type="submit" class="btn btn-danger">
-                        <i class="fas fa-times me-1"></i>Close Position
+                    <button type="submit" class="btn btn-danger" id="close-confirm-btn">
+                        <span id="close-btn-text">
+                            <i class="fas fa-times me-1"></i>Close Position
+                        </span>
+                        <span id="close-btn-spinner" class="d-none">
+                            <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                            Closing...
+                        </span>
                     </button>
                 </form>
             </div>
@@ -517,14 +546,20 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" id="close-all-cancel-btn">
                     <i class="fas fa-times me-1"></i>Cancel
                 </button>
                 <form method="post" style="display: inline;" id="closeAllForm">
                     {% csrf_token %}
                     <input type="hidden" name="action" value="close_all">
                     <button type="submit" class="btn btn-danger" id="confirmCloseAllBtn" disabled>
-                        <i class="fas fa-times-circle me-1"></i>Close All Positions
+                        <span id="close-all-btn-text">
+                            <i class="fas fa-times-circle me-1"></i>Close All Positions
+                        </span>
+                        <span id="close-all-btn-spinner" class="d-none">
+                            <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                            Closing All...
+                        </span>
                     </button>
                 </form>
             </div>
@@ -542,22 +577,53 @@
             const symbol = button.getAttribute('data-symbol');
             const quantity = button.getAttribute('data-quantity');
             const pnl = parseFloat(button.getAttribute('data-pnl')) || 0;
+            const entryPrice = parseFloat(button.getAttribute('data-entry-price')) || 0;
+            const quantityNum = parseFloat(quantity) || 0;
 
             document.getElementById('close-symbol').textContent = symbol;
             document.getElementById('close-quantity').textContent = quantity;
             document.getElementById('close-trade-id').value = tradeId;
 
             const pnlElement = document.getElementById('close-pnl');
+            let pnlText = '';
+            let pnlPercentage = '';
+            
+            if (entryPrice > 0 && quantityNum > 0) {
+                const costBasis = entryPrice * quantityNum;
+                const percentage = (pnl / costBasis) * 100;
+                pnlPercentage = ' (' + (pnl >= 0 ? '+' : '') + percentage.toFixed(1) + '%)';
+            }
+            
             if (pnl > 0) {
-                pnlElement.textContent = '+$' + pnl.toFixed(2);
+                pnlText = '+$' + pnl.toFixed(2) + pnlPercentage;
                 pnlElement.className = 'fw-bold text-success';
             } else if (pnl < 0) {
-                pnlElement.textContent = '$' + pnl.toFixed(2);
+                pnlText = '$' + pnl.toFixed(2) + pnlPercentage;
                 pnlElement.className = 'fw-bold text-danger';
             } else {
-                pnlElement.textContent = '$0.00';
+                pnlText = '$0.00 (0.0%)';
                 pnlElement.className = 'fw-bold text-muted';
             }
+            
+            pnlElement.textContent = pnlText;
+        });
+
+        // Handle close trade form submission
+        const closeTradeForm = document.getElementById('closeTradeForm');
+        closeTradeForm.addEventListener('submit', function(event) {
+            const confirmBtn = document.getElementById('close-confirm-btn');
+            const cancelBtn = document.getElementById('close-cancel-btn');
+            const btnText = document.getElementById('close-btn-text');
+            const btnSpinner = document.getElementById('close-btn-spinner');
+            
+            // Show spinner and disable buttons
+            btnText.classList.add('d-none');
+            btnSpinner.classList.remove('d-none');
+            confirmBtn.disabled = true;
+            cancelBtn.disabled = true;
+            
+            // Let the form submit normally
+            // The page will redirect, so no need to re-enable buttons
         });
 
         // Edit trade modal
@@ -580,6 +646,35 @@
                 confirmButton.disabled = !this.checked;
             });
         }
+
+        // Handle close all form submission
+        const closeAllForm = document.getElementById('closeAllForm');
+        closeAllForm.addEventListener('submit', function(event) {
+            const confirmBtn = document.getElementById('confirmCloseAllBtn');
+            const cancelBtn = document.getElementById('close-all-cancel-btn');
+            const btnText = document.getElementById('close-all-btn-text');
+            const btnSpinner = document.getElementById('close-all-btn-spinner');
+            
+            // Show spinner and disable buttons
+            btnText.classList.add('d-none');
+            btnSpinner.classList.remove('d-none');
+            confirmBtn.disabled = true;
+            cancelBtn.disabled = true;
+            
+            // Let the form submit normally
+            // The page will redirect, so no need to re-enable buttons
+        });
+    });
+
+    // Auto-dismiss alerts after 5 seconds
+    document.addEventListener('DOMContentLoaded', function() {
+        const alerts = document.querySelectorAll('.alert-dismissible');
+        alerts.forEach(function(alert) {
+            setTimeout(function() {
+                const bsAlert = new bootstrap.Alert(alert);
+                bsAlert.close();
+            }, 5000); // 5 seconds
+        });
     });
 </script>
 

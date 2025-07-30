@@ -478,6 +478,13 @@ def manual_close_trade_view(request):
                 self.take_profit_price = None
                 self.stop_loss_price = None
 
+                # Calculate P&L percentage based on cost basis
+                cost_basis = self.entry_price * self.quantity
+                if cost_basis > 0:
+                    self.pnl_percentage = (self.unrealized_pnl / cost_basis) * 100
+                else:
+                    self.pnl_percentage = 0.0
+
                 # Check if we have stored TP/SL settings for this symbol
                 try:
                     stored_trade = Trade.objects.get(
@@ -499,6 +506,12 @@ def manual_close_trade_view(request):
         # Only add if not already represented by Alpaca position
         if not any(pos["symbol"] == trade.symbol for pos in alpaca_positions):
             trade.alpaca_position = False
+            # Calculate P&L percentage for local trades too
+            if trade.entry_price and trade.quantity and trade.entry_price > 0:
+                cost_basis = trade.entry_price * trade.quantity
+                trade.pnl_percentage = ((trade.unrealized_pnl or 0) / cost_basis) * 100
+            else:
+                trade.pnl_percentage = 0.0
             open_trades.append(trade)
 
     if request.method == "POST":
