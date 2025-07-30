@@ -656,6 +656,11 @@
                     message = `📊 ${data.status}`;
                     className = 'text-info';
                     break;
+                case 'trade_close_requested':
+                    const pnlText = data.pnl !== undefined ? ` P&L: ${data.pnl >= 0 ? '+' : ''}$${data.pnl.toFixed(2)}` : '';
+                    message = `🚨 Close request: ${data.symbol} order submitted (ID: ${data.order_id})${pnlText}`;
+                    className = 'text-warning';
+                    break;
                 default:
                     message = `🔄 Update: ${JSON.stringify(data)}`;
                     className = 'text-muted';

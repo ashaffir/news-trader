@@ -217,11 +217,17 @@ class TradeInline(admin.TabularInline):
 
     def current_pnl(self, obj):
         pnl = obj.current_pnl
-        if pnl > 0:
-            return format_html('<span style="color: green;">+${:.2f}</span>', pnl)
-        elif pnl < 0:
-            return format_html('<span style="color: red;">${:.2f}</span>', pnl)
-        return f"${pnl:.2f}"
+        if pnl is None:
+            return "-"
+        try:
+            pnl = float(pnl)
+            if pnl > 0:
+                return format_html('<span style="color: green;">+${:.2f}</span>', pnl)
+            elif pnl < 0:
+                return format_html('<span style="color: red;">${:.2f}</span>', pnl)
+            return f"${pnl:.2f}"
+        except (ValueError, TypeError):
+            return "-"
 
     current_pnl.short_description = "P&L"
 
@@ -403,15 +409,21 @@ class TradeAdmin(admin.ModelAdmin):
 
     def pnl_display(self, obj):
         pnl = obj.current_pnl
-        if pnl > 0:
-            return format_html(
-                '<span style="color: green; font-weight: bold;">+${:.2f}</span>', pnl
-            )
-        elif pnl < 0:
-            return format_html(
-                '<span style="color: red; font-weight: bold;">${:.2f}</span>', pnl
-            )
-        return f"${pnl:.2f}"
+        if pnl is None:
+            return "-"
+        try:
+            pnl = float(pnl)
+            if pnl > 0:
+                return format_html(
+                    '<span style="color: green; font-weight: bold;">+${:.2f}</span>', pnl
+                )
+            elif pnl < 0:
+                return format_html(
+                    '<span style="color: red; font-weight: bold;">${:.2f}</span>', pnl
+                )
+            return f"${pnl:.2f}"
+        except (ValueError, TypeError):
+            return "-"
 
     pnl_display.short_description = "P&L"
 

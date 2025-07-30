@@ -7,6 +7,7 @@ from .tasks import (
     scrape_posts,
     analyze_post,
     execute_trade,
+    send_dashboard_update,
 )
 import logging
 import json
@@ -523,20 +524,185 @@ def manual_close_trade_view(request):
 
         elif action == "close_trade" and trade_id:
             logger.info(f"Attempting to close trade with ID: {trade_id}")
+            
+            # Check if this is an Alpaca position (ID starts with "alpaca_")
+            if trade_id.startswith("alpaca_"):
+                symbol = trade_id.replace("alpaca_", "")
+                logger.info(f"Closing Alpaca position for symbol: {symbol}")
+                
+                try:
+                    # Import necessary modules for Alpaca API
+                    import os
+                    import alpaca_trade_api as tradeapi
+                    from django.contrib import messages
+                    
+                    # Get Alpaca credentials
+                    ALPACA_API_KEY = os.getenv("ALPACA_API_KEY")
+                    ALPACA_SECRET_KEY = os.getenv("ALPACA_SECRET_KEY")
+                    ALPACA_BASE_URL = os.getenv("ALPACA_BASE_URL", "https://paper-api.alpaca.markets")
+                    
+                    if not ALPACA_API_KEY or not ALPACA_SECRET_KEY:
+                        logger.error("Alpaca API credentials not found")
+                        messages.error(request, "Alpaca API credentials not configured")
+                        return redirect("manual_close_trade")
+                    
+                    # Initialize Alpaca API
+                    api = tradeapi.REST(ALPACA_API_KEY, ALPACA_SECRET_KEY, base_url=ALPACA_BASE_URL)
+                    
+                    # Get current position to determine quantity and side
+                    position = api.get_position(symbol)
+                    qty = abs(float(position.qty))
+                    current_side = "long" if float(position.qty) > 0 else "short"
+                    close_side = "sell" if current_side == "long" else "buy"
+                    
+                    # Submit close order
+                    close_order = api.submit_order(
+                        symbol=symbol,
+                        qty=qty,
+                        side=close_side,
+                        type="market",
+                        time_in_force="gtc",
+                    )
+                    
+                    logger.info(f"Successfully submitted close order for {symbol}: Order ID {close_order.id}")
+                    
+                    # Get current price for exit price
+                    try:
+                        ticker = api.get_latest_trade(symbol)
+                        exit_price = ticker.price
+                    except:
+                        # Use current market price or fallback to average entry price
+                        exit_price = float(position.avg_entry_price)
+                    
+                    # Find or create Trade record for this position
+                    trade_record = None
+                    
+                    # First try to find existing trade record with this Alpaca position
+                    try:
+                        trade_record = Trade.objects.get(
+                            symbol=symbol,
+                            status="open",
+                            alpaca_order_id=f"position_{symbol}"
+                        )
+                    except Trade.DoesNotExist:
+                        # Try to find any open trade for this symbol
+                        try:
+                            trade_record = Trade.objects.filter(
+                                symbol=symbol,
+                                status="open"
+                            ).first()
+                        except:
+                            pass
+                    
+                    # If no trade record found, create a new one
+                    if not trade_record:
+                        # Try to get most recent analysis for this symbol
+                        analysis = Analysis.objects.filter(symbol=symbol).order_by('-created_at').first()
+                        
+                        trade_record = Trade.objects.create(
+                            analysis=analysis,  # May be None
+                            symbol=symbol,
+                            direction="buy" if current_side == "long" else "sell",
+                            quantity=qty,
+                            entry_price=float(position.avg_entry_price),
+                            status="open",
+                            alpaca_order_id=f"position_{symbol}",
+                            opened_at=timezone.now()
+                        )
+                        logger.info(f"Created new trade record for Alpaca position {symbol}")
+                    
+                    # Calculate P&L
+                    if trade_record.direction == "buy" or current_side == "long":
+                        pnl = (exit_price - trade_record.entry_price) * trade_record.quantity
+                    else:
+                        pnl = (trade_record.entry_price - exit_price) * trade_record.quantity
+                    
+                    # Update trade record with closure information
+                    trade_record.status = "closed"
+                    trade_record.exit_price = exit_price
+                    trade_record.realized_pnl = pnl
+                    trade_record.close_reason = "manual"
+                    trade_record.closed_at = timezone.now()
+                    trade_record.save()
+                    
+                    logger.info(f"Updated trade record {trade_record.id} for {symbol} closure with P&L: ${pnl:.2f}")
+                    
+                    messages.success(
+                        request, 
+                        f"Close order for {symbol} has been submitted to Alpaca (Order ID: {close_order.id}). P&L: ${pnl:.2f}"
+                    )
+                    
+                    # Send update to dashboard activity log
+                    send_dashboard_update(
+                        "trade_close_requested",
+                        {
+                            "symbol": symbol,
+                            "order_id": close_order.id,
+                            "message": f"Close order submitted for {symbol} via Alpaca API",
+                            "status": "submitted",
+                            "pnl": pnl
+                        }
+                    )
+                    
+                    # Send trade closed update
+                    send_dashboard_update(
+                        "trade_closed",
+                        {
+                            "trade_id": trade_record.id,
+                            "symbol": symbol,
+                            "status": "closed",
+                            "exit_price": exit_price,
+                            "realized_pnl": pnl,
+                            "message": f"Alpaca position {symbol} manually closed",
+                            "pnl": pnl
+                        }
+                    )
+                    
+                except Exception as e:
+                    logger.error(f"Failed to close Alpaca position {symbol}: {str(e)}")
+                    messages.error(
+                        request, 
+                        f"Failed to close position for {symbol}: {str(e)}"
+                    )
+                
+                return redirect("manual_close_trade")
+            
+            # Handle regular database trades
             try:
                 trade = Trade.objects.get(id=trade_id, status="open")
                 close_trade_manually.delay(trade.id)
                 logger.info(f"Initiated manual close for trade {trade.id}.")
+                messages.success(
+                    request,
+                    f"Close order for {trade.symbol} has been submitted"
+                )
+                
+                # Send update to dashboard activity log
+                send_dashboard_update(
+                    "trade_close_requested",
+                    {
+                        "symbol": trade.symbol,
+                        "trade_id": trade.id,
+                        "message": f"Manual close initiated for {trade.symbol}",
+                        "status": "initiated"
+                    }
+                )
                 return redirect("manual_close_trade")  # Redirect to refresh the page
             except Trade.DoesNotExist:
                 logger.warning(
                     f"Attempted to close non-existent or already closed trade with ID: {trade_id}"
                 )
-                # Handle error: trade not found or not open
-                pass
+                messages.error(
+                    request,
+                    f"Trade not found or already closed"
+                )
             except Exception as e:
                 logger.error(
                     f"An unexpected error occurred while processing manual close for trade {trade_id}: {e}"
+                )
+                messages.error(
+                    request,
+                    f"Error closing trade: {str(e)}"
                 )
 
         elif action == "edit_trade" and trade_id:

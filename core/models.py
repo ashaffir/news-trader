@@ -262,7 +262,8 @@ class Trade(models.Model):
     closed_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
-        return f"Trade {self.id}: {self.direction} {self.quantity} {self.symbol} @ {self.entry_price}"
+        entry_price = self.entry_price if self.entry_price is not None else "N/A"
+        return f"Trade {self.id}: {self.direction} {self.quantity} {self.symbol} @ {entry_price}"
 
     @property
     def duration_minutes(self):
@@ -276,4 +277,4 @@ class Trade(models.Model):
         """Get current P&L (realized if closed, unrealized if open)."""
         if self.status == "closed" and self.realized_pnl is not None:
             return self.realized_pnl
-        return self.unrealized_pnl
+        return self.unrealized_pnl or 0.0
