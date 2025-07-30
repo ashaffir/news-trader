@@ -79,8 +79,12 @@
         border: none;
         color: white;
         border-radius: 8px;
-        padding: 6px 12px;
+        padding: 8px 16px;
         transition: all 0.3s ease;
+        font-size: 0.875rem;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
     }
 
     .close-btn:hover {
@@ -90,12 +94,53 @@
     }
 
     .edit-btn {
+        background: linear-gradient(45deg, #007bff, #0056b3);
+        border: none;
+        color: white;
+        border-radius: 8px;
+        padding: 8px 16px;
         transition: all 0.3s ease;
+        font-size: 0.875rem;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
     }
 
     .edit-btn:hover {
         transform: translateY(-2px);
         box-shadow: 0 4px 12px rgba(0, 123, 255, 0.3);
+        color: white;
+    }
+
+    .close-all-btn {
+        background: linear-gradient(45deg, #dc3545, #c82333);
+        border: none;
+        color: white;
+        border-radius: 8px;
+        padding: 10px 20px;
+        transition: all 0.3s ease;
+        font-size: 0.9rem;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 20px;
+    }
+
+    .close-all-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 15px rgba(220, 53, 69, 0.4);
+        color: white;
+    }
+
+    .actions-column {
+        min-width: 140px;
+    }
+
+    .action-buttons {
+        display: flex;
+        gap: 8px;
+        justify-content: center;
+        flex-wrap: wrap;
     }
 
     .table {
@@ -177,12 +222,7 @@
                     <div class="col-md-6">
                         <div class="card text-center">
                             <div class="card-body">
-                                <h5
-                                    class="card-title {% if total_unrealized_pnl > 0 %}profit-positive{% elif total_unrealized_pnl < 0 %}profit-negative{% else %}profit-neutral{% endif %}">
-                                    {% if total_unrealized_pnl > 0 %}
-                                    +${{ total_unrealized_pnl|floatformat:2 }}
-                                    {% elif total_unrealized_pnl < 0 %} ${{ total_unrealized_pnl|floatformat:2 }} {%
-                                        else %} $0.00 {% endif %} </h5>
+                                <h5 class="card-title {% if total_unrealized_pnl > 0 %}profit-positive{% elif total_unrealized_pnl < 0 %}profit-negative{% else %}profit-neutral{% endif %}">{% if total_unrealized_pnl > 0 %}+${{ total_unrealized_pnl|floatformat:2 }}{% elif total_unrealized_pnl < 0 %}${{ total_unrealized_pnl|floatformat:2 }}{% else %}$0.00{% endif %}</h5>
                                         <p class="card-text text-muted">Total P&L</p>
                             </div>
                         </div>
@@ -191,6 +231,16 @@
             </div>
         </div>
     </div>
+
+    <!-- Close All Button -->
+    {% if open_trades %}
+    <div class="text-center">
+        <button type="button" class="close-all-btn" data-bs-toggle="modal" data-bs-target="#closeAllModal">
+            <i class="fas fa-times-circle"></i>
+            Close All Positions ({{ open_trades|length }})
+        </button>
+    </div>
+    {% endif %}
 
     <!-- Open Trades Table -->
     <div class="card">
@@ -212,7 +262,7 @@
                             <th><i class="fas fa-dollar-sign me-1"></i>Entry Price</th>
                             <th><i class="fas fa-info-circle me-1"></i>Status</th>
                             <th><i class="fas fa-chart-area me-1"></i>P&L</th>
-                            <th><i class="fas fa-cogs me-1"></i>Actions</th>
+                            <th class="actions-column"><i class="fas fa-cogs me-1"></i>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -250,8 +300,7 @@
                                 <span class="profit-positive">
                                     <i class="fas fa-arrow-up me-1"></i>+${{ trade.unrealized_pnl|floatformat:2 }}
                                 </span>
-                                {% elif trade.unrealized_pnl < 0 %}
-                                    <span class="profit-negative">
+                                {% elif trade.unrealized_pnl < 0 %} <span class="profit-negative">
                                     <i class="fas fa-arrow-down me-1"></i>${{ trade.unrealized_pnl|floatformat:2 }}
                                     </span>
                                     {% else %}
@@ -266,20 +315,19 @@
                                     {% endif %}
                             </td>
                             <td>
-                                <div class="btn-group" role="group">
-                                    <button type="button" class="btn btn-outline-primary btn-sm edit-btn"
-                                        data-bs-toggle="modal" data-bs-target="#editTradeModal"
-                                        data-trade-id="{{ trade.id }}" data-symbol="{{ trade.symbol }}"
-                                        data-entry-price="{{ trade.entry_price }}"
+                                <div class="action-buttons">
+                                    <button type="button" class="edit-btn" data-bs-toggle="modal"
+                                        data-bs-target="#editTradeModal" data-trade-id="{{ trade.id }}"
+                                        data-symbol="{{ trade.symbol }}" data-entry-price="{{ trade.entry_price }}"
                                         data-current-pnl="{{ trade.unrealized_pnl|default:0 }}"
                                         data-quantity="{{ trade.quantity }}">
-                                        <i class="fas fa-pencil-alt me-1"></i>Edit
+                                        <i class="fas fa-pencil-alt"></i>Edit
                                     </button>
-                                    <button type="button" class="close-btn btn-sm" data-bs-toggle="modal"
+                                    <button type="button" class="close-btn" data-bs-toggle="modal"
                                         data-bs-target="#closeTradeModal" data-trade-id="{{ trade.id }}"
                                         data-symbol="{{ trade.symbol }}" data-quantity="{{ trade.quantity }}"
                                         data-pnl="{{ trade.unrealized_pnl|default:0 }}">
-                                        <i class="fas fa-times me-1"></i>Close
+                                        <i class="fas fa-times"></i>Close
                                     </button>
                                 </div>
                             </td>
@@ -390,6 +438,78 @@
     </div>
 </div>
 
+<!-- Close All Confirmation Modal -->
+<div class="modal fade" id="closeAllModal" tabindex="-1" aria-labelledby="closeAllModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title" id="closeAllModalLabel">
+                    <i class="fas fa-exclamation-triangle me-2"></i>Close All Positions
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
+                    aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-danger">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    <strong>WARNING:</strong> You are about to close ALL {{ open_trades|length }} open position{{
+                    open_trades|length|pluralize }}.
+                </div>
+
+                <div class="mb-4">
+                    <h6 class="fw-bold">Positions to be closed:</h6>
+                    <div class="row">
+                        {% for trade in open_trades %}
+                        <div class="col-md-6 mb-2">
+                            <div class="border rounded p-2 bg-light">
+                                <strong>{{ trade.symbol }}</strong> -
+                                <span
+                                    class="{% if trade.direction == 'buy' %}text-success{% else %}text-danger{% endif %}">
+                                    {{ trade.direction|upper }}
+                                </span>
+                                {{ trade.quantity|floatformat:0 }}
+                                {% if trade.alpaca_position %}
+                                <small
+                                    class="{% if trade.unrealized_pnl > 0 %}text-success{% elif trade.unrealized_pnl < 0 %}text-danger{% else %}text-muted{% endif %}">
+                                    ({% if trade.unrealized_pnl > 0 %}+{% endif %}${{ trade.unrealized_pnl|floatformat:2
+                                    }})
+                                </small>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    <strong>This action cannot be undone.</strong> All positions will be closed at current market
+                    prices.
+                </div>
+
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="confirmCloseAll">
+                    <label class="form-check-label fw-bold" for="confirmCloseAll">
+                        I understand and want to close all positions
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="fas fa-times me-1"></i>Cancel
+                </button>
+                <form method="post" style="display: inline;" id="closeAllForm">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="close_all">
+                    <button type="submit" class="btn btn-danger" id="confirmCloseAllBtn" disabled>
+                        <i class="fas fa-times-circle me-1"></i>Close All Positions
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
     // Close trade modal
     document.addEventListener('DOMContentLoaded', function () {
@@ -428,6 +548,16 @@
             document.getElementById('edit-trade-id').value = tradeId;
             document.getElementById('edit-current-pnl').textContent = '$' + pnl.toFixed(2);
         });
+
+        // Close All functionality
+        const confirmCheckbox = document.getElementById('confirmCloseAll');
+        const confirmButton = document.getElementById('confirmCloseAllBtn');
+
+        if (confirmCheckbox && confirmButton) {
+            confirmCheckbox.addEventListener('change', function () {
+                confirmButton.disabled = !this.checked;
+            });
+        }
     });
 </script>
 

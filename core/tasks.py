@@ -879,3 +879,129 @@ def update_trade_status():
 
     except Exception as e:
         logger.error(f"Error updating trade statuses: {e}")
+
+
+@shared_task
+def close_all_trades_manually():
+    """Close all open trades manually."""
+    logger.info("Attempting to close all open trades manually.")
+    try:
+        # Get all open trades from database
+        open_trades = Trade.objects.filter(status="open")
+        trade_count = open_trades.count()
+
+        if trade_count == 0:
+            logger.info("No open trades to close.")
+            return {
+                "status": "success",
+                "message": "No open trades to close",
+                "closed_count": 0,
+            }
+
+        logger.info(f"Found {trade_count} open trades to close.")
+
+        # Close each trade individually
+        closed_count = 0
+        failed_count = 0
+        errors = []
+
+        for trade in open_trades:
+            try:
+                # Use the existing close trade logic
+                close_trade_manually.delay(trade.id)
+                closed_count += 1
+                logger.info(f"Initiated close for trade {trade.id} ({trade.symbol})")
+            except Exception as e:
+                failed_count += 1
+                error_msg = (
+                    f"Failed to close trade {trade.id} ({trade.symbol}): {str(e)}"
+                )
+                errors.append(error_msg)
+                logger.error(error_msg)
+
+        # Also try to close any Alpaca positions that might not be in database
+        try:
+            from .views import get_alpaca_trading_data
+
+            alpaca_data = get_alpaca_trading_data()
+            alpaca_positions = alpaca_data.get("positions", [])
+
+            if alpaca_positions:
+                logger.info(f"Found {len(alpaca_positions)} Alpaca positions to close.")
+
+                # Close Alpaca positions directly
+                ALPACA_API_KEY = os.getenv("ALPACA_API_KEY")
+                ALPACA_SECRET_KEY = os.getenv("ALPACA_SECRET_KEY")
+                ALPACA_BASE_URL = os.getenv(
+                    "ALPACA_BASE_URL", "https://paper-api.alpaca.markets"
+                )
+
+                if ALPACA_API_KEY and ALPACA_SECRET_KEY:
+                    api = tradeapi.REST(
+                        ALPACA_API_KEY, ALPACA_SECRET_KEY, base_url=ALPACA_BASE_URL
+                    )
+
+                    for position in alpaca_positions:
+                        try:
+                            symbol = position["symbol"]
+                            qty = abs(float(position["qty"]))
+                            side = "sell" if float(position["qty"]) > 0 else "buy"
+
+                            close_order = api.submit_order(
+                                symbol=symbol,
+                                qty=qty,
+                                side=side,
+                                type="market",
+                                time_in_force="gtc",
+                            )
+
+                            closed_count += 1
+                            logger.info(f"Closed Alpaca position for {symbol}")
+
+                        except Exception as e:
+                            failed_count += 1
+                            error_msg = f"Failed to close Alpaca position {position['symbol']}: {str(e)}"
+                            errors.append(error_msg)
+                            logger.error(error_msg)
+
+        except Exception as e:
+            logger.warning(f"Could not access Alpaca positions: {e}")
+
+        result_message = (
+            f"Close all initiated: {closed_count} successful, {failed_count} failed"
+        )
+        if errors:
+            result_message += (
+                f". Errors: {'; '.join(errors[:3])}"  # Limit error messages
+            )
+
+        logger.info(result_message)
+
+        # Send dashboard update
+        send_dashboard_update(
+            "trades_closed_all",
+            {
+                "closed_count": closed_count,
+                "failed_count": failed_count,
+                "total_count": (
+                    trade_count + len(alpaca_positions)
+                    if "alpaca_positions" in locals()
+                    else trade_count
+                ),
+                "message": result_message,
+            },
+        )
+
+        return {
+            "status": "success" if failed_count == 0 else "partial",
+            "message": result_message,
+            "closed_count": closed_count,
+            "failed_count": failed_count,
+            "errors": errors,
+        }
+
+    except Exception as e:
+        error_msg = f"Error in close_all_trades_manually: {e}"
+        logger.error(error_msg)
+        send_dashboard_update("trades_error", {"error": error_msg})
+        return {"status": "error", "message": error_msg, "closed_count": 0}

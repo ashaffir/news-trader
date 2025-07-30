@@ -18,5 +18,14 @@
         "titleBar.inactiveBackground": "#98ff9899",
         "titleBar.inactiveForeground": "#15202b99"
     },
-    "peacock.color": "#98FF98"
+    "peacock.color": "#98FF98",
+    "editor.formatOnSave": false,
+    "[html]": {
+        "editor.formatOnSave": false,
+        "editor.defaultFormatter": null
+    },
+    "prettier.disableLanguages": [
+        "html"
+    ],
+    "html.format.enable": false
 }

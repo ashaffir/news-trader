@@ -1,7 +1,13 @@
 from django.shortcuts import render, redirect
 from django.http import JsonResponse
 from .models import Trade, Post, Analysis, Source, TradingConfig
-from .tasks import close_trade_manually, scrape_posts, analyze_post, execute_trade
+from .tasks import (
+    close_trade_manually,
+    close_all_trades_manually,
+    scrape_posts,
+    analyze_post,
+    execute_trade,
+)
 import logging
 import json
 import os
@@ -10,6 +16,7 @@ from datetime import datetime, timedelta
 import requests
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
+from django.contrib import messages
 
 logger = logging.getLogger(__name__)
 
@@ -497,7 +504,24 @@ def manual_close_trade_view(request):
         action = request.POST.get("action")
         trade_id = request.POST.get("trade_id")
 
-        if action == "close_trade" and trade_id:
+        if action == "close_all":
+            logger.info("Initiating close all trades request.")
+            try:
+                # Execute the close all task
+                close_all_trades_manually.delay()
+                logger.info("Close all trades task initiated successfully.")
+                messages.success(
+                    request,
+                    "Close all trades request has been initiated. Please wait for processing to complete.",
+                )
+            except Exception as e:
+                logger.error(f"Error initiating close all trades: {e}")
+                messages.error(
+                    request, f"Failed to initiate close all trades: {str(e)}"
+                )
+            return redirect("manual_close_trade")
+
+        elif action == "close_trade" and trade_id:
             logger.info(f"Attempting to close trade with ID: {trade_id}")
             try:
                 trade = Trade.objects.get(id=trade_id, status="open")
