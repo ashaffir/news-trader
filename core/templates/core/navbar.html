@@ -1,0 +1,64 @@
+<nav class="navbar navbar-expand-lg mb-4">
+            <div class="container-fluid">
+                <span class="navbar-brand mb-0 h5 text-white fw-bold">
+                    <i class="fas fa-sitemap me-2"></i>PAGES
+                </span>
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#pageNavigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+                <div class="collapse navbar-collapse" id="pageNavigation">
+                    <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+                        <li class="nav-item">
+                            <a class="nav-link active" href="/dashboard/">
+                                <i class="fas fa-chart-line me-1"></i> Dashboard
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="/test-page/">
+                                <i class="fas fa-flask me-1"></i> Test Center
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="/close-trade/">
+                                <i class="fas fa-times-circle me-1"></i> Open Trades
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="/admin/" target="_blank">
+                                <i class="fas fa-cogs me-1"></i> Admin Panel
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="/api/" target="_blank">
+                                <i class="fas fa-code me-1"></i> API Docs
+                            </a>
+                        </li>
+                    </ul>
+                    <div class="d-flex">
+                        <div class="dropdown">
+                            <button class="btn btn-outline-light btn-sm dropdown-toggle fw-semibold" type="button"
+                                data-bs-toggle="dropdown" style="border-radius: 8px;">
+                                <i class="fas fa-tools me-1"></i> Quick Tools
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-end">
+                                <li><a class="dropdown-item" href="/admin/core/" target="_blank">
+                                        <i class="fas fa-database me-2"></i> Database Admin
+                                    </a></li>
+                                <li><a class="dropdown-item" href="#" onclick="exportSystemData()">
+                                        <i class="fas fa-download me-2"></i> Export Data
+                                    </a></li>
+                                <li>
+                                    <hr class="dropdown-divider">
+                                </li>
+                                <li><a class="dropdown-item" href="#" onclick="viewSystemLogs()">
+                                        <i class="fas fa-file-alt me-2"></i> System Logs
+                                    </a></li>
+                                <li><a class="dropdown-item" href="#" onclick="clearSystemCache()">
+                                        <i class="fas fa-trash me-2"></i> Clear Cache
+                                    </a></li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </nav>

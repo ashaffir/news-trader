@@ -9,24 +9,28 @@
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
 <style>
     body {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        min-height: 100vh;
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    }
-
-    .main-container {
         padding-top: 20px;
-        max-width: 1400px;
-        margin: 0 auto;
+        background-color: #f8f9fa;
+    }
+    .navbar {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 12px;
+        padding: 12px 20px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
     }
 
-    .header-section {
-        background: rgba(255, 255, 255, 0.95);
-        border-radius: 15px;
-        padding: 30px;
-        margin-bottom: 30px;
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-        backdrop-filter: blur(10px);
+    .nav-link {
+        border-radius: 6px;
+        color: white !important;
+        font-weight: 600;
+    }
+
+    .nav-link:hover {
+        background: rgba(255, 255, 255, 0.2) !important;
+    }
+
+    .nav-link.active {
+        background: rgba(255, 255, 255, 0.2) !important;
     }
 
     .card {
@@ -200,6 +204,8 @@
 
 {% block content %}
 <div class="container-fluid main-container">
+    <!-- PAGES NAVIGATION MENU AT TOP -->
+    {% include 'core/navbar.html' %}
     <!-- Header Section -->
     <div class="header-section">
         <div class="row align-items-center">
