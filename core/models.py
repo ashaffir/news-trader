@@ -246,6 +246,8 @@ class Trade(models.Model):
     alpaca_order_id = models.CharField(max_length=100, blank=True, null=True)
     stop_loss_price = models.FloatField(null=True, blank=True)
     take_profit_price = models.FloatField(null=True, blank=True)
+    stop_loss_price_percentage = models.FloatField(null=True, blank=True)
+    take_profit_price_percentage = models.FloatField(null=True, blank=True)
     close_reason = models.CharField(
         max_length=20, choices=CLOSE_REASON_CHOICES, blank=True, null=True
     )

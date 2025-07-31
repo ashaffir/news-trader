@@ -494,8 +494,29 @@ def manual_close_trade_view(request):
                     )
                     self.take_profit_price = stored_trade.take_profit_price
                     self.stop_loss_price = stored_trade.stop_loss_price
+                    self.take_profit_price_percentage = stored_trade.take_profit_price_percentage
+                    self.stop_loss_price_percentage = stored_trade.stop_loss_price_percentage
                 except Trade.DoesNotExist:
-                    pass  # No stored settings
+                    pass
+                
+                # If we only have prices but no percentages, calculate them
+                if self.take_profit_price and not hasattr(self, 'take_profit_price_percentage'):
+                    if self.entry_price and self.entry_price > 0:
+                        self.take_profit_price_percentage = ((self.take_profit_price - self.entry_price) / self.entry_price) * 100
+                    else:
+                        self.take_profit_price_percentage = None
+                        
+                if self.stop_loss_price and not hasattr(self, 'stop_loss_price_percentage'):
+                    if self.entry_price and self.entry_price > 0:
+                        self.stop_loss_price_percentage = abs(((self.stop_loss_price - self.entry_price) / self.entry_price) * 100)
+                    else:
+                        self.stop_loss_price_percentage = None
+                
+                # Initialize percentage fields if they don't exist
+                if not hasattr(self, 'take_profit_price_percentage'):
+                    self.take_profit_price_percentage = None
+                if not hasattr(self, 'stop_loss_price_percentage'):
+                    self.stop_loss_price_percentage = None  # No stored settings
 
         trade_obj = AlpacaTrade(pos)
         open_trades.append(trade_obj)
@@ -793,8 +814,10 @@ def manual_close_trade_view(request):
                         # Update the take profit and stop loss prices
                         if take_profit_price:
                             trade.take_profit_price = take_profit_price
+                            trade.take_profit_price_percentage = take_profit_percent
                         if stop_loss_price:
                             trade.stop_loss_price = stop_loss_price
+                            trade.stop_loss_price_percentage = stop_loss_percent
                         trade.save()
 
                         logger.info(
@@ -808,16 +831,24 @@ def manual_close_trade_view(request):
                     # Handle local database trades
                     trade = Trade.objects.get(id=trade_id, status="open")
 
-                    # Calculate actual prices from percentages
+                    # Calculate actual prices from percentages and store percentages
                     if take_profit_percent:
                         trade.take_profit_price = trade.entry_price * (
                             1 + float(take_profit_percent) / 100
                         )
+                        trade.take_profit_price_percentage = float(take_profit_percent)
+                    else:
+                        trade.take_profit_price = None
+                        trade.take_profit_price_percentage = None
 
                     if stop_loss_percent:
                         trade.stop_loss_price = trade.entry_price * (
                             1 - float(stop_loss_percent) / 100
                         )
+                        trade.stop_loss_price_percentage = float(stop_loss_percent)
+                    else:
+                        trade.stop_loss_price = None
+                        trade.stop_loss_price_percentage = None
 
                     trade.save()
                     logger.info(f"Updated trade settings for trade {trade.id}")

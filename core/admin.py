@@ -212,6 +212,8 @@ class TradeInline(admin.TabularInline):
         "entry_price",
         "exit_price",
         "current_pnl",
+        "stop_loss_price",
+        "take_profit_price",
         "created_at",
     )
 

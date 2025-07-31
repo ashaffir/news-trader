@@ -364,7 +364,9 @@
                                         data-bs-target="#editTradeModal" data-trade-id="{{ trade.id }}"
                                         data-symbol="{{ trade.symbol }}" data-entry-price="{{ trade.entry_price }}"
                                         data-current-pnl="{{ trade.unrealized_pnl|default:0 }}"
-                                        data-quantity="{{ trade.quantity }}">
+                                        data-quantity="{{ trade.quantity }}"
+                                        data-tp-percent="{{ trade.take_profit_price_percentage|default:'' }}"
+                                        data-sl-percent="{{ trade.stop_loss_price_percentage|default:'' }}">
                                         <i class="fas fa-pencil-alt"></i>Edit
                                     </button>
                                     <button type="button" class="close-btn" data-bs-toggle="modal"
@@ -632,9 +634,28 @@
             const button = event.relatedTarget;
             const tradeId = button.getAttribute('data-trade-id');
             const pnl = parseFloat(button.getAttribute('data-current-pnl')) || 0;
+            const tpPercent = button.getAttribute('data-tp-percent');
+            const slPercent = button.getAttribute('data-sl-percent');
 
+            // Set trade ID and current P&L
             document.getElementById('edit-trade-id').value = tradeId;
             document.getElementById('edit-current-pnl').textContent = '$' + pnl.toFixed(2);
+            
+            // Populate existing TP/SL percentages if they exist
+            const tpInput = document.getElementById('take_profit_percent');
+            const slInput = document.getElementById('stop_loss_percent');
+            
+            if (tpPercent && tpPercent !== 'None') {
+                tpInput.value = parseFloat(tpPercent).toFixed(1);
+            } else {
+                tpInput.value = '';
+            }
+            
+            if (slPercent && slPercent !== 'None') {
+                slInput.value = parseFloat(slPercent).toFixed(1);
+            } else {
+                slInput.value = '';
+            }
         });
 
         // Close All functionality

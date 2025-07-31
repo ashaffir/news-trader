@@ -997,6 +997,7 @@ start_services() {
     sleep 5
     
     print_success "All services started!"
+    print_status "💡 For code changes, use './dev_manager.sh restart' to reload services"
     show_detailed_status
 }
 
@@ -1792,6 +1793,11 @@ INSTALLATION (macOS with Homebrew):
     brew services start postgresql redis
 
 For other systems, install Python 3, PostgreSQL, and Redis using your package manager.
+
+CODE CHANGES:
+    - Use './dev_manager.sh restart' to reload services after code changes
+    - Django templates and static files may update without restart
+    - Database migrations: './dev_manager.sh cmd migrate'
 EOF
 }
 
