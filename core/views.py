@@ -646,7 +646,6 @@ def manual_close_trade_view(request):
                     # Import necessary modules for Alpaca API
                     import os
                     import alpaca_trade_api as tradeapi
-                    from django.contrib import messages
                     
                     # Get Alpaca credentials
                     ALPACA_API_KEY = os.getenv("ALPACA_API_KEY")
@@ -859,35 +858,23 @@ def manual_close_trade_view(request):
                                 1 - float(stop_loss_percent) / 100
                             )
 
-                        # Find or create a basic analysis for this Alpaca position
-                        from .models import Analysis
-
-                        analysis, _ = Analysis.objects.get_or_create(
+                        # Find existing trade for this symbol, don't create duplicates
+                        trade = Trade.objects.filter(
                             symbol=symbol,
-                            defaults={
-                                "post_id": 1,  # We'll use the first post as placeholder
-                                "direction": (
-                                    "buy" if float(position["qty"]) > 0 else "sell"
-                                ),
-                                "confidence": 0.8,  # Default confidence for manual settings
-                                "reason": f"Manual take profit/stop loss settings for {symbol} position",
-                            },
-                        )
-
-                        # Create or update a local trade record to store the settings
-                        trade, created = Trade.objects.get_or_create(
-                            symbol=symbol,
-                            status="open",
-                            alpaca_order_id=f"position_{symbol}",
-                            defaults={
-                                "analysis": analysis,
-                                "direction": (
-                                    "buy" if float(position["qty"]) > 0 else "sell"
-                                ),
-                                "quantity": abs(float(position["qty"])),
-                                "entry_price": entry_price,
-                            },
-                        )
+                            status="open"
+                        ).first()
+                        
+                        if not trade:
+                            # Only create if no existing trade found
+                            trade = Trade.objects.create(
+                                symbol=symbol,
+                                status="open",
+                                alpaca_order_id=f"position_{symbol}",
+                                analysis=None,  # Manual TP/SL doesn't need analysis
+                                direction="buy" if float(position["qty"]) > 0 else "sell",
+                                quantity=abs(float(position["qty"])),
+                                entry_price=entry_price,
+                            )
 
                         # Update the take profit and stop loss prices
                         if take_profit_price:
@@ -898,8 +885,18 @@ def manual_close_trade_view(request):
                             trade.stop_loss_price_percentage = stop_loss_percent
                         trade.save()
 
+                        tp_display = f"${take_profit_price:.2f}" if take_profit_price else "None"
+                        sl_display = f"${stop_loss_price:.2f}" if stop_loss_price else "None"
                         logger.info(
-                            f"Updated trade settings for {symbol}: TP=${take_profit_price:.2f if take_profit_price else 'None'}, SL=${stop_loss_price:.2f if stop_loss_price else 'None'}"
+                            f"Updated trade settings for {symbol}: TP={tp_display}, SL={sl_display}"
+                        )
+                        
+                        # Add success message for Alpaca positions
+                        tp_msg = f"TP: {take_profit_percent}%" if take_profit_percent else "TP: None"
+                        sl_msg = f"SL: {stop_loss_percent}%" if stop_loss_percent else "SL: None"
+                        messages.success(
+                            request, 
+                            f"Trade settings updated successfully for {symbol} - {tp_msg}, {sl_msg}"
                         )
 
                         # TODO: Implement actual Alpaca bracket order creation here
@@ -930,12 +927,20 @@ def manual_close_trade_view(request):
 
                     trade.save()
                     logger.info(f"Updated trade settings for trade {trade.id}")
+                    
+                    # Add success message
+                    tp_msg = f"TP: {take_profit_percent}%" if take_profit_percent else "TP: None"
+                    sl_msg = f"SL: {stop_loss_percent}%" if stop_loss_percent else "SL: None"
+                    messages.success(
+                        request, 
+                        f"Trade settings updated successfully for {trade.symbol} - {tp_msg}, {sl_msg}"
+                    )
 
                 return redirect("manual_close_trade")
 
             except Exception as e:
                 logger.error(f"Error updating trade settings for {trade_id}: {e}")
-                # Could add error message to be displayed to user
+                messages.error(request, f"Error updating trade settings: {str(e)}")
 
     # Calculate total unrealized P&L for summary
     total_unrealized_pnl = sum(

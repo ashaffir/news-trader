@@ -282,6 +282,7 @@
                             <th><i class="fas fa-exchange-alt me-1"></i>Direction</th>
                             <th><i class="fas fa-coins me-1"></i>Quantity</th>
                             <th><i class="fas fa-dollar-sign me-1"></i>Entry Price</th>
+                            <th><i class="fas fa-bullseye me-1"></i>TP/SL</th>
                             <th><i class="fas fa-info-circle me-1"></i>Status</th>
                             <th><i class="fas fa-chart-area me-1"></i>P&L</th>
                             <th><i class="fas fa-percentage me-1"></i>P&L</th>
@@ -293,14 +294,6 @@
                         <tr>
                             <td>
                                 <span class="symbol-badge">{{ trade.symbol }}</span>
-                                {% if trade.take_profit_price %}
-                                <span class="tp-sl-badge"
-                                    title="Take Profit: ${{ trade.take_profit_price|floatformat:2 }}">TP</span>
-                                {% endif %}
-                                {% if trade.stop_loss_price %}
-                                <span class="tp-sl-badge"
-                                    title="Stop Loss: ${{ trade.stop_loss_price|floatformat:2 }}">SL</span>
-                                {% endif %}
                             </td>
                             <td>
                                 <span
@@ -314,6 +307,41 @@
                             </td>
                             <td><strong>{{ trade.quantity|floatformat:0 }}</strong></td>
                             <td><strong>${{ trade.entry_price|floatformat:2 }}</strong></td>
+                            <td>
+                                <div class="d-flex flex-column gap-1">
+                                    {% if trade.take_profit_price or trade.take_profit_price_percentage %}
+                                    <div class="tp-sl-info">
+                                        <small class="text-success fw-bold">
+                                            <i class="fas fa-bullseye me-1"></i>TP: 
+                                            {% if trade.take_profit_price_percentage %}
+                                                {{ trade.take_profit_price_percentage|floatformat:1 }}%
+                                            {% endif %}
+                                            {% if trade.take_profit_price %}
+                                                (${{ trade.take_profit_price|floatformat:2 }})
+                                            {% endif %}
+                                        </small>
+                                    </div>
+                                    {% endif %}
+                                    {% if trade.stop_loss_price or trade.stop_loss_price_percentage %}
+                                    <div class="tp-sl-info">
+                                        <small class="text-danger fw-bold">
+                                            <i class="fas fa-shield-alt me-1"></i>SL: 
+                                            {% if trade.stop_loss_price_percentage %}
+                                                {{ trade.stop_loss_price_percentage|floatformat:1 }}%
+                                            {% endif %}
+                                            {% if trade.stop_loss_price %}
+                                                (${{ trade.stop_loss_price|floatformat:2 }})
+                                            {% endif %}
+                                        </small>
+                                    </div>
+                                    {% endif %}
+                                    {% if not trade.take_profit_price and not trade.take_profit_price_percentage and not trade.stop_loss_price and not trade.stop_loss_price_percentage %}
+                                    <small class="text-muted">
+                                        <i class="fas fa-minus me-1"></i>Not Set
+                                    </small>
+                                    {% endif %}
+                                </div>
+                            </td>
                             <td>
                                 <span class="status-badge status-open">{{ trade.status|capfirst }}</span>
                             </td>
