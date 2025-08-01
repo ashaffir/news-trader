@@ -42,38 +42,13 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-    "channels",
+
     "rest_framework",
     "rest_framework.authtoken",
     "core",
 ]
 
-ASGI_APPLICATION = "news_trader.asgi.application"
-
-# WebSocket Channel Layers Configuration with Redis fallback
-try:
-    import redis
-    # Test Redis connection
-    redis_host = os.getenv('REDIS_HOST', 'localhost')
-    r = redis.Redis(host=redis_host, port=6379, db=0, socket_connect_timeout=1)
-    r.ping()
-    
-    CHANNEL_LAYERS = {
-        "default": {
-            "BACKEND": "channels_redis.pubsub.RedisPubSubChannelLayer",
-            "CONFIG": {
-                "hosts": [(redis_host, 6379)],
-            },
-        },
-    }
-    print(f"✅ Redis WebSocket backend configured for {redis_host}:6379")
-except Exception as e:
-    print(f"⚠️ Redis not available ({e}), falling back to in-memory WebSocket backend")
-    CHANNEL_LAYERS = {
-        "default": {
-            "BACKEND": "channels.layers.InMemoryChannelLayer",
-        },
-    }
+# No WebSocket configuration needed - using simple polling for real-time updates!
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
@@ -224,6 +199,14 @@ CELERY_BEAT_SCHEDULE = {
     "update-trade-status-every-minute": {
         "task": "core.tasks.update_trade_status",
         "schedule": 60.0,  # Check trade status every minute
+    },
+    "close-expired-positions-every-hour": {
+        "task": "core.tasks.close_expired_positions",
+        "schedule": 3600.0,  # Check for expired positions every hour
+    },
+    "monitor-local-tp-sl-levels": {
+        "task": "core.tasks.monitor_local_stop_take_levels",
+        "schedule": 60.0,  # Default to every minute, configurable via TradingConfig
     },
 }
 

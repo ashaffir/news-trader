@@ -214,6 +214,25 @@
                         </button>
                     </div>
                 </div>
+                
+                <!-- Messages -->
+                {% if messages %}
+                    {% for message in messages %}
+                        <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                            {% if message.tags == 'success' %}
+                                <i class="fas fa-check-circle"></i>
+                            {% elif message.tags == 'error' %}
+                                <i class="fas fa-exclamation-circle"></i>
+                            {% elif message.tags == 'warning' %}
+                                <i class="fas fa-exclamation-triangle"></i>
+                            {% else %}
+                                <i class="fas fa-info-circle"></i>
+                            {% endif %}
+                            {{ message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        </div>
+                    {% endfor %}
+                {% endif %}
 
                 <!-- PAGES NAVIGATION MENU AT TOP -->
                 <nav class="navbar navbar-expand-lg mb-4"
@@ -568,6 +587,73 @@
                         </div>
                     </div>
                 </div>
+                
+                <!-- Step 4: Manual Test Trading -->
+                <div class="workflow-step" style="background: linear-gradient(135deg, #ff9a00 0%, #ffad00 100%);">
+                    <div class="d-flex align-items-center mb-3">
+                        <div class="step-number">4</div>
+                        <div>
+                            <h5 class="mb-1">Manual Test Trading</h5>
+                            <small>Direct Alpaca API testing - creates real trades</small>
+                        </div>
+                    </div>
+
+                    <div class="card action-card">
+                        <div class="card-body">
+                            <h6><i class="fas fa-vial"></i> Direct Alpaca API Test</h6>
+                            <div class="alert alert-warning alert-sm mb-3">
+                                <i class="fas fa-exclamation-triangle"></i>
+                                <strong>Warning:</strong> This creates real trades on your Alpaca account that will be visible in your trading dashboard.
+                            </div>
+                            
+                            <form method="post" class="mb-3">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="manual_test_trade">
+                                
+                                <div class="row g-2">
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Stock Symbol</label>
+                                        <input type="text" class="form-control" name="symbol" placeholder="AAPL" required style="text-transform: uppercase;">
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label small">Direction</label>
+                                        <select class="form-select" name="direction" required>
+                                            <option value="">Choose...</option>
+                                            <option value="buy">BUY</option>
+                                            <option value="sell">SELL</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small">Qty (shares)</label>
+                                        <input type="number" class="form-control" name="quantity" placeholder="1" min="1">
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small">OR $ Amount</label>
+                                        <input type="number" class="form-control" name="position_size" placeholder="100" min="1" step="0.01">
+                                    </div>
+                                    <div class="col-md-2 d-flex align-items-end">
+                                        <button type="submit" class="btn btn-warning w-100">
+                                            <i class="fas fa-paper-plane"></i> Test Trade
+                                        </button>
+                                    </div>
+                                </div>
+                                <small class="text-muted">Enter either quantity (shares) OR dollar amount - if both provided, quantity takes priority.</small>
+                            </form>
+
+                            <div class="d-flex action-buttons">
+                                <button class="btn btn-outline-info btn-sm quick-action-btn" onclick="fillAppleExample()">
+                                    <i class="fas fa-magic"></i> Fill AAPL Example
+                                </button>
+                                <button class="btn btn-outline-info btn-sm quick-action-btn" onclick="fillTeslaExample()">
+                                    <i class="fas fa-bolt"></i> Fill TSLA Example
+                                </button>
+                                <button class="btn btn-outline-secondary btn-sm quick-action-btn" onclick="viewAlpacaDashboard()">
+                                    <i class="fas fa-external-link-alt"></i> Alpaca Dashboard
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- Right Column: Data & Status -->
@@ -851,6 +937,24 @@
             alert('Risk analysis... (Feature coming soon)');
         }
 
+        function fillAppleExample() {
+            document.querySelector('input[name="symbol"]').value = 'AAPL';
+            document.querySelector('select[name="direction"]').value = 'buy';
+            document.querySelector('input[name="quantity"]').value = '1';
+            document.querySelector('input[name="position_size"]').value = '';
+        }
+
+        function fillTeslaExample() {
+            document.querySelector('input[name="symbol"]').value = 'TSLA';
+            document.querySelector('select[name="direction"]').value = 'buy';
+            document.querySelector('input[name="quantity"]').value = '';
+            document.querySelector('input[name="position_size"]').value = '100';
+        }
+
+        function viewAlpacaDashboard() {
+            window.open('https://app.alpaca.markets/', '_blank');
+        }
+
         function viewSystemLogs() {
             // Implementation for viewing system logs
             window.open('/admin/core/log/', '_blank');
@@ -892,23 +996,64 @@
         }
         }
 
-        // Load recent activity
+        // Load recent activity from API
         function loadRecentActivity() {
-            // This would typically load from an API endpoint
-            const activityDiv = document.getElementById('recent-activity');
-            activityDiv.innerHTML =
-                '<div class="recent-activity">' +
-                '<div class="activity-time">Just now</div>' +
-                '<strong>System Status:</strong> All services operational' +
-                '</div>' +
-                '<div class="recent-activity">' +
-                '<div class="activity-time">{% if recent_posts.first %}{{ recent_posts.first.created_at|timesince }} ago{% else %}Never{% endif %}</div>' +
-                '<strong>Latest Post:</strong> {% if recent_posts.first %}{{ recent_posts.first.source.name|escapejs }}{% else %}No posts yet{% endif %}' +
-                '</div>' +
-                '<div class="recent-activity">' +
-                '<div class="activity-time">{% if recent_analyses.first %}{{ recent_analyses.first.created_at|timesince }} ago{% else %}Never{% endif %}</div>' +
-                '<strong>Latest Analysis:</strong> {% if recent_analyses.first %}{{ recent_analyses.first.symbol|default:"N/A"|escapejs }} {{ recent_analyses.first.direction|upper }}{% else %}No analyses yet{% endif %}' +
-                '</div>';
+            fetch('/api/recent-activities/')
+                .then(response => response.json())
+                .then(data => {
+                    const activityDiv = document.getElementById('recent-activity');
+                    
+                    if (data.success && data.activities.length > 0) {
+                        let html = '';
+                        data.activities.slice(0, 10).forEach(activity => {
+                            const icon = getActivityIcon(activity.type);
+                            const timeAgo = activity.time_ago || 'Just now';
+                            
+                            html += `
+                                <div class="recent-activity">
+                                    <div class="activity-time">${timeAgo}</div>
+                                    <i class="${icon}"></i> ${activity.message}
+                                </div>
+                            `;
+                        });
+                        activityDiv.innerHTML = html;
+                    } else {
+                        activityDiv.innerHTML = `
+                            <div class="text-center text-muted">
+                                <i class="fas fa-info-circle"></i> No recent activity
+                            </div>
+                        `;
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading activities:', error);
+                    const activityDiv = document.getElementById('recent-activity');
+                    activityDiv.innerHTML = `
+                        <div class="text-center text-muted">
+                            <i class="fas fa-exclamation-triangle"></i> Error loading activities
+                        </div>
+                    `;
+                });
+        }
+
+        // Get icon for activity type
+        function getActivityIcon(type) {
+            const icons = {
+                'scraper_status': 'fas fa-download text-primary',
+                'new_analysis': 'fas fa-brain text-info',
+                'manual_trade_success': 'fas fa-check-circle text-success',
+                'trade_error': 'fas fa-exclamation-circle text-danger',
+                'trade_skipped': 'fas fa-pause-circle text-warning',
+                'scraper_error': 'fas fa-exclamation-triangle text-danger',
+                'analysis_error': 'fas fa-exclamation-triangle text-danger'
+            };
+            return icons[type] || 'fas fa-info-circle text-muted';
+        }
+
+        // Auto-refresh activities every 3 seconds
+        function startActivityPolling() {
+            loadRecentActivity(); // Load immediately
+            setInterval(loadRecentActivity, 3000); // Then every 3 seconds
         }
 
         // Quick Tools Functions for Page Navigation
@@ -931,7 +1076,7 @@
         // Initialize on page load
         document.addEventListener('DOMContentLoaded', function () {
             updateProgress();
-            loadRecentActivity();
+            startActivityPolling(); // Start polling for activities
         });
     </script>
 

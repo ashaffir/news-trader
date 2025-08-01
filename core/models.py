@@ -46,6 +46,32 @@ class TradingConfig(models.Model):
         help_text="Minimum LLM confidence to execute trade",
     )
 
+    # Position management
+    max_position_hold_time_hours = models.IntegerField(
+        default=24, 
+        validators=[MinValueValidator(1), MaxValueValidator(168)],  # 1 hour to 1 week
+        help_text="Maximum hours to hold a position before automatic close"
+    )
+    min_confidence_for_adjustment = models.FloatField(
+        default=0.8,
+        validators=[MinValueValidator(0.0), MaxValueValidator(1.0)],
+        help_text="Minimum confidence required to adjust existing position TP/SL"
+    )
+    conservative_adjustment_factor = models.FloatField(
+        default=0.5,
+        validators=[MinValueValidator(0.1), MaxValueValidator(1.0)],
+        help_text="Conservative factor for TP/SL adjustments (0.5 = 50% of full adjustment)"
+    )
+    allow_position_adjustments = models.BooleanField(
+        default=True,
+        help_text="Allow one-time TP/SL adjustments based on new supporting analysis"
+    )
+    monitoring_frequency_minutes = models.IntegerField(
+        default=1,
+        validators=[MinValueValidator(1), MaxValueValidator(60)],
+        help_text="How often to monitor positions for TP/SL triggers (in minutes)"
+    )
+
     # LLM Configuration
     llm_model = models.CharField(max_length=100, default="gpt-3.5-turbo")
     llm_prompt_template = models.TextField(
@@ -230,10 +256,11 @@ class Trade(models.Model):
         ("take_profit", "Take Profit"),
         ("time_limit", "Time Limit"),
         ("market_close", "Market Close"),
+        ("market_consensus_lost", "Market Consensus Lost"),
     ]
 
     analysis = models.ForeignKey(
-        Analysis, on_delete=models.CASCADE, related_name="trades"
+        Analysis, on_delete=models.CASCADE, related_name="trades", null=True, blank=True
     )
     symbol = models.CharField(max_length=10)
     direction = models.CharField(max_length=4, choices=Analysis.DIRECTION_CHOICES)
@@ -249,7 +276,21 @@ class Trade(models.Model):
     stop_loss_price_percentage = models.FloatField(null=True, blank=True)
     take_profit_price_percentage = models.FloatField(null=True, blank=True)
     close_reason = models.CharField(
-        max_length=20, choices=CLOSE_REASON_CHOICES, blank=True, null=True
+        max_length=25, choices=CLOSE_REASON_CHOICES, blank=True, null=True
+    )
+
+    # Position adjustment tracking
+    has_been_adjusted = models.BooleanField(
+        default=False, 
+        help_text="Whether TP/SL has been adjusted (one-time only)"
+    )
+    original_stop_loss_price = models.FloatField(
+        null=True, blank=True,
+        help_text="Original stop loss price before any adjustments"
+    )
+    original_take_profit_price = models.FloatField(
+        null=True, blank=True,
+        help_text="Original take profit price before any adjustments"
     )
 
     # P&L tracking

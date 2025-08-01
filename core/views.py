@@ -90,8 +90,10 @@ def system_status_api(request):
             "alpaca": check_alpaca_api(),
         }
 
-        # Get real Alpaca trading data
+        # Get real Alpaca trading data and sync with database
         alpaca_data = get_alpaca_trading_data()
+        alpaca_positions = alpaca_data.get("positions", [])
+        sync_alpaca_positions_to_database(alpaca_positions)
 
         # System Statistics
         stats = {
@@ -103,7 +105,7 @@ def system_status_api(request):
             "total_analyses": Analysis.objects.count(),
             "analyses_24h": Analysis.objects.filter(created_at__gte=last_24h).count(),
             "total_trades": Trade.objects.count(),
-            "open_trades": alpaca_data["open_positions"],  # Real Alpaca positions
+            "open_trades": Trade.objects.filter(status="open").count(),  # Synced database count
             "trades_24h": Trade.objects.filter(created_at__gte=last_24h).count(),
         }
 
@@ -449,12 +451,77 @@ def check_single_connection(request, service):
         )
 
 
+def sync_alpaca_positions_to_database(alpaca_positions):
+    """Sync Alpaca positions with database Trade records."""
+    from .models import Trade, Analysis
+    
+    logger.info(f"Syncing {len(alpaca_positions)} Alpaca positions to database...")
+    
+    # Get all symbols from Alpaca
+    alpaca_symbols = {pos["symbol"] for pos in alpaca_positions}
+    
+    # Create or update database records for each Alpaca position
+    for position in alpaca_positions:
+        symbol = position["symbol"]
+        direction = "buy" if float(position["qty"]) > 0 else "sell"
+        quantity = abs(float(position["qty"]))
+        
+        # Calculate entry price from market value and quantity
+        qty = float(position["qty"])
+        market_value = float(position["market_value"])
+        entry_price = abs(market_value) / abs(qty) if qty != 0 else 0
+        
+        unrealized_pnl = float(position.get("unrealized_pl", 0))
+        
+        # Check if trade record already exists
+        existing_trade = Trade.objects.filter(symbol=symbol, status="open").first()
+        
+        if not existing_trade:
+            # Create new trade record
+            # Try to find recent analysis for this symbol
+            analysis = Analysis.objects.filter(symbol=symbol).order_by('-created_at').first()
+            
+            trade = Trade.objects.create(
+                analysis=analysis,
+                symbol=symbol,
+                direction=direction,
+                quantity=quantity,
+                entry_price=entry_price,
+                status="open",
+                alpaca_order_id=f"sync_{symbol}_{int(timezone.now().timestamp())}",
+                opened_at=timezone.now(),
+                unrealized_pnl=unrealized_pnl,
+            )
+            logger.debug(f"Created new trade record for {symbol}")
+        else:
+            # Update existing trade with current Alpaca data
+            existing_trade.quantity = quantity
+            existing_trade.unrealized_pnl = unrealized_pnl
+            existing_trade.updated_at = timezone.now()
+            existing_trade.save()
+            logger.debug(f"Updated trade record for {symbol}")
+    
+    # Close database trades that no longer exist in Alpaca
+    db_open_trades = Trade.objects.filter(status="open")
+    for db_trade in db_open_trades:
+        if db_trade.symbol not in alpaca_symbols:
+            # Position no longer exists in Alpaca, mark as closed
+            db_trade.status = "closed"
+            db_trade.close_reason = "position_closed_externally"
+            db_trade.closed_at = timezone.now()
+            db_trade.save()
+            logger.info(f"Marked {db_trade.symbol} as closed (no longer in Alpaca)")
+
+
 def manual_close_trade_view(request):
     logger.info("Manual close trade view accessed.")
 
-    # Get real Alpaca positions instead of just local database
+    # Get real Alpaca positions 
     alpaca_data = get_alpaca_trading_data()
     alpaca_positions = alpaca_data.get("positions", [])
+
+    # Sync Alpaca positions with database
+    sync_alpaca_positions_to_database(alpaca_positions)
 
     # Convert Alpaca positions to trade-like objects for the template
     open_trades = []
@@ -474,9 +541,20 @@ def manual_close_trade_view(request):
                 self.unrealized_pnl = float(position_data["unrealized_pl"])
                 self.created_at = timezone.now()
                 self.alpaca_position = True
-                # Initialize TP/SL as None for new positions
-                self.take_profit_price = None
-                self.stop_loss_price = None
+                
+                # Get TP/SL from database if available
+                try:
+                    db_trade = Trade.objects.filter(symbol=self.symbol, status="open").first()
+                    if db_trade:
+                        self.take_profit_price = db_trade.take_profit_price
+                        self.stop_loss_price = db_trade.stop_loss_price
+                        self.created_at = db_trade.created_at or timezone.now()
+                    else:
+                        self.take_profit_price = None
+                        self.stop_loss_price = None
+                except:
+                    self.take_profit_price = None
+                    self.stop_loss_price = None
 
                 # Calculate P&L percentage based on cost basis
                 cost_basis = self.entry_price * self.quantity
@@ -919,6 +997,46 @@ def test_page_view(request):
                     )
             else:
                 logger.warning("No Analysis ID provided for manual trade trigger.")
+        elif action == "manual_test_trade":
+            symbol = request.POST.get("symbol", "").upper().strip()
+            direction = request.POST.get("direction", "").lower().strip()
+            quantity = request.POST.get("quantity", "").strip()
+            position_size = request.POST.get("position_size", "").strip()
+            
+            if symbol and direction in ["buy", "sell"]:
+                try:
+                    from .tasks import create_manual_test_trade
+                    
+                    # Convert inputs to appropriate types
+                    quantity_int = int(quantity) if quantity else None
+                    position_size_float = float(position_size) if position_size else None
+                    
+                    # Validate at least one of quantity or position_size is provided
+                    if not quantity_int and not position_size_float:
+                        quantity_int = 1  # Default to 1 share
+                    
+                    create_manual_test_trade.delay(
+                        symbol=symbol,
+                        direction=direction,
+                        quantity=quantity_int,
+                        position_size=position_size_float
+                    )
+                    logger.info(
+                        f"Manually triggered test trade: {symbol} {direction} qty={quantity_int} pos_size={position_size_float}"
+                    )
+                    messages.success(
+                        request, 
+                        f"Test trade submitted: {symbol} {direction.upper()}"
+                    )
+                except ValueError as e:
+                    logger.warning(f"Invalid input for manual test trade: {e}")
+                    messages.error(request, "Invalid quantity or position size. Please enter valid numbers.")
+                except Exception as e:
+                    logger.error(f"Error creating manual test trade: {e}")
+                    messages.error(request, f"Error creating test trade: {str(e)}")
+            else:
+                logger.warning(f"Invalid manual test trade parameters: symbol={symbol}, direction={direction}")
+                messages.error(request, "Please provide a valid symbol and direction (buy/sell).")
 
         return redirect(
             "test_page"
@@ -943,7 +1061,46 @@ def test_page_view(request):
 def recent_activities_api(request):
     """API endpoint to get recent activity logs from database."""
     try:
-        # Get the last 50 activities
+        # Get recent activities from the last 24 hours
+        last_24h = timezone.now() - timedelta(hours=24)
+        activities = ActivityLog.objects.filter(
+            created_at__gte=last_24h
+        ).order_by('-created_at')[:20]
+        
+        activity_list = []
+        for activity in activities:
+            # Calculate time ago
+            time_diff = timezone.now() - activity.created_at
+            if time_diff.seconds < 60:
+                time_ago = "Just now"
+            elif time_diff.seconds < 3600:
+                time_ago = f"{time_diff.seconds // 60} min ago"
+            else:
+                time_ago = f"{time_diff.seconds // 3600}h ago"
+            
+            activity_list.append({
+                'id': activity.id,
+                'type': activity.activity_type,
+                'message': activity.message,
+                'data': activity.data,
+                'created_at': activity.created_at.isoformat(),
+                'time_ago': time_ago
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'activities': activity_list,
+            'count': len(activity_list)
+        })
+    except Exception as e:
+        logger.error(f"Error fetching recent activities: {e}")
+        return JsonResponse({
+            'success': False,
+            'error': str(e),
+            'activities': [],
+            'count': 0
+        })
+
         recent_activities = ActivityLog.objects.order_by('-created_at')[:50]
         
         activities_data = []

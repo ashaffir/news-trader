@@ -25,6 +25,7 @@ urlpatterns = [
     path("dashboard/", views.dashboard_view, name="dashboard"),
     path("test-page/", views.test_page_view, name="test_page"),
     path("close-trade/", views.manual_close_trade_view, name="manual_close_trade"),
+    path("api/recent-activities/", views.recent_activities_api, name="recent_activities_api"),
     # System status API
     path("api/system-status/", views.system_status_api, name="system_status_api"),
     path(

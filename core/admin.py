@@ -50,6 +50,19 @@ class TradingConfigAdmin(admin.ModelAdmin):
             },
         ),
         (
+            "Position Management",
+            {
+                "fields": (
+                    "max_position_hold_time_hours",
+                    "min_confidence_for_adjustment",
+                    "conservative_adjustment_factor",
+                    "allow_position_adjustments",
+                    "monitoring_frequency_minutes",
+                ),
+                "description": "Settings for enhanced position management and risk adjustment",
+            },
+        ),
+        (
             "Trading Constraints",
             {
                 "fields": ("max_daily_trades",),
@@ -214,6 +227,8 @@ class TradeInline(admin.TabularInline):
         "current_pnl",
         "stop_loss_price",
         "take_profit_price",
+        "stop_loss_price_percentage",
+        "take_profit_price_percentage",
         "created_at",
     )
 
@@ -370,7 +385,20 @@ class TradeAdmin(admin.ModelAdmin):
                     "exit_price",
                     "stop_loss_price",
                     "take_profit_price",
+                    "stop_loss_price_percentage",
+                    "take_profit_price_percentage",
                 )
+            },
+        ),
+        (
+            "Position Adjustments",
+            {
+                "fields": (
+                    "has_been_adjusted",
+                    "original_stop_loss_price",
+                    "original_take_profit_price",
+                ),
+                "classes": ("collapse",),
             },
         ),
         (

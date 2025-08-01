@@ -53,23 +53,14 @@
             background-color: #f8f9fa;
         }
 
-        .websocket-status {
+        .polling-status {
             padding: 8px 16px;
             border-radius: 20px;
             font-weight: bold;
             font-size: 14px;
-        }
-
-        .websocket-connected {
             background-color: #d4edda;
             color: #155724;
             border: 1px solid #c3e6cb;
-        }
-
-        .websocket-disconnected {
-            background-color: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
         }
 
         .navbar {
@@ -218,9 +209,9 @@
                         <p class="text-muted mb-0">Real-time monitoring and control center</p>
                     </div>
                     <div>
-                        <span id="websocket-status" class="websocket-status websocket-disconnected">
-                            <i class="fas fa-circle me-1"></i>
-                            <span id="ws-status-text">WebSocket Disconnected</span>
+                        <span id="polling-status" class="polling-status">
+                            <i class="fas fa-circle me-1" style="color: #28a745;"></i>
+                            Live Updates Active
                         </span>
                     </div>
                 </div>
@@ -530,95 +521,60 @@
     <script>
         // Initialize variables
         const logDiv = document.getElementById('log');
-        const wsStatusDiv = document.getElementById('websocket-status');
-        const wsStatusText = document.getElementById('ws-status-text');
         const botToggle = document.getElementById('botToggle');
         const botStatusText = document.getElementById('bot-status-text');
         const botToggleLabel = document.getElementById('bot-toggle-label');
 
-        // WebSocket connection
-        let socket = null;
-        let reconnectAttempts = 0;
-        const maxReconnectAttempts = 5;
-
-        function connectWebSocket() {
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsUrl = `${protocol}//${window.location.host}/ws/dashboard/`;
-
-            try {
-                socket = new WebSocket(wsUrl);
-
-                socket.onopen = function (e) {
-                    console.log('WebSocket connected');
-                    wsStatusDiv.className = 'websocket-status websocket-connected';
-                    wsStatusText.textContent = 'WebSocket Connected';
-                    reconnectAttempts = 0;
-                    addLogEntry('WebSocket connected successfully', 'text-success');
-                    
-                    // Load recent activities from database to populate the log initially
-                    setTimeout(() => {
-                        if (logDiv.children.length <= 2) { // Only dashboard initialized message
-                            refreshActivitiesFromDatabase();
-                        }
-                    }, 1000);
-                };
-
-                socket.onclose = function (e) {
-                    console.log('WebSocket disconnected', e.code, e.reason);
-                    wsStatusDiv.className = 'websocket-status websocket-disconnected';
-                    wsStatusText.textContent = 'WebSocket Disconnected';
-
-                    if (e.code !== 1000) {  // Not a normal close
-                        addLogEntry('WebSocket connection lost', 'text-warning');
+        // Simple polling for updates - much more reliable than WebSockets!
+        let lastActivityId = 0;
+        
+        function pollForUpdates() {
+            fetch('/api/recent-activities/')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success && data.activities.length > 0) {
+                        // Only show new activities
+                        const newActivities = data.activities.filter(activity => activity.id > lastActivityId);
+                        
+                        newActivities.reverse().forEach(activity => {
+                            const icon = getActivityIcon(activity.type);
+                            const timestamp = new Date(activity.created_at).toLocaleTimeString();
+                            addLogEntry(`${icon} ${activity.message}`, getActivityClass(activity.type), timestamp);
+                            lastActivityId = Math.max(lastActivityId, activity.id);
+                        });
                     }
+                })
+                .catch(error => {
+                    console.error('Error polling for updates:', error);
+                });
+        }
 
-                    // Auto-reconnect with exponential backoff
-                    if (reconnectAttempts < maxReconnectAttempts) {
-                        reconnectAttempts++;
-                        const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
-                        setTimeout(() => {
-                            addLogEntry(`Reconnecting... (${reconnectAttempts}/${maxReconnectAttempts})`, 'text-info');
-                            connectWebSocket();
-                        }, delay);
-                    } else {
-                        addLogEntry('Max reconnection attempts reached. Manual refresh required.', 'text-danger');
-                    }
-                };
+        function getActivityIcon(type) {
+            const icons = {
+                'scraper_status': '📥',
+                'new_analysis': '🧠', 
+                'manual_trade_success': '✅',
+                'trade_error': '❌',
+                'trade_skipped': '⏸️',
+                'scraper_error': '⚠️',
+                'analysis_error': '⚠️',
+                'trade_status_updated': '🔄'
+            };
+            return icons[type] || 'ℹ️';
+        }
 
-                socket.onmessage = function (e) {
-                    try {
-                        const data = JSON.parse(e.data);
-                        if (data.message) {
-                            // Simple message
-                            addLogEntry(`Real-time update: ${data.message}`, 'text-info');
-                        } else if (data.type && data.data) {
-                            // Structured update
-                            handleStructuredUpdate(data.type, data.data);
-                        } else {
-                            console.log('Received WebSocket data:', data);
-                        }
-                    } catch (error) {
-                        console.error('Error parsing WebSocket message:', error);
-                        addLogEntry('Error processing real-time update', 'text-warning');
-                    }
-                };
-
-                socket.onerror = function (e) {
-                    console.error('WebSocket error:', e);
-                    addLogEntry('WebSocket connection error', 'text-danger');
-                };
-
-            } catch (error) {
-                console.error('Failed to create WebSocket:', error);
-                addLogEntry('WebSocket initialization failed', 'text-danger');
-                wsStatusDiv.className = 'websocket-status websocket-disconnected';
-                wsStatusText.textContent = 'WebSocket Failed';
-                
-                // Load activities from database since WebSocket failed
-                setTimeout(() => {
-                    refreshActivitiesFromDatabase();
-                }, 2000);
-            }
+        function getActivityClass(type) {
+            const classes = {
+                'scraper_status': 'text-primary',
+                'new_analysis': 'text-info',
+                'manual_trade_success': 'text-success', 
+                'trade_error': 'text-danger',
+                'trade_skipped': 'text-warning',
+                'scraper_error': 'text-danger',
+                'analysis_error': 'text-danger',
+                'trade_status_updated': 'text-info'
+            };
+            return classes[type] || 'text-muted';
         }
 
         // Add log entry function
@@ -729,10 +685,8 @@
                     addLogEntry('Failed to refresh system data', 'text-danger');
                 });
             
-            // Also refresh activities from database if WebSocket is disconnected
-            if (wsStatusDiv.className.includes('websocket-disconnected')) {
-                refreshActivitiesFromDatabase();
-            }
+            // Also refresh activities from database
+            refreshActivitiesFromDatabase();
         }
 
         // Function to refresh activities from database
@@ -759,7 +713,7 @@
                         
                         // Add notice that these are from database
                         if (logDiv.children.length > 1) {
-                            addLogEntry('📁 Showing recent activities from database (WebSocket offline)', 'text-info');
+                            addLogEntry('📁 Showing recent activities from database', 'text-info');
                         }
                     }
                 })
@@ -875,8 +829,11 @@
 
         // Initialize dashboard
         document.addEventListener('DOMContentLoaded', function () {
-            // Connect WebSocket
-            connectWebSocket();
+            addLogEntry('🚀 Dashboard initialized with live polling', 'text-success');
+            
+            // Start polling for updates every 3 seconds
+            pollForUpdates(); // Load initial activities
+            setInterval(pollForUpdates, 3000);
 
             // Initial data refresh
             refreshData();

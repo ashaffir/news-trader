@@ -5,8 +5,7 @@ import json
 import requests
 from bs4 import BeautifulSoup
 from celery import shared_task
-from channels.layers import get_channel_layer
-from asgiref.sync import async_to_sync
+
 from .models import Source, ApiResponse, Post, Analysis, Trade, TradingConfig, ActivityLog
 from django.utils import timezone
 from django.db.models import Q
@@ -32,41 +31,22 @@ def format_activity_message(message_type, data):
 
 
 def send_dashboard_update(message_type, data):
-    """Send a real-time update to the dashboard via WebSocket and save to database."""
+    """Save activity update to database for polling-based UI updates."""
     try:
         # Format the message for display
         message = format_activity_message(message_type, data)
         
-        # Save to database as backup
-        try:
-            ActivityLog.objects.create(
-                activity_type=message_type,
-                message=message,
-                data=data
-            )
-            logger.debug(f"Activity logged to database: {message_type}")
-        except Exception as db_error:
-            logger.error(f"Failed to save activity to database: {db_error}")
-        
-        # Send via WebSocket
-        channel_layer = get_channel_layer()
-        if channel_layer is None:
-            logger.warning("Channel layer not available - using database backup only")
-            return
-            
-        async_to_sync(channel_layer.group_send)(
-            "dashboard_updates",
-            {
-                "type": "send_update",
-                "message_type": message_type,
-                "data": data,
-            },
+        # Save to database - this is now the primary method
+        ActivityLog.objects.create(
+            activity_type=message_type,
+            message=message,
+            data=data
         )
-        logger.debug(f"Dashboard update sent via WebSocket: {message_type}")
+        logger.debug(f"Activity logged to database: {message_type}")
         
     except Exception as e:
-        logger.error(f"Failed to send dashboard update ({message_type}): {e}")
-        # Continue execution even if both WebSocket and database fail
+        logger.error(f"Failed to save activity update ({message_type}): {e}")
+        # Continue execution even if database save fails
 
 
 def _create_simulated_post(source, error_message, method):
@@ -606,8 +586,8 @@ Direction can be 'buy', 'sell', or 'hold'. Confidence is a float between 0 and 1
 
 @shared_task
 def execute_trade(analysis_id):
-    """Execute a trade based on an analysis."""
-    logger.info(f"Executing trade for analysis {analysis_id}.")
+    """Execute a trade based on an analysis with enhanced position management."""
+    logger.info(f"Processing trade analysis {analysis_id}.")
 
     # Check if bot is enabled
     trading_config = get_active_trading_config()
@@ -618,20 +598,46 @@ def execute_trade(analysis_id):
     analysis = Analysis.objects.get(id=analysis_id)
     send_dashboard_update(
         "trade_status",
-        {"analysis_id": analysis.id, "status": "Trade execution started"},
+        {"analysis_id": analysis.id, "status": "Analyzing position management"},
     )
 
-    # Get trading configuration
+    # Check for existing open position in the same symbol
+    existing_trade = Trade.objects.filter(
+        symbol=analysis.symbol,
+        status="open"
+    ).first()
+
+    if existing_trade:
+        logger.info(f"Found existing open position for {analysis.symbol}: {existing_trade.direction}")
+        
+        if analysis.direction != existing_trade.direction:
+            # Conflicting direction → Close position (market consensus lost)
+            logger.info(f"Conflicting analysis for {analysis.symbol}: existing {existing_trade.direction}, new {analysis.direction}. Closing position.")
+            close_trade_due_to_conflict.delay(existing_trade.id, analysis.id)
+        else:
+            # Supporting direction → Adjust TP/SL if conditions are met
+            logger.info(f"Supporting analysis for {analysis.symbol}: {analysis.direction}. Checking for adjustment.")
+            adjust_position_risk.delay(existing_trade.id, analysis.id)
+    else:
+        # No existing position → Create new trade
+        logger.info(f"No existing position for {analysis.symbol}. Creating new trade.")
+        create_new_trade.delay(analysis.id)
+
+
+@shared_task
+def create_new_trade(analysis_id):
+    """Create a new trade for the given analysis."""
+    analysis = Analysis.objects.get(id=analysis_id)
     config = get_active_trading_config()
+
+    logger.info(f"Creating new trade for analysis {analysis_id}: {analysis.symbol} {analysis.direction}")
 
     ALPACA_API_KEY = os.getenv("ALPACA_API_KEY")
     ALPACA_SECRET_KEY = os.getenv("ALPACA_SECRET_KEY")
     ALPACA_BASE_URL = os.getenv("ALPACA_BASE_URL", "https://paper-api.alpaca.markets")
 
     if not ALPACA_API_KEY or not ALPACA_SECRET_KEY:
-        logger.error(
-            "Alpaca API keys not found in environment variables. Cannot execute trade."
-        )
+        logger.error("Alpaca API keys not found in environment variables. Cannot execute trade.")
         send_dashboard_update(
             "trade_error",
             {"analysis_id": analysis.id, "error": "Alpaca API keys not configured"},
@@ -658,75 +664,44 @@ def execute_trade(analysis_id):
             quantity = 1
             current_price = 0.0
 
-        if analysis.direction == "buy":
-            order = api.submit_order(
-                symbol=analysis.symbol,
-                qty=quantity,
-                side="buy",
-                type="market",
-                time_in_force="gtc",
-            )
+        # Submit order to Alpaca
+        order = api.submit_order(
+            symbol=analysis.symbol,
+            qty=quantity,
+            side=analysis.direction,  # "buy" or "sell"
+            type="market",
+            time_in_force="gtc",
+        )
 
-            # Calculate stop loss and take profit prices
-            stop_loss_price = None
-            take_profit_price = None
-            if config and current_price > 0:
-                stop_loss_price = current_price * (
-                    1 - config.stop_loss_percentage / 100
-                )
-                take_profit_price = current_price * (
-                    1 + config.take_profit_percentage / 100
-                )
+        # Calculate stop loss and take profit prices
+        stop_loss_price = None
+        take_profit_price = None
+        if config and current_price > 0:
+            if analysis.direction == "buy":
+                stop_loss_price = current_price * (1 - config.stop_loss_percentage / 100)
+                take_profit_price = current_price * (1 + config.take_profit_percentage / 100)
+            else:  # sell
+                stop_loss_price = current_price * (1 + config.stop_loss_percentage / 100)
+                take_profit_price = current_price * (1 - config.take_profit_percentage / 100)
 
-            trade = Trade.objects.create(
-                analysis=analysis,
-                symbol=analysis.symbol,
-                direction=analysis.direction,
-                quantity=quantity,
-                entry_price=current_price,
-                status="pending",
-                alpaca_order_id=order.id,
-                stop_loss_price=stop_loss_price,
-                take_profit_price=take_profit_price,
-            )
-            logger.info(
-                f"Submitted BUY order for {analysis.symbol}. Trade ID: {trade.id}, Order ID: {order.id}"
-            )
+        # Create trade record
+        trade = Trade.objects.create(
+            analysis=analysis,
+            symbol=analysis.symbol,
+            direction=analysis.direction,
+            quantity=quantity,
+            entry_price=current_price,
+            status="pending",
+            alpaca_order_id=order.id,
+            stop_loss_price=stop_loss_price,
+            take_profit_price=take_profit_price,
+            original_stop_loss_price=stop_loss_price,  # Store original values
+            original_take_profit_price=take_profit_price,
+        )
 
-        elif analysis.direction == "sell":
-            order = api.submit_order(
-                symbol=analysis.symbol,
-                qty=quantity,
-                side="sell",
-                type="market",
-                time_in_force="gtc",
-            )
-
-            # Calculate stop loss and take profit prices for short position
-            stop_loss_price = None
-            take_profit_price = None
-            if config and current_price > 0:
-                stop_loss_price = current_price * (
-                    1 + config.stop_loss_percentage / 100
-                )
-                take_profit_price = current_price * (
-                    1 - config.take_profit_percentage / 100
-                )
-
-            trade = Trade.objects.create(
-                analysis=analysis,
-                symbol=analysis.symbol,
-                direction=analysis.direction,
-                quantity=quantity,
-                entry_price=current_price,
-                status="pending",
-                alpaca_order_id=order.id,
-                stop_loss_price=stop_loss_price,
-                take_profit_price=take_profit_price,
-            )
-            logger.info(
-                f"Submitted SELL order for {analysis.symbol}. Trade ID: {trade.id}, Order ID: {order.id}"
-            )
+        logger.info(
+            f"Submitted {analysis.direction.upper()} order for {analysis.symbol}. Trade ID: {trade.id}, Order ID: {order.id}"
+        )
 
         send_dashboard_update(
             "new_trade",
@@ -743,11 +718,277 @@ def execute_trade(analysis_id):
         )
 
     except Exception as e:
-        error_msg = f"Error executing trade for analysis {analysis.id}: {e}"
+        error_msg = f"Error creating new trade for analysis {analysis.id}: {e}"
         logger.error(error_msg)
         send_dashboard_update(
             "trade_error", {"analysis_id": analysis.id, "error": error_msg}
         )
+
+
+@shared_task
+def adjust_position_risk(trade_id, analysis_id):
+    """Adjust TP/SL for existing position based on supporting analysis."""
+    trade = Trade.objects.get(id=trade_id)
+    analysis = Analysis.objects.get(id=analysis_id)
+    config = get_active_trading_config()
+
+    logger.info(f"Evaluating position adjustment for trade {trade_id} based on analysis {analysis_id}")
+
+    # Check if adjustments are allowed and not already done
+    if not config or not config.allow_position_adjustments:
+        logger.info(f"Position adjustments disabled in config for trade {trade_id}")
+        return
+
+    if trade.has_been_adjusted:
+        logger.info(f"Trade {trade_id} has already been adjusted. Skipping.")
+        return
+
+    # Check confidence threshold
+    if analysis.confidence < config.min_confidence_for_adjustment:
+        logger.info(
+            f"Analysis confidence {analysis.confidence} below adjustment threshold "
+            f"{config.min_confidence_for_adjustment} for trade {trade_id}"
+        )
+        return
+
+    try:
+        # Calculate conservative adjustment based on analysis confidence
+        adjustment_factor = analysis.confidence * config.conservative_adjustment_factor
+
+        logger.info(
+            f"Applying conservative adjustment (factor: {adjustment_factor:.2f}) to trade {trade_id}"
+        )
+
+        # Adjust take profit (move further out for supporting news)
+        if trade.take_profit_price and trade.entry_price:
+            current_tp_distance = abs(trade.take_profit_price - trade.entry_price)
+            additional_distance = current_tp_distance * adjustment_factor * 0.1  # 10% max extension
+
+            if trade.direction == "buy":
+                new_tp = trade.take_profit_price + additional_distance
+            else:  # sell
+                new_tp = trade.take_profit_price - additional_distance
+
+            trade.take_profit_price = new_tp
+            logger.info(f"Adjusted TP for trade {trade_id}: {trade.take_profit_price:.2f}")
+
+        # Adjust stop loss (tighten to lock in profits)
+        if trade.stop_loss_price and trade.entry_price:
+            current_sl_distance = abs(trade.stop_loss_price - trade.entry_price)
+            tighter_distance = current_sl_distance * (1 - adjustment_factor * 0.3)  # Up to 30% tighter
+
+            if trade.direction == "buy":
+                new_sl = trade.entry_price - tighter_distance
+            else:  # sell
+                new_sl = trade.entry_price + tighter_distance
+
+            trade.stop_loss_price = new_sl
+            logger.info(f"Adjusted SL for trade {trade_id}: {trade.stop_loss_price:.2f}")
+
+        # Mark as adjusted (one-time only)
+        trade.has_been_adjusted = True
+        trade.save()
+
+        send_dashboard_update(
+            "position_adjusted",
+            {
+                "trade_id": trade.id,
+                "symbol": trade.symbol,
+                "new_take_profit": trade.take_profit_price,
+                "new_stop_loss": trade.stop_loss_price,
+                "adjustment_factor": adjustment_factor,
+                "analysis_confidence": analysis.confidence,
+            },
+        )
+
+        logger.info(f"Successfully adjusted position for trade {trade_id}")
+
+    except Exception as e:
+        error_msg = f"Error adjusting position for trade {trade_id}: {e}"
+        logger.error(error_msg)
+        send_dashboard_update(
+            "trade_error", {"trade_id": trade_id, "error": error_msg}
+        )
+
+
+@shared_task
+def close_trade_due_to_conflict(trade_id, conflicting_analysis_id):
+    """Close a trade due to conflicting market analysis (no consensus)."""
+    trade = Trade.objects.get(id=trade_id)
+    analysis = Analysis.objects.get(id=conflicting_analysis_id)
+
+    logger.info(
+        f"Closing trade {trade_id} ({trade.symbol} {trade.direction}) due to conflicting analysis "
+        f"{conflicting_analysis_id} ({analysis.direction})"
+    )
+
+    try:
+        # Set close reason
+        trade.close_reason = "market_consensus_lost"
+        trade.save()
+
+        # Use existing manual close logic
+        close_trade_manually.delay(trade_id)
+
+        send_dashboard_update(
+            "trade_closed_conflict",
+            {
+                "trade_id": trade.id,
+                "symbol": trade.symbol,
+                "original_direction": trade.direction,
+                "conflicting_direction": analysis.direction,
+                "reason": "Market consensus lost",
+            },
+        )
+
+        logger.info(f"Initiated close for conflicting trade {trade_id}")
+
+    except Exception as e:
+        error_msg = f"Error closing conflicting trade {trade_id}: {e}"
+        logger.error(error_msg)
+        send_dashboard_update(
+            "trade_error", {"trade_id": trade_id, "error": error_msg}
+        )
+
+
+@shared_task
+def close_expired_positions():
+    """Close positions that have exceeded the maximum hold time."""
+    config = get_active_trading_config()
+    if not config:
+        logger.warning("No active trading config found. Skipping expired position cleanup.")
+        return
+
+    # Calculate cutoff time
+    cutoff_time = timezone.now() - timedelta(hours=config.max_position_hold_time_hours)
+    
+    # Find expired trades
+    expired_trades = Trade.objects.filter(
+        status="open",
+        opened_at__lt=cutoff_time
+    )
+
+    expired_count = expired_trades.count()
+    if expired_count == 0:
+        logger.info("No expired positions found.")
+        return
+
+    logger.info(f"Found {expired_count} expired positions to close (older than {config.max_position_hold_time_hours} hours)")
+
+    closed_count = 0
+    failed_count = 0
+
+    for trade in expired_trades:
+        try:
+            # Set close reason and initiate close
+            trade.close_reason = "time_limit"
+            trade.save()
+
+            close_trade_manually.delay(trade.id)
+            closed_count += 1
+            
+            logger.info(f"Initiated time-based close for trade {trade.id} ({trade.symbol})")
+
+        except Exception as e:
+            failed_count += 1
+            logger.error(f"Error closing expired trade {trade.id}: {e}")
+
+    # Send dashboard update
+    send_dashboard_update(
+        "expired_positions_closed",
+        {
+            "total_expired": expired_count,
+            "closed_count": closed_count,
+            "failed_count": failed_count,
+            "max_hold_hours": config.max_position_hold_time_hours,
+        },
+    )
+
+    logger.info(f"Expired position cleanup completed: {closed_count} initiated, {failed_count} failed")
+
+
+@shared_task
+def monitor_local_stop_take_levels():
+    """Monitor open positions for local TP/SL triggers without sending to Alpaca."""
+    config = get_active_trading_config()
+    if not config:
+        logger.warning("No active trading config found. Skipping TP/SL monitoring.")
+        return
+
+    # Get all open trades
+    open_trades = Trade.objects.filter(status="open")
+    
+    if not open_trades.exists():
+        logger.debug("No open trades to monitor.")
+        return
+
+    logger.info(f"Monitoring {open_trades.count()} open positions for TP/SL triggers")
+
+    ALPACA_API_KEY = os.getenv("ALPACA_API_KEY")
+    ALPACA_SECRET_KEY = os.getenv("ALPACA_SECRET_KEY")
+    ALPACA_BASE_URL = os.getenv("ALPACA_BASE_URL", "https://paper-api.alpaca.markets")
+
+    if not ALPACA_API_KEY or not ALPACA_SECRET_KEY:
+        logger.warning("Alpaca API keys not configured. Skipping TP/SL monitoring.")
+        return
+
+    api = tradeapi.REST(ALPACA_API_KEY, ALPACA_SECRET_KEY, base_url=ALPACA_BASE_URL)
+
+    triggered_count = 0
+
+    for trade in open_trades:
+        try:
+            # Get current price
+            ticker = api.get_latest_trade(trade.symbol)
+            current_price = float(ticker.price)
+
+            # Check stop loss trigger
+            if should_trigger_stop_loss(trade, current_price):
+                logger.info(f"Stop loss triggered for trade {trade.id} ({trade.symbol}): {current_price} vs SL {trade.stop_loss_price}")
+                trade.close_reason = "stop_loss"
+                trade.save()
+                close_trade_manually.delay(trade.id)
+                triggered_count += 1
+
+            # Check take profit trigger
+            elif should_trigger_take_profit(trade, current_price):
+                logger.info(f"Take profit triggered for trade {trade.id} ({trade.symbol}): {current_price} vs TP {trade.take_profit_price}")
+                trade.close_reason = "take_profit"
+                trade.save()
+                close_trade_manually.delay(trade.id)
+                triggered_count += 1
+
+        except Exception as e:
+            logger.error(f"Error monitoring trade {trade.id} ({trade.symbol}): {e}")
+
+    if triggered_count > 0:
+        logger.info(f"TP/SL monitoring completed: {triggered_count} positions triggered")
+
+
+def should_trigger_stop_loss(trade, current_price):
+    """Check if stop loss should be triggered for a trade."""
+    if not trade.stop_loss_price:
+        return False
+
+    if trade.direction == "buy":
+        # For long positions, stop loss triggers when price falls below SL
+        return current_price <= trade.stop_loss_price
+    else:  # sell
+        # For short positions, stop loss triggers when price rises above SL
+        return current_price >= trade.stop_loss_price
+
+
+def should_trigger_take_profit(trade, current_price):
+    """Check if take profit should be triggered for a trade."""
+    if not trade.take_profit_price:
+        return False
+
+    if trade.direction == "buy":
+        # For long positions, take profit triggers when price rises above TP
+        return current_price >= trade.take_profit_price
+    else:  # sell
+        # For short positions, take profit triggers when price falls below TP
+        return current_price <= trade.take_profit_price
 
 
 @shared_task
@@ -856,6 +1097,93 @@ def close_trade_manually(trade_id):
 
 
 @shared_task
+def create_manual_test_trade(symbol, direction, quantity=None, position_size=None):
+    """Create a manual test trade directly to Alpaca API for testing purposes."""
+    logger.info(f"Creating manual test trade: {symbol} {direction}")
+
+    ALPACA_API_KEY = os.getenv("ALPACA_API_KEY")
+    ALPACA_SECRET_KEY = os.getenv("ALPACA_SECRET_KEY")
+    ALPACA_BASE_URL = os.getenv("ALPACA_BASE_URL", "https://paper-api.alpaca.markets")
+
+    if not ALPACA_API_KEY or not ALPACA_SECRET_KEY:
+        logger.error("Alpaca API keys not found in environment variables. Cannot execute test trade.")
+        send_dashboard_update(
+            "trade_error",
+            {"error": "Alpaca API keys not configured"},
+        )
+        return
+
+    api = tradeapi.REST(ALPACA_API_KEY, ALPACA_SECRET_KEY, base_url=ALPACA_BASE_URL)
+
+    try:
+        # Get current stock price for quantity calculation if needed
+        try:
+            ticker = api.get_latest_trade(symbol)
+            current_price = ticker.price
+            
+            # Calculate quantity if position_size is provided, otherwise use quantity directly
+            if position_size and not quantity:
+                quantity = max(1, int(position_size / current_price))
+            elif not quantity:
+                quantity = 1  # Default to 1 share
+                
+        except Exception as e:
+            logger.warning(f"Could not get current price for {symbol}: {e}. Using quantity 1.")
+            quantity = quantity or 1
+            current_price = 0.0
+
+        # Submit order to Alpaca
+        logger.info(f"Submitting test order: {symbol}, qty={quantity}, side={direction}")
+        order = api.submit_order(
+            symbol=symbol,
+            qty=quantity,
+            side=direction,  # "buy" or "sell"
+            type="market",
+            time_in_force="gtc",
+        )
+
+        # Create minimal trade record for tracking (without analysis)
+        trade = Trade.objects.create(
+            analysis=None,  # No analysis for manual test trades
+            symbol=symbol,
+            direction=direction,
+            quantity=quantity,
+            entry_price=current_price,
+            status="pending",
+            alpaca_order_id=order.id,
+            opened_at=timezone.now(),
+            # Note: Manual test trade - Order ID stored in alpaca_order_id
+        )
+
+        logger.info(f"Manual test trade created successfully: Trade #{trade.id}, Alpaca Order #{order.id}")
+        
+        send_dashboard_update(
+            "manual_trade_success",
+            {
+                "trade_id": trade.id,
+                "symbol": symbol,
+                "direction": direction,
+                "quantity": quantity,
+                "alpaca_order_id": order.id,
+                "current_price": current_price,
+            },
+        )
+
+        return {
+            "success": True,
+            "trade_id": trade.id,
+            "alpaca_order_id": order.id,
+            "message": f"Test trade created: {symbol} {direction} {quantity} shares"
+        }
+
+    except Exception as e:
+        error_msg = f"Failed to create manual test trade: {str(e)}"
+        logger.error(error_msg)
+        send_dashboard_update("trade_error", {"error": error_msg})
+        return {"success": False, "error": error_msg}
+
+
+@shared_task
 def update_trade_status():
     """Periodic task to update trade statuses from Alpaca API."""
     logger.info("Updating trade statuses from Alpaca API.")
@@ -926,7 +1254,14 @@ def close_all_trades_manually():
     """Close all open trades manually."""
     logger.info("Attempting to close all open trades manually.")
     try:
-        # Get all open trades from database
+        # First sync database with Alpaca to ensure consistency
+        from .views import get_alpaca_trading_data, sync_alpaca_positions_to_database
+        
+        alpaca_data = get_alpaca_trading_data()
+        alpaca_positions = alpaca_data.get("positions", [])
+        sync_alpaca_positions_to_database(alpaca_positions)
+        
+        # Get all open trades from database (now synced)
         open_trades = Trade.objects.filter(status="open")
         trade_count = open_trades.count()
 
@@ -959,54 +1294,6 @@ def close_all_trades_manually():
                 errors.append(error_msg)
                 logger.error(error_msg)
 
-        # Also try to close any Alpaca positions that might not be in database
-        try:
-            from .views import get_alpaca_trading_data
-
-            alpaca_data = get_alpaca_trading_data()
-            alpaca_positions = alpaca_data.get("positions", [])
-
-            if alpaca_positions:
-                logger.info(f"Found {len(alpaca_positions)} Alpaca positions to close.")
-
-                # Close Alpaca positions directly
-                ALPACA_API_KEY = os.getenv("ALPACA_API_KEY")
-                ALPACA_SECRET_KEY = os.getenv("ALPACA_SECRET_KEY")
-                ALPACA_BASE_URL = os.getenv(
-                    "ALPACA_BASE_URL", "https://paper-api.alpaca.markets"
-                )
-
-                if ALPACA_API_KEY and ALPACA_SECRET_KEY:
-                    api = tradeapi.REST(
-                        ALPACA_API_KEY, ALPACA_SECRET_KEY, base_url=ALPACA_BASE_URL
-                    )
-
-                    for position in alpaca_positions:
-                        try:
-                            symbol = position["symbol"]
-                            qty = abs(float(position["qty"]))
-                            side = "sell" if float(position["qty"]) > 0 else "buy"
-
-                            close_order = api.submit_order(
-                                symbol=symbol,
-                                qty=qty,
-                                side=side,
-                                type="market",
-                                time_in_force="gtc",
-                            )
-
-                            closed_count += 1
-                            logger.info(f"Closed Alpaca position for {symbol}")
-
-                        except Exception as e:
-                            failed_count += 1
-                            error_msg = f"Failed to close Alpaca position {position['symbol']}: {str(e)}"
-                            errors.append(error_msg)
-                            logger.error(error_msg)
-
-        except Exception as e:
-            logger.warning(f"Could not access Alpaca positions: {e}")
-
         result_message = (
             f"Close all initiated: {closed_count} successful, {failed_count} failed"
         )
@@ -1023,11 +1310,7 @@ def close_all_trades_manually():
             {
                 "closed_count": closed_count,
                 "failed_count": failed_count,
-                "total_count": (
-                    trade_count + len(alpaca_positions)
-                    if "alpaca_positions" in locals()
-                    else trade_count
-                ),
+                "total_count": trade_count,
                 "message": result_message,
             },
         )

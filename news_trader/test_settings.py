@@ -46,12 +46,7 @@ CACHES = {
     }
 }
 
-# Disable channels/redis for tests
-CHANNEL_LAYERS = {
-    "default": {
-        "BACKEND": "channels.layers.InMemoryChannelLayer",
-    }
-}
+# No WebSocket configuration needed for tests - using polling
 
 # Speed up password hashing for tests
 PASSWORD_HASHERS = [

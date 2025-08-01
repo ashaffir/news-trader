@@ -3,7 +3,7 @@ version: '3.8'
 services:
   web:
     build: .
-    command: daphne -b 0.0.0.0 -p 8000 news_trader.asgi:application
+    command: python manage.py runserver 0.0.0.0:8000
     volumes:
       - .:/app
     ports:

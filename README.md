@@ -119,7 +119,7 @@ Comprehensive management system:
 ### 5. Real-Time Dashboard
 Live monitoring interface:
 
-- **WebSocket Updates**: Real-time trade alerts
+- **Live Updates**: Real-time trade alerts via polling
 - **Activity Log**: Scraping, analysis, trade events
 - **Manual Controls**: Close trades, trigger actions
 
@@ -253,10 +253,9 @@ curl -X POST http://localhost:8000/api/trades/123/close/
 curl http://localhost:8000/api/analyses/?direction=buy&min_confidence=0.8
 ```
 
-### WebSocket Connection
+### Live Updates
 
-```javascript
-const socket = new WebSocket('ws://localhost:8000/ws/dashboard/');
+Real-time updates are delivered via simple polling every 3 seconds - much more reliable than WebSockets!
 socket.onmessage = function(event) {
     const data = JSON.parse(event.data);
     console.log('Update:', data);

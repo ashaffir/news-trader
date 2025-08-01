@@ -388,11 +388,7 @@ class DashboardTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "News Trader Dashboard")
 
-    def test_dashboard_websocket_routing(self):
-        """Test WebSocket routing configuration."""
-        from core.routing import websocket_urlpatterns
-
-        self.assertTrue(len(websocket_urlpatterns) > 0)
+    
 
 
 class ErrorHandlingTests(TestCase):
