@@ -12,35 +12,9 @@
         padding-top: 20px;
         background-color: #f8f9fa;
     }
-    .navbar {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        border-radius: 12px;
-        padding: 12px 20px;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-    }
 
-    .nav-link {
-        border-radius: 6px;
-        color: white !important;
-        font-weight: 600;
-    }
 
-    .nav-link:hover {
-        background: rgba(255, 255, 255, 0.2) !important;
-    }
 
-    .nav-link.active {
-        background: rgba(255, 255, 255, 0.2) !important;
-    }
-
-    .card {
-        background: rgba(255, 255, 255, 0.95);
-        border: none;
-        border-radius: 15px;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-        margin-bottom: 20px;
-        overflow: hidden;
-    }
 
     .profit-positive {
         color: #28a745;
@@ -208,10 +182,6 @@
 {% endblock %}
 
 {% block content %}
-<div class="container-fluid main-container">
-    <!-- PAGES NAVIGATION MENU AT TOP -->
-    {% include 'core/navbar.html' %}
-    
     <!-- Django Messages Display -->
     {% if messages %}
     <div class="row mb-4">

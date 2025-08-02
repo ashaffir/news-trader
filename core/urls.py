@@ -34,6 +34,9 @@ urlpatterns = [
         name="check_single_connection",
     ),
     path("api/recent-activities/", views.recent_activities_api, name="recent_activities"),
+    path("api/trigger-scrape/", views.trigger_scrape_ajax, name="trigger_scrape_ajax"),
+    path("api/trigger-analysis/", views.trigger_analysis_ajax, name="trigger_analysis_ajax"),
+    path("api/post-analysis/<int:post_id>/", views.get_post_analysis_ajax, name="get_post_analysis_ajax"),
     # API URLs
     path("api/", include(router.urls)),
     path("api-auth/", include("rest_framework.urls")),

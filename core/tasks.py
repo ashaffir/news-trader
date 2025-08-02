@@ -25,6 +25,7 @@ def format_activity_message(message_type, data):
         'trade_closed': f"🎯 Trade closed: {data.get('symbol', 'N/A')} P&L: ${data.get('pnl', 0):.2f}",
         'trade_close_requested': f"🚨 Close request: {data.get('symbol', 'N/A')} order submitted (ID: {data.get('order_id', 'N/A')})",
         'scraper_error': f"⚠️ Scraping error from {data.get('source', 'Unknown')}: {data.get('error', 'Unknown error')}",
+        'scraper_status': f"🔄 {data.get('status', 'Scraper status update')}",
         'trade_status': f"📊 {data.get('status', 'Status update')}",
     }
     return messages.get(message_type, f"🔄 Update: {data}")
@@ -49,6 +50,19 @@ def send_dashboard_update(message_type, data):
         # Continue execution even if database save fails
 
 
+def _is_simulated_post(post):
+    """Check if a post is a simulated/error post that should not be analyzed by LLM."""
+    # Check URL pattern
+    if post.url and post.url.startswith("simulated://"):
+        return True
+    
+    # Check content pattern
+    if post.content and post.content.startswith("Simulated post from"):
+        return True
+    
+    return False
+
+
 def _create_simulated_post(source, error_message, method):
     # Make simulated URLs clearly distinct and non-browsable
     simulated_url = f"simulated://{source.name.replace(' ', '_')}/{method}/{hashlib.md5(error_message.encode()).hexdigest()}/{os.urandom(5).hex()}"
@@ -71,271 +85,215 @@ def _create_simulated_post(source, error_message, method):
     analyze_post.delay(post.id)
 
 
-def _scrape_web(source):
+def _scrape_rss_feed(source):
+    """Parse RSS feeds for financial news"""
     try:
-        logger.info(f"Attempting to web scrape from {source.url}")
-        response = requests.get(source.url)
-        response.raise_for_status()  # Raise an exception for HTTP errors
-        soup = BeautifulSoup(response.text, "html.parser")
-
-        # Extract text content (a generic approach, can be refined)
-        paragraphs = soup.find_all("p")
-        scraped_content = "\n".join([p.get_text() for p in paragraphs])
-
-        # Generate a unique URL for the post
-        unique_id = hashlib.md5(scraped_content.encode()).hexdigest()
-        post_url = f"{source.url}#{unique_id}"
-
-        # Check if a post with this URL already exists to prevent duplicates
-        if not Post.objects.filter(url=post_url).exists():
-            post = Post.objects.create(
-                source=source, content=scraped_content, url=post_url
-            )
-            logger.info(f"New post scraped from {source.name} (Web): {post.url}")
-            send_dashboard_update(
-                "new_post",
-                {
-                    "source": source.name,
-                    "content_preview": scraped_content[:100] + "...",
-                    "url": post_url,
-                    "post_id": post.id,
-                },
-            )
-            analyze_post.delay(post.id)
-        else:
-            logger.info(f"Post with URL {post_url} already exists. Skipping (Web).")
-            send_dashboard_update(
-                "scraper_skipped",
-                {"source": source.name, "url": post_url, "method": "web"},
-            )
-
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Error web scraping {source.url}: {e}")
-        send_dashboard_update(
-            "scraper_error", {"source": source.name, "error": str(e), "method": "web"}
-        )
-        _create_simulated_post(source, str(e), "web")
-    except Exception as e:
-        logger.error(
-            f"An unexpected error occurred while web scraping {source.url}: {e}"
-        )
-        send_dashboard_update(
-            "scraper_error", {"source": source.name, "error": str(e), "method": "web"}
-        )
-        _create_simulated_post(source, str(e), "web")
-
-
-def _fetch_api_posts(source):
-    logger.info(f"Attempting to fetch posts from API for {source.name}")
-
-    endpoint = source.api_endpoint
-    key_field = source.api_key_field
-    req_type = source.request_type
-    req_params = source.request_params
-
-    if not endpoint or not key_field:
-        error_msg = f"API fetching for {source.name} skipped: API endpoint or key field missing in Source configuration."
-        logger.warning(error_msg)
-        send_dashboard_update(
-            "scraper_skipped",
-            {"source": source.name, "reason": "API config missing", "method": "api"},
-        )
-        _create_simulated_post(source, "API config missing", "api")
-        return
-
-    api_key = os.getenv(key_field)
-    if not api_key:
-        error_msg = f"API key '{key_field}' not found in environment variables. Cannot fetch from API for {source.name}."
-        logger.error(error_msg)
-        send_dashboard_update(
-            "scraper_error",
-            {"source": source.name, "error": error_msg, "method": "api"},
-        )
-        _create_simulated_post(source, f"API key {key_field} missing", "api")
-        return
-
-    headers = {"Authorization": f"Bearer {api_key}"}
-    data = None
-    params = None
-
-    if req_params:
-        try:
-            # req_params is already a JSON object from models.JSONField
-            if req_type == "GET":
-                params = req_params
-            elif req_type == "POST":
-                data = json.dumps(req_params)  # Send as JSON body
-                headers["Content-Type"] = "application/json"
-        except Exception as e:
-            error_msg = f"Error processing request_params for {source.name}: {e}. Params: {req_params}"
-            logger.error(error_msg)
-            send_dashboard_update(
-                "scraper_error",
-                {"source": source.name, "error": error_msg, "method": "api"},
-            )
-            _create_simulated_post(source, error_msg, "api")
+        import feedparser
+        from datetime import datetime, timedelta
+        
+        logger.info(f"Parsing RSS feed from {source.url}")
+        
+        # Parse RSS feed
+        feed = feedparser.parse(source.url)
+        
+        if feed.bozo:
+            logger.warning(f"RSS feed may have issues: {source.url}")
+        
+        if not feed.entries:
+            logger.warning(f"No entries found in RSS feed: {source.url}")
             return
-
-    try:
-        logger.info(
-            f"API Request: Type={req_type}, URL={endpoint}, Headers={headers}, Params={params}, Data={data}"
-        )
-        if req_type == "POST":
-            response = requests.post(endpoint, headers=headers, data=data)
-        else:  # Default to GET
-            response = requests.get(endpoint, headers=headers, params=params)
-
-        response.raise_for_status()
-        api_data = response.json()
-        logger.info(f"API Response for {source.name}: {json.dumps(api_data)[:200]}...")
-
-        # Create an ApiResponse object
-        api_response_url = (
-            f"{endpoint}/{hashlib.md5(json.dumps(api_data).encode()).hexdigest()}"
-        )
-        if not ApiResponse.objects.filter(url=api_response_url).exists():
-            api_response = ApiResponse.objects.create(
-                source=source, raw_content=api_data, url=api_response_url
-            )
-            logger.info(
-                f"New API Response recorded for {source.name}: {api_response.url}"
-            )
-            send_dashboard_update(
-                "new_api_response",
-                {
-                    "source": source.name,
-                    "url": api_response.url,
-                    "api_response_id": api_response.id,
-                },
-            )
-
-            # Parse the API response into individual posts
-            _parse_api_response_to_posts(api_response)
-        else:
-            logger.info(
-                f"API Response with URL {api_response_url} already exists. Skipping (API)."
-            )
-            send_dashboard_update(
-                "scraper_skipped",
-                {"source": source.name, "url": api_response_url, "method": "api"},
-            )
-
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Error fetching from API for {source.name}: {e}")
-        send_dashboard_update(
-            "scraper_error", {"source": source.name, "error": str(e), "method": "api"}
-        )
-        _create_simulated_post(source, str(e), "api")
-    except json.JSONDecodeError as e:
-        error_msg = f"API response for {source.name} was not valid JSON: {e}. Raw response: {response.text[:200]}..."
-        logger.error(error_msg)
-        send_dashboard_update(
-            "scraper_error",
-            {"source": source.name, "error": error_msg, "method": "api"},
-        )
-        _create_simulated_post(source, error_msg, "api")
+            
+        # Get only recent entries (last 24 hours for testing, normally 6 hours for trading)
+        cutoff_time = datetime.now() - timedelta(hours=24)
+        new_posts_count = 0
+        
+        for entry in feed.entries[:10]:  # Limit to 10 most recent
+            try:
+                # Extract entry data
+                title = entry.get('title', 'No title')
+                link = entry.get('link', '')
+                summary = entry.get('summary', entry.get('description', ''))
+                
+                # Parse publication date
+                published = None
+                if hasattr(entry, 'published_parsed') and entry.published_parsed:
+                    published = datetime(*entry.published_parsed[:6])
+                elif hasattr(entry, 'updated_parsed') and entry.updated_parsed:
+                    published = datetime(*entry.updated_parsed[:6])
+                
+                # Skip old entries
+                if published and published < cutoff_time:
+                    continue
+                    
+                # Create content from title and summary
+                content = f"{title}\n\n{summary}"
+                
+                # Use link as unique identifier
+                if link and not Post.objects.filter(url=link).exists():
+                    post = Post.objects.create(
+                        source=source,
+                        content=content,
+                        url=link
+                    )
+                    
+                    logger.info(f"New RSS post from {source.name}: {title[:50]}...")
+                    send_dashboard_update(
+                        "new_post",
+                        {
+                            "source": source.name,
+                            "content_preview": content[:100] + "...",
+                            "url": link,
+                            "post_id": post.id,
+                        },
+                    )
+                    analyze_post.delay(post.id)
+                    new_posts_count += 1
+                    
+            except Exception as e:
+                logger.error(f"Error processing RSS entry: {e}")
+                continue
+                
+        logger.info(f"RSS parsing completed for {source.name}: {new_posts_count} new posts")
+        
     except Exception as e:
-        logger.error(
-            f"An unexpected error occurred while fetching from API for {source.name}: {e}"
-        )
+        logger.error(f"Error parsing RSS feed {source.url}: {e}")
         send_dashboard_update(
-            "scraper_error", {"source": source.name, "error": str(e), "method": "api"}
+            "scraper_error", {"source": source.name, "error": str(e), "method": "rss"}
         )
-        _create_simulated_post(source, str(e), "api")
+        _create_simulated_post(source, str(e), "rss")
 
 
-def _parse_api_response_to_posts(api_response):
-    """Parses a raw API response and creates individual Post objects."""
-    logger.info(
-        f"Parsing API response {api_response.id} from {api_response.source.name}"
-    )
-    data = api_response.raw_content
-    source = api_response.source
-
-    # This is a placeholder. The actual parsing logic will depend on the API's response structure.
-    # You will need to customize this based on the specific API you are integrating with.
-    # For demonstration, let's assume the API returns a list of dictionaries, where each dictionary is a post.
-    if isinstance(data, list):
-        for item in data:
-            # Assuming each item has a 'content' and 'url' field
-            content = item.get(
-                "content", json.dumps(item)
-            )  # Fallback to full item if no 'content'
-            post_url = item.get(
-                "url",
-                f"{api_response.url}/post/{hashlib.md5(content.encode()).hexdigest()}",
+def _scrape_with_browser(source):
+    """Use headless browser for dynamic content scraping"""
+    try:
+        from selenium import webdriver
+        from selenium.webdriver.chrome.options import Options
+        from selenium.webdriver.common.by import By
+        from selenium.webdriver.support.ui import WebDriverWait
+        from selenium.webdriver.support import expected_conditions as EC
+        from webdriver_manager.chrome import ChromeDriverManager
+        from selenium.webdriver.chrome.service import Service
+        
+        logger.info(f"Headless browser scraping from {source.url}")
+        
+        # Set up headless Chrome
+        chrome_options = Options()
+        chrome_options.add_argument("--headless")
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--window-size=1920,1080")
+        chrome_options.add_argument("--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
+        
+        # Create driver
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=chrome_options)
+        
+        try:
+            driver.get(source.url)
+            
+            # Wait for page to load
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.TAG_NAME, "body"))
             )
-
-            if not Post.objects.filter(url=post_url).exists():
-                post = Post.objects.create(
-                    api_response=api_response,
-                    source=source,
-                    content=content,
-                    url=post_url,
-                )
-                logger.info(f"New post extracted from API response: {post.url}")
-                send_dashboard_update(
-                    "new_post",
-                    {
-                        "source": source.name,
-                        "content_preview": content[:100] + "...",
-                        "url": post_url,
-                        "post_id": post.id,
-                        "method": "api",
-                    },
-                )
-                analyze_post.delay(post.id)
-            else:
-                logger.info(
-                    f"Post with URL {post_url} already exists. Skipping (API Response Parsing)."
-                )
-                send_dashboard_update(
-                    "scraper_skipped",
-                    {"source": source.name, "url": post_url, "method": "api_parse"},
-                )
-    elif isinstance(data, dict):
-        # Handle single post API response or other structures
-        content = data.get("content", json.dumps(data))
-        post_url = data.get(
-            "url",
-            f"{api_response.url}/post/{hashlib.md5(content.encode()).hexdigest()}",
+            
+            # Extract article content based on common news site patterns
+            articles = []
+            
+            # Try different selectors for news articles
+            selectors = [
+                'article',
+                '.article',
+                '.news-item',
+                '.story',
+                '.post',
+                '[class*="article"]',
+                '[class*="story"]'
+            ]
+            
+            for selector in selectors:
+                elements = driver.find_elements(By.CSS_SELECTOR, selector)
+                if elements:
+                    logger.info(f"Found {len(elements)} articles using selector: {selector}")
+                    
+                    for i, element in enumerate(elements[:5]):  # Limit to 5 articles
+                        try:
+                            title_elem = element.find_element(By.CSS_SELECTOR, 'h1, h2, h3, .title, [class*="title"]')
+                            title = title_elem.text.strip()
+                            
+                            content_elem = element.find_element(By.CSS_SELECTOR, 'p, .content, .summary, [class*="content"]')
+                            content = content_elem.text.strip()
+                            
+                            link_elem = element.find_element(By.CSS_SELECTOR, 'a')
+                            link = link_elem.get_attribute('href')
+                            
+                            if title and content and link:
+                                full_content = f"{title}\n\n{content}"
+                                
+                                if not Post.objects.filter(url=link).exists():
+                                    post = Post.objects.create(
+                                        source=source,
+                                        content=full_content,
+                                        url=link
+                                    )
+                                    
+                                    logger.info(f"New browser post from {source.name}: {title[:50]}...")
+                                    send_dashboard_update(
+                                        "new_post",
+                                        {
+                                            "source": source.name,
+                                            "content_preview": full_content[:100] + "...",
+                                            "url": link,
+                                            "post_id": post.id,
+                                        },
+                                    )
+                                    analyze_post.delay(post.id)
+                                    
+                        except Exception as e:
+                            logger.debug(f"Error extracting article {i}: {e}")
+                            continue
+                    break  # Stop after finding articles with first working selector
+                    
+        finally:
+            driver.quit()
+            
+    except Exception as e:
+        logger.error(f"Error in headless browser scraping {source.url}: {e}")
+        send_dashboard_update(
+            "scraper_error", {"source": source.name, "error": str(e), "method": "browser"}
         )
-        if not Post.objects.filter(url=post_url).exists():
-            post = Post.objects.create(
-                api_response=api_response, source=source, content=content, url=post_url
-            )
-            logger.info(f"New post extracted from API response: {post.url}")
-            send_dashboard_update(
-                "new_post",
-                {
-                    "source": source.name,
-                    "content_preview": content[:100] + "...",
-                    "url": post_url,
-                    "post_id": post.id,
-                    "method": "api",
-                },
-            )
-            analyze_post.delay(post.id)
-        else:
-            logger.info(
-                f"Post with URL {post_url} already exists. Skipping (API Response Parsing)."
-            )
-            send_dashboard_update(
-                "scraper_skipped",
-                {"source": source.name, "url": post_url, "method": "api_parse"},
-            )
+        _create_simulated_post(source, str(e), "browser")
+
+
+def _determine_scraping_method(source):
+    """Determine whether to use RSS parsing or browser scraping based on URL"""
+    url = source.url.lower()
+    
+    # RSS feed indicators
+    rss_indicators = [
+        'rss', 'feed', 'feeds/', '/rss/', '.rss', '.xml',
+        'feeds.reuters.com', 'feeds.marketwatch.com', 'feeds.bloomberg.com',
+        'feeds.finance.yahoo.com'
+    ]
+    
+    # Check if it's likely an RSS feed
+    if any(indicator in url for indicator in rss_indicators):
+        return 'rss'
+    
+    # Default to browser scraping for dynamic content
+    return 'browser'
+
+
+def _scrape_source(source):
+    """Main scraping function that routes to appropriate method"""
+    scraping_method = _determine_scraping_method(source)
+    
+    logger.info(f"Scraping {source.name} using method: {scraping_method}")
+    
+    if scraping_method == 'rss':
+        _scrape_rss_feed(source)
     else:
-        logger.warning(
-            f"Unknown API response data format for {api_response.id}. Skipping parsing."
-        )
-        send_dashboard_update(
-            "scraper_error",
-            {
-                "source": source.name,
-                "error": "Unknown API response format",
-                "method": "api_parse",
-            },
-        )
+        _scrape_with_browser(source)
 
 
 def get_active_trading_config():
@@ -384,15 +342,18 @@ def check_daily_trade_limit():
 
 
 @shared_task
-def scrape_posts(source_id=None):
+def scrape_posts(source_id=None, manual_test=False):
     """Scrape posts from all configured sources or a specific source."""
-    logger.info(f"Scrape posts task initiated. Source ID: {source_id}")
+    logger.info(f"Scrape posts task initiated. Source ID: {source_id}, Manual test: {manual_test}")
 
-    # Check if bot is enabled
-    trading_config = get_active_trading_config()
-    if trading_config and not trading_config.bot_enabled:
-        logger.info("Bot is disabled. Skipping scraping task.")
-        return
+    # Check if bot is enabled (skip check for manual tests)
+    if not manual_test:
+        trading_config = get_active_trading_config()
+        if trading_config and not trading_config.bot_enabled:
+            logger.info("Bot is disabled. Skipping automated scraping task.")
+            return
+    else:
+        logger.info("Manual test scraping - bypassing bot enabled check.")
 
     if source_id:
         try:
@@ -414,47 +375,102 @@ def scrape_posts(source_id=None):
     else:
         sources = Source.objects.all()
 
-    send_dashboard_update(
-        "scraper_status",
-        {"status": "Scraping started", "total_sources": sources.count()},
-    )
-
-    for source in sources:
-        if source.scraping_method == "web":
-            _scrape_web(source)
-        elif source.scraping_method == "api":
-            _fetch_api_posts(source)
-        elif source.scraping_method == "both":
-            _scrape_web(source)
-            _fetch_api_posts(source)
-        else:
-            logger.warning(
-                f"Unknown scraping method for source {source.name}: {source.scraping_method}. Skipping."
-            )
+    # Only process enabled web sources (RSS feeds and browser scraping)
+    active_sources = sources.filter(scraping_enabled=True, scraping_method="web")
+    
+    # Send start message with source names
+    if active_sources.exists():
+        source_names = [source.name for source in active_sources]
+        if len(source_names) == 1:
             send_dashboard_update(
-                "scraper_skipped",
-                {
-                    "source": source.name,
-                    "reason": f"Unknown scraping method: {source.scraping_method}",
-                },
+                "scraper_status",
+                {"status": f"Started scraping {source_names[0]}", "source": source_names[0]},
             )
+        else:
+            send_dashboard_update(
+                "scraper_status", 
+                {"status": f"Started scraping {len(source_names)} sources", "sources": source_names},
+            )
+    
+    scraped_sources = []
+    for source in active_sources:
+        try:
+            logger.info(f"Starting to scrape: {source.name}")
+            _scrape_source(source)
+            scraped_sources.append(source.name)
+            send_dashboard_update(
+                "scraper_status",
+                {"status": f"Completed scraping {source.name}", "source": source.name},
+            )
+        except Exception as e:
+            logger.error(f"Error scraping source {source.name}: {e}")
+            send_dashboard_update(
+                "scraper_error",
+                {"source": source.name, "error": str(e), "method": "scraping"},
+            )
+    
+    # Log disabled or API sources being skipped
+    disabled_sources = sources.filter(scraping_enabled=False)
+    api_sources = sources.filter(scraping_method__in=["api", "both"])
+    
+    for source in disabled_sources:
+        logger.info(f"Skipping disabled source: {source.name}")
+        
+    for source in api_sources:
+        logger.info(f"Skipping API source (deprecated): {source.name}")
+        send_dashboard_update(
+            "scraper_skipped",
+            {
+                "source": source.name,
+                "reason": "API sources are no longer supported - use RSS feeds or browser scraping",
+            },
+        )
 
-    send_dashboard_update("scraper_status", {"status": "Scraping finished"})
-    logger.info("Scraping finished.")
+    # Send final status with results
+    if scraped_sources:
+        if len(scraped_sources) == 1:
+            send_dashboard_update(
+                "scraper_status", 
+                {"status": f"Scraping finished: {scraped_sources[0]}", "source": scraped_sources[0]}
+            )
+        else:
+            send_dashboard_update(
+                "scraper_status", 
+                {"status": f"Scraping finished: {len(scraped_sources)} sources completed", "sources": scraped_sources}
+            )
+    else:
+        send_dashboard_update("scraper_status", {"status": "Scraping finished: No sources processed"})
+    
+    logger.info(f"Scraping finished. Processed: {', '.join(scraped_sources) if scraped_sources else 'None'}")
 
 
 @shared_task
-def analyze_post(post_id):
+def analyze_post(post_id, manual_test=False):
     """Analyze a post with an LLM."""
-    logger.info(f"Analyzing post {post_id} with LLM.")
+    logger.info(f"Analyzing post {post_id} with LLM (manual_test={manual_test}).")
 
-    # Check if bot is enabled
-    trading_config = get_active_trading_config()
-    if trading_config and not trading_config.bot_enabled:
-        logger.info("Bot is disabled. Skipping analysis task.")
-        return
+    # Check if bot is enabled (unless this is a manual test)
+    if not manual_test:
+        trading_config = get_active_trading_config()
+        if trading_config and not trading_config.bot_enabled:
+            logger.info("Bot is disabled. Skipping analysis task.")
+            return
 
     post = Post.objects.get(id=post_id)
+    
+    # Validate: Skip analysis for simulated/error posts
+    if _is_simulated_post(post):
+        logger.info(f"Skipping LLM analysis for simulated post {post.id}: {post.url}")
+        send_dashboard_update(
+            "analysis_skipped", 
+            {
+                "post_id": post.id, 
+                "reason": "Simulated post - no LLM analysis needed",
+                "post_type": "simulated"
+            }
+        )
+        return
+    
     send_dashboard_update(
         "analysis_status", {"post_id": post.id, "status": "Analysis started"}
     )

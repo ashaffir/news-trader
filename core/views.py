@@ -34,6 +34,147 @@ def dashboard_view(request):
 
 @csrf_exempt
 @require_POST
+def trigger_scrape_ajax(request):
+    """AJAX endpoint to trigger scraping for a specific source."""
+    try:
+        source_id = request.POST.get("source_id")
+        if not source_id:
+            return JsonResponse({
+                "success": False,
+                "error": "No source ID provided"
+            }, status=400)
+
+        try:
+            source = Source.objects.get(id=source_id)
+        except Source.DoesNotExist:
+            return JsonResponse({
+                "success": False,
+                "error": f"Source with ID {source_id} not found"
+            }, status=404)
+
+        # Trigger the scraping task (manual test mode)
+        scrape_posts.delay(source_id=source_id, manual_test=True)
+        logger.info(f"AJAX triggered manual test scrape_posts task for Source ID: {source_id}")
+
+        return JsonResponse({
+            "success": True,
+            "message": f"Scraping started for {source.name}",
+            "source_id": source_id,
+            "source_name": source.name,
+            "results_url": f"/api/posts/?source={source_id}"
+        })
+
+    except Exception as e:
+        logger.error(f"Error in trigger_scrape_ajax: {e}")
+        return JsonResponse({
+            "success": False,
+            "error": str(e)
+        }, status=500)
+
+
+@csrf_exempt
+@require_POST
+def trigger_analysis_ajax(request):
+    """AJAX endpoint to trigger analysis for a specific post."""
+    try:
+        post_id = request.POST.get("post_id")
+        if not post_id:
+            return JsonResponse({
+                "success": False,
+                "error": "No post ID provided"
+            }, status=400)
+
+        try:
+            post = Post.objects.get(id=post_id)
+        except Post.DoesNotExist:
+            return JsonResponse({
+                "success": False,
+                "error": f"Post with ID {post_id} not found"
+            }, status=404)
+
+        # Check if post already has analysis
+        if hasattr(post, 'analysis'):
+            return JsonResponse({
+                "success": False,
+                "error": f"Post #{post_id} already has analysis"
+            }, status=400)
+
+        # Trigger the analysis task with manual_test=True
+        analyze_post.delay(post.id, manual_test=True)
+        logger.info(f"AJAX triggered analyze_post task for Post ID: {post_id} (manual_test=True)")
+
+        return JsonResponse({
+            "success": True,
+            "message": f"Analysis started for Post #{post_id}",
+            "post_id": post_id,
+            "post_source": post.source.name,
+            "results_url": f"/api/analyses/?post={post_id}"
+        })
+
+    except Exception as e:
+        logger.error(f"Error in trigger_analysis_ajax: {e}")
+        return JsonResponse({
+            "success": False,
+            "error": str(e)
+        }, status=500)
+
+
+@csrf_exempt
+def get_post_analysis_ajax(request, post_id):
+    """AJAX endpoint to get analysis data for a specific post."""
+    try:
+        try:
+            post = Post.objects.get(id=post_id)
+        except Post.DoesNotExist:
+            return JsonResponse({
+                "success": False,
+                "error": f"Post with ID {post_id} not found"
+            }, status=404)
+        
+        # Check if post has analysis
+        if not hasattr(post, 'analysis'):
+            return JsonResponse({
+                "success": False,
+                "error": f"Post #{post_id} does not have an analysis yet"
+            }, status=404)
+        
+        analysis = post.analysis
+        
+        # Format the analysis data
+        analysis_data = {
+            "post_id": post.id,
+            "post_title": f"Post #{post.id} from {post.source.name}",
+            "post_content": post.content[:200] + "..." if len(post.content) > 200 else post.content,
+            "post_source": post.source.name,
+            "post_url": post.url,
+            "post_created_at": post.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+            "symbol": analysis.symbol,
+            "direction": analysis.direction,
+            "confidence": round(analysis.confidence, 3),
+            "confidence_percentage": round(analysis.confidence * 100, 1),
+            "reason": analysis.reason,
+            "sentiment_score": round(analysis.sentiment_score, 3) if analysis.sentiment_score else None,
+            "market_impact_score": round(analysis.market_impact_score, 3) if analysis.market_impact_score else None,
+            "trading_config_used": analysis.trading_config_used.name if analysis.trading_config_used else "Default",
+            "analysis_created_at": analysis.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+            "raw_llm_response": analysis.raw_llm_response
+        }
+        
+        return JsonResponse({
+            "success": True,
+            "analysis": analysis_data
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in get_post_analysis_ajax for post {post_id}: {e}")
+        return JsonResponse({
+            "success": False,
+            "error": str(e)
+        }, status=500)
+
+
+@csrf_exempt
+@require_POST
 def toggle_bot_status(request):
     """Toggle the bot enabled/disabled status."""
     try:
@@ -454,33 +595,33 @@ def check_single_connection(request, service):
 def sync_alpaca_positions_to_database(alpaca_positions):
     """Sync Alpaca positions with database Trade records."""
     from .models import Trade, Analysis
-    
+
     logger.info(f"Syncing {len(alpaca_positions)} Alpaca positions to database...")
-    
+
     # Get all symbols from Alpaca
     alpaca_symbols = {pos["symbol"] for pos in alpaca_positions}
-    
+
     # Create or update database records for each Alpaca position
     for position in alpaca_positions:
         symbol = position["symbol"]
         direction = "buy" if float(position["qty"]) > 0 else "sell"
         quantity = abs(float(position["qty"]))
-        
+
         # Calculate entry price from market value and quantity
         qty = float(position["qty"])
         market_value = float(position["market_value"])
         entry_price = abs(market_value) / abs(qty) if qty != 0 else 0
-        
+
         unrealized_pnl = float(position.get("unrealized_pl", 0))
-        
+
         # Check if trade record already exists
         existing_trade = Trade.objects.filter(symbol=symbol, status="open").first()
-        
+
         if not existing_trade:
             # Create new trade record
             # Try to find recent analysis for this symbol
             analysis = Analysis.objects.filter(symbol=symbol).order_by('-created_at').first()
-            
+
             trade = Trade.objects.create(
                 analysis=analysis,
                 symbol=symbol,
@@ -500,7 +641,7 @@ def sync_alpaca_positions_to_database(alpaca_positions):
             existing_trade.updated_at = timezone.now()
             existing_trade.save()
             logger.debug(f"Updated trade record for {symbol}")
-    
+
     # Close database trades that no longer exist in Alpaca
     db_open_trades = Trade.objects.filter(status="open")
     for db_trade in db_open_trades:
@@ -516,7 +657,7 @@ def sync_alpaca_positions_to_database(alpaca_positions):
 def manual_close_trade_view(request):
     logger.info("Manual close trade view accessed.")
 
-    # Get real Alpaca positions 
+    # Get real Alpaca positions
     alpaca_data = get_alpaca_trading_data()
     alpaca_positions = alpaca_data.get("positions", [])
 
@@ -529,7 +670,7 @@ def manual_close_trade_view(request):
 
     # Convert Alpaca positions to trade-like objects for the template
     open_trades = []
-    
+
     # Add pending_close trades first
     for trade in pending_close_trades:
         # Use the database trade object directly, but enhance with Alpaca data if available
@@ -560,7 +701,7 @@ def manual_close_trade_view(request):
                 self.unrealized_pnl = float(position_data["unrealized_pl"])
                 self.created_at = timezone.now()
                 self.alpaca_position = True
-                
+
                 # Get TP/SL from database if available
                 try:
                     db_trade = Trade.objects.filter(symbol=self.symbol, status="open").first()
@@ -595,20 +736,20 @@ def manual_close_trade_view(request):
                     self.stop_loss_price_percentage = stored_trade.stop_loss_price_percentage
                 except Trade.DoesNotExist:
                     pass
-                
+
                 # If we only have prices but no percentages, calculate them
                 if self.take_profit_price and not hasattr(self, 'take_profit_price_percentage'):
                     if self.entry_price and self.entry_price > 0:
                         self.take_profit_price_percentage = ((self.take_profit_price - self.entry_price) / self.entry_price) * 100
                     else:
                         self.take_profit_price_percentage = None
-                        
+
                 if self.stop_loss_price and not hasattr(self, 'stop_loss_price_percentage'):
                     if self.entry_price and self.entry_price > 0:
                         self.stop_loss_price_percentage = abs(((self.stop_loss_price - self.entry_price) / self.entry_price) * 100)
                     else:
                         self.stop_loss_price_percentage = None
-                
+
                 # Initialize percentage fields if they don't exist
                 if not hasattr(self, 'take_profit_price_percentage'):
                     self.take_profit_price_percentage = None
@@ -655,36 +796,36 @@ def manual_close_trade_view(request):
 
         elif action == "close_trade" and trade_id:
             logger.info(f"Attempting to close trade with ID: {trade_id}")
-            
+
             # Check if this is an Alpaca position (ID starts with "alpaca_")
             if trade_id.startswith("alpaca_"):
                 symbol = trade_id.replace("alpaca_", "")
                 logger.info(f"Closing Alpaca position for symbol: {symbol}")
-                
+
                 try:
                     # Import necessary modules for Alpaca API
                     import os
                     import alpaca_trade_api as tradeapi
-                    
+
                     # Get Alpaca credentials
                     ALPACA_API_KEY = os.getenv("ALPACA_API_KEY")
                     ALPACA_SECRET_KEY = os.getenv("ALPACA_SECRET_KEY")
                     ALPACA_BASE_URL = os.getenv("ALPACA_BASE_URL", "https://paper-api.alpaca.markets")
-                    
+
                     if not ALPACA_API_KEY or not ALPACA_SECRET_KEY:
                         logger.error("Alpaca API credentials not found")
                         messages.error(request, "Alpaca API credentials not configured")
                         return redirect("manual_close_trade")
-                    
+
                     # Initialize Alpaca API
                     api = tradeapi.REST(ALPACA_API_KEY, ALPACA_SECRET_KEY, base_url=ALPACA_BASE_URL)
-                    
+
                     # Get current position to determine quantity and side
                     position = api.get_position(symbol)
                     qty = abs(float(position.qty))
                     current_side = "long" if float(position.qty) > 0 else "short"
                     close_side = "sell" if current_side == "long" else "buy"
-                    
+
                     # Submit close order
                     close_order = api.submit_order(
                         symbol=symbol,
@@ -693,9 +834,9 @@ def manual_close_trade_view(request):
                         type="market",
                         time_in_force="gtc",
                     )
-                    
+
                     logger.info(f"Successfully submitted close order for {symbol}: Order ID {close_order.id}")
-                    
+
                     # Get current price for exit price
                     try:
                         ticker = api.get_latest_trade(symbol)
@@ -703,10 +844,10 @@ def manual_close_trade_view(request):
                     except:
                         # Use current market price or fallback to average entry price
                         exit_price = float(position.avg_entry_price)
-                    
+
                     # Find or create Trade record for this position
                     trade_record = None
-                    
+
                     # First try to find existing trade record with this Alpaca position
                     try:
                         trade_record = Trade.objects.get(
@@ -723,12 +864,12 @@ def manual_close_trade_view(request):
                             ).first()
                         except:
                             pass
-                    
+
                     # If no trade record found, create a new one
                     if not trade_record:
                         # Try to get most recent analysis for this symbol
                         analysis = Analysis.objects.filter(symbol=symbol).order_by('-created_at').first()
-                        
+
                         trade_record = Trade.objects.create(
                             analysis=analysis,  # May be None
                             symbol=symbol,
@@ -740,13 +881,13 @@ def manual_close_trade_view(request):
                             opened_at=timezone.now()
                         )
                         logger.info(f"Created new trade record for Alpaca position {symbol}")
-                    
+
                     # Calculate P&L
                     if trade_record.direction == "buy" or current_side == "long":
                         pnl = (exit_price - trade_record.entry_price) * trade_record.quantity
                     else:
                         pnl = (trade_record.entry_price - exit_price) * trade_record.quantity
-                    
+
                     # Update trade record with closure information
                     trade_record.status = "closed"
                     trade_record.exit_price = exit_price
@@ -754,14 +895,14 @@ def manual_close_trade_view(request):
                     trade_record.close_reason = "manual"
                     trade_record.closed_at = timezone.now()
                     trade_record.save()
-                    
+
                     logger.info(f"Updated trade record {trade_record.id} for {symbol} closure with P&L: ${pnl:.2f}")
-                    
+
                     messages.success(
-                        request, 
+                        request,
                         f"Close order for {symbol} has been submitted to Alpaca (Order ID: {close_order.id}). P&L: ${pnl:.2f}"
                     )
-                    
+
                     # Send update to dashboard activity log
                     send_dashboard_update(
                         "trade_close_requested",
@@ -773,7 +914,7 @@ def manual_close_trade_view(request):
                             "pnl": pnl
                         }
                     )
-                    
+
                     # Send trade closed update
                     send_dashboard_update(
                         "trade_closed",
@@ -787,30 +928,30 @@ def manual_close_trade_view(request):
                             "pnl": pnl
                         }
                     )
-                    
+
                 except Exception as e:
                     logger.error(f"Failed to close Alpaca position {symbol}: {str(e)}")
                     messages.error(
-                        request, 
+                        request,
                         f"Failed to close position for {symbol}: {str(e)}"
                     )
-                
+
                 return redirect("manual_close_trade")
-            
+
             # Handle regular database trades
             try:
                 trade = Trade.objects.get(id=trade_id, status="open")
                 # Update status to pending_close first
                 trade.status = "pending_close"
                 trade.save()
-                
+
                 close_trade_manually.delay(trade.id)
                 logger.info(f"Initiated manual close for trade {trade.id} - Status updated to pending_close.")
                 messages.success(
                     request,
                     f"Close order for {trade.symbol} has been submitted"
                 )
-                
+
                 # Send update to dashboard activity log
                 send_dashboard_update(
                     "trade_close_requested",
@@ -886,7 +1027,7 @@ def manual_close_trade_view(request):
                             symbol=symbol,
                             status="open"
                         ).first()
-                        
+
                         if not trade:
                             # Only create if no existing trade found
                             trade = Trade.objects.create(
@@ -913,12 +1054,12 @@ def manual_close_trade_view(request):
                         logger.info(
                             f"Updated trade settings for {symbol}: TP={tp_display}, SL={sl_display}"
                         )
-                        
+
                         # Add success message for Alpaca positions
                         tp_msg = f"TP: {take_profit_percent}%" if take_profit_percent else "TP: None"
                         sl_msg = f"SL: {stop_loss_percent}%" if stop_loss_percent else "SL: None"
                         messages.success(
-                            request, 
+                            request,
                             f"Trade settings updated successfully for {symbol} - {tp_msg}, {sl_msg}"
                         )
 
@@ -950,12 +1091,12 @@ def manual_close_trade_view(request):
 
                     trade.save()
                     logger.info(f"Updated trade settings for trade {trade.id}")
-                    
+
                     # Add success message
                     tp_msg = f"TP: {take_profit_percent}%" if take_profit_percent else "TP: None"
                     sl_msg = f"SL: {stop_loss_percent}%" if stop_loss_percent else "SL: None"
                     messages.success(
-                        request, 
+                        request,
                         f"Trade settings updated successfully for {trade.symbol} - {tp_msg}, {sl_msg}"
                     )
 
@@ -970,10 +1111,18 @@ def manual_close_trade_view(request):
         getattr(trade, "unrealized_pnl", 0) for trade in open_trades
     )
 
+    # Get bot status for navbar
+    trading_config = TradingConfig.objects.filter(is_active=True).first()
+    bot_enabled = trading_config.bot_enabled if trading_config else False
+
     return render(
         request,
         "core/manual_close_trade.html",
-        {"open_trades": open_trades, "total_unrealized_pnl": total_unrealized_pnl},
+        {
+            "open_trades": open_trades,
+            "total_unrealized_pnl": total_unrealized_pnl,
+            "bot_enabled": bot_enabled,
+        },
     )
 
 
@@ -986,10 +1135,10 @@ def test_page_view(request):
             source_id = request.POST.get("source_id")
             if source_id:
                 try:
-                    # Pass only the source_id to the scrape_posts task
-                    scrape_posts.delay(source_id=source_id)
+                    # Pass the source_id to the scrape_posts task as manual test
+                    scrape_posts.delay(source_id=source_id, manual_test=True)
                     logger.info(
-                        f"Manually triggered scrape_posts task for Source ID: {source_id}."
+                        f"Manually triggered test scrape_posts task for Source ID: {source_id}."
                     )
                 except Source.DoesNotExist:
                     logger.warning(
@@ -1030,19 +1179,19 @@ def test_page_view(request):
             direction = request.POST.get("direction", "").lower().strip()
             quantity = request.POST.get("quantity", "").strip()
             position_size = request.POST.get("position_size", "").strip()
-            
+
             if symbol and direction in ["buy", "sell"]:
                 try:
                     from .tasks import create_manual_test_trade
-                    
+
                     # Convert inputs to appropriate types
                     quantity_int = int(quantity) if quantity else None
                     position_size_float = float(position_size) if position_size else None
-                    
+
                     # Validate at least one of quantity or position_size is provided
                     if not quantity_int and not position_size_float:
                         quantity_int = 1  # Default to 1 share
-                    
+
                     create_manual_test_trade.delay(
                         symbol=symbol,
                         direction=direction,
@@ -1053,7 +1202,7 @@ def test_page_view(request):
                         f"Manually triggered test trade: {symbol} {direction} qty={quantity_int} pos_size={position_size_float}"
                     )
                     messages.success(
-                        request, 
+                        request,
                         f"Test trade submitted: {symbol} {direction.upper()}"
                     )
                 except ValueError as e:
@@ -1075,6 +1224,10 @@ def test_page_view(request):
     recent_analyses = Analysis.objects.order_by("-created_at")[:10]
     sources = Source.objects.all()  # Fetch all sources
 
+    # Get bot status for display in menu
+    trading_config = TradingConfig.objects.filter(is_active=True).first()
+    bot_enabled = trading_config.bot_enabled if trading_config else False
+
     return render(
         request,
         "core/test_page.html",
@@ -1082,6 +1235,7 @@ def test_page_view(request):
             "recent_posts": recent_posts,
             "recent_analyses": recent_analyses,
             "sources": sources,  # Pass sources to the template
+            "bot_enabled": bot_enabled,  # Pass bot status to template
         },
     )
 
@@ -1094,18 +1248,22 @@ def recent_activities_api(request):
         activities = ActivityLog.objects.filter(
             created_at__gte=last_24h
         ).order_by('-created_at')[:20]
-        
+
         activity_list = []
         for activity in activities:
-            # Calculate time ago
+            # Calculate time ago properly
             time_diff = timezone.now() - activity.created_at
-            if time_diff.seconds < 60:
+            total_seconds = int(time_diff.total_seconds())
+
+            if total_seconds < 60:
                 time_ago = "Just now"
-            elif time_diff.seconds < 3600:
-                time_ago = f"{time_diff.seconds // 60} min ago"
+            elif total_seconds < 3600:
+                time_ago = f"{total_seconds // 60} min ago"
+            elif total_seconds < 86400:
+                time_ago = f"{total_seconds // 3600}h ago"
             else:
-                time_ago = f"{time_diff.seconds // 3600}h ago"
-            
+                time_ago = f"{total_seconds // 86400}d ago"
+
             activity_list.append({
                 'id': activity.id,
                 'type': activity.activity_type,
@@ -1114,7 +1272,7 @@ def recent_activities_api(request):
                 'created_at': activity.created_at.isoformat(),
                 'time_ago': time_ago
             })
-        
+
         return JsonResponse({
             'success': True,
             'activities': activity_list,
@@ -1128,29 +1286,3 @@ def recent_activities_api(request):
             'activities': [],
             'count': 0
         })
-
-        recent_activities = ActivityLog.objects.order_by('-created_at')[:50]
-        
-        activities_data = []
-        for activity in recent_activities:
-            activities_data.append({
-                'id': activity.id,
-                'type': activity.activity_type,
-                'message': activity.message,
-                'data': activity.data,
-                'timestamp': activity.created_at.isoformat(),
-                'created_at': activity.created_at.strftime('%H:%M:%S')  # Formatted time
-            })
-        
-        return JsonResponse({
-            'success': True,
-            'activities': activities_data,
-            'count': len(activities_data)
-        })
-        
-    except Exception as e:
-        logger.error(f"Error fetching recent activities: {e}")
-        return JsonResponse({
-            'success': False,
-            'error': str(e)
-        }, status=500)

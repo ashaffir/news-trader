@@ -195,7 +195,7 @@ class Post(models.Model):
         Source, on_delete=models.CASCADE, related_name="individual_posts"
     )
     content = models.TextField()
-    url = models.URLField(unique=True)
+    url = models.URLField(unique=True, max_length=600)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

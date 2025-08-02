@@ -126,6 +126,38 @@ class TaskTests(TestCase):
             url="https://example.com/post/1",
         )
 
+    def test_simulated_post_validation(self):
+        """Test that simulated posts are properly skipped during analysis."""
+        from core.tasks import _is_simulated_post, analyze_post
+        
+        # Create a simulated post
+        simulated_post = Post.objects.create(
+            source=self.source,
+            content="Simulated post from Test Source via api due to error: API config missing",
+            url="simulated://Test_Source/api/abc123/def456",
+        )
+        
+        # Create a real post for comparison
+        real_post = Post.objects.create(
+            source=self.source,
+            content="Real news content about AAPL stock performance",
+            url="https://example.com/real-news/123",
+        )
+        
+        # Test validation function
+        self.assertTrue(_is_simulated_post(simulated_post))
+        self.assertFalse(_is_simulated_post(real_post))
+        
+        # Test that simulated post analysis is skipped
+        with patch('core.tasks.logger') as mock_logger:
+            analyze_post.apply(args=[simulated_post.id])
+            mock_logger.info.assert_called_with(
+                f"Skipping LLM analysis for simulated post {simulated_post.id}: {simulated_post.url}"
+            )
+        
+        # Verify no Analysis object was created for simulated post
+        self.assertFalse(Analysis.objects.filter(post=simulated_post).exists())
+
     @patch("core.tasks.openai.OpenAI")
     @patch("core.tasks.os.getenv")
     def test_analyze_post_task(self, mock_getenv, mock_openai):

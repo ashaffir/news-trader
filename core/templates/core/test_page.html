@@ -1,209 +1,270 @@
+{% extends 'core/base.html' %}
 {% load static %}
-<!DOCTYPE html>
-<html lang="en">
 
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+{% block title %}News Trader - Testing & Monitoring{% endblock %}
 
-    <!-- Dynamic Favicon based on color scheme -->
-    <link rel="icon" href="{% static 'img/logo-b.png' %}" media="(prefers-color-scheme: light)">
-    <link rel="icon" href="{% static 'img/logo-w.png' %}" media="(prefers-color-scheme: dark)">
-    <link rel="icon" href="{% static 'img/logo-b.png' %}"> <!-- Default fallback -->
+{% block extra_head %}
+<style>
+    .workflow-step {
+        padding: 20px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+    }
 
-    <!-- Apple Touch Icon variants -->
-    <link rel="apple-touch-icon" href="{% static 'img/logo-b.png' %}" media="(prefers-color-scheme: light)">
-    <link rel="apple-touch-icon" href="{% static 'img/logo-w.png' %}" media="(prefers-color-scheme: dark)">
+    .workflow-step.step-2 {
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    }
 
-    <title>News Trader - Testing & Monitoring</title>
-    <!-- Bootstrap 5 CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Font Awesome for icons -->
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <style>
-        body {
-            padding-top: 20px;
-            background-color: #f8f9fa;
-        }
+    .workflow-step.step-3 {
+        background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+    }
 
-        .card {
-            margin-bottom: 20px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-            border: none;
-        }
+    .workflow-step.step-4 {
+        background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+    }
 
-        .workflow-step {
-            padding: 20px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-        }
+    .step-number {
+        background: rgba(255, 255, 255, 0.2);
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+        margin-right: 15px;
+        font-size: 18px;
+        color: white;
+        border: 2px solid rgba(255, 255, 255, 0.3);
+    }
 
-        .workflow-step.step-2 {
-            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-        }
+    .quick-stats {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border-radius: 12px;
+        padding: 25px;
+        margin-bottom: 30px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    }
 
-        .workflow-step.step-3 {
-            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-        }
+    .stat-item {
+        text-align: center;
+    }
 
-        .action-card {
-            transition: transform 0.2s;
-            border-left: 4px solid #007bff;
-        }
+    .stat-value {
+        font-size: 2rem;
+        font-weight: bold;
+        display: block;
+        color: white;
+    }
 
-        .action-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
-        }
+    .stat-label {
+        font-size: 0.9rem;
+        opacity: 0.9;
+        color: rgba(255, 255, 255, 0.8);
+    }
 
-        .step-number {
-            background: rgba(255, 255, 255, 0.2);
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: bold;
-            margin-right: 15px;
-        }
+    .navbar {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 12px;
+        padding: 12px 20px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    }
 
-        .quick-stats {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border-radius: 10px;
-            padding: 20px;
-            margin-bottom: 30px;
-        }
+    /* Navigation menu links (white text) */
+    .navbar .nav-link {
+        border-radius: 6px;
+        color: white !important;
+        font-weight: 600;
+    }
 
-        .stat-item {
-            text-align: center;
-        }
+    .navbar .nav-link:hover {
+        background: rgba(255, 255, 255, 0.2) !important;
+    }
 
-        .stat-value {
-            font-size: 2rem;
-            font-weight: bold;
-            display: block;
-        }
+    .navbar .nav-link.active {
+        background: rgba(255, 255, 255, 0.2) !important;
+    }
 
-        .stat-label {
-            font-size: 0.9rem;
-            opacity: 0.9;
-        }
+    /* Tab navigation links (black text) */
+    .nav-tabs .nav-link {
+        border-radius: 6px;
+        color: #000 !important;
+        font-weight: 600;
+    }
 
-        .data-table {
-            max-height: 400px;
-            overflow-y: auto;
-        }
+    .nav-tabs .nav-link:hover {
+        background: rgba(0, 0, 0, 0.1) !important;
+    }
 
-        .status-badge {
-            font-size: 0.8rem;
-            padding: 4px 8px;
-        }
+    .nav-tabs .nav-link.active {
+        background: rgba(0, 0, 0, 0.1) !important;
+    }
 
-        .content-preview {
-            max-width: 300px;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
+    .progress-step {
+        display: flex;
+        align-items: center;
+        padding: 15px;
+        margin-bottom: 10px;
+        border-radius: 8px;
+        background: white;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        transition: all 0.3s ease;
+    }
 
-        .action-buttons {
-            gap: 10px;
-        }
+    .progress-step.completed {
+        background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+        border-left: 4px solid #28a745;
+    }
 
-        .recent-activity {
-            background-color: #f8f9fa;
-            border-left: 4px solid #28a745;
-            padding: 15px;
-            margin-bottom: 10px;
-            border-radius: 0 8px 8px 0;
-        }
+    .progress-icon {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-right: 15px;
+        font-size: 18px;
+        transition: all 0.3s ease;
+    }
 
-        .activity-time {
-            font-size: 0.85rem;
-            color: #6c757d;
-            float: right;
-        }
+    .progress-icon.pending {
+        background: #f8f9fa;
+        color: #6c757d;
+        border: 2px solid #dee2e6;
+    }
 
-        .workflow-progress {
-            background: white;
-            border-radius: 10px;
-            padding: 20px;
-            margin-bottom: 30px;
-        }
+    .progress-icon.completed {
+        background: #28a745;
+        color: white;
+        border: 2px solid #28a745;
+    }
 
-        .progress-step {
-            display: flex;
-            align-items: center;
-            margin-bottom: 15px;
-            padding: 10px;
-            border-radius: 8px;
-            background: #f8f9fa;
-        }
+    .workflow-progress {
+        background: white;
+        padding: 20px;
+        border-radius: 12px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        margin-bottom: 20px;
+    }
 
-        .progress-step.active {
-            background: #e3f2fd;
-            border: 2px solid #2196f3;
-        }
+    .recent-activity {
+        background: white;
+        border-radius: 12px;
+        padding: 20px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        max-height: 400px;
+        overflow-y: auto;
+    }
 
-        .progress-step.completed {
-            background: #e8f5e8;
-            border: 2px solid #4caf50;
-        }
+    .activity-item {
+        padding: 10px;
+        border-bottom: 1px solid #f1f3f4;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
 
-        .progress-icon {
-            width: 30px;
-            height: 30px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-right: 15px;
-            font-size: 14px;
-        }
+    .activity-item:last-child {
+        border-bottom: none;
+    }
 
-        .progress-icon.pending {
-            background: #e0e0e0;
-            color: #757575;
-        }
+    .activity-icon {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+    }
 
-        .progress-icon.active {
-            background: #2196f3;
-            color: white;
-        }
+    .activity-icon.info {
+        background: #e3f2fd;
+        color: #1976d2;
+    }
 
-        .progress-icon.completed {
-            background: #4caf50;
-            color: white;
-        }
+    .activity-icon.success {
+        background: #e8f5e9;
+        color: #388e3c;
+    }
 
-        .quick-action-btn {
-            margin: 5px;
-            min-width: 120px;
-        }
+    .activity-icon.warning {
+        background: #fff3e0;
+        color: #f57c00;
+    }
 
-        .refresh-indicator {
-            animation: spin 1s linear infinite;
-        }
+    .activity-icon.error {
+        background: #ffebee;
+        color: #d32f2f;
+    }
 
-        @keyframes spin {
-            0% {
-                transform: rotate(0deg);
-            }
+    .loading-spinner {
+        display: inline-block;
+        width: 16px;
+        height: 16px;
+        border: 2px solid #f3f3f3;
+        border-radius: 50%;
+        border-top: 2px solid #007bff;
+        animation: spin 1s linear infinite;
+    }
 
-            100% {
-                transform: rotate(360deg);
-            }
-        }
-    </style>
-</head>
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
 
-<body>
-    <div class="container-fluid">
-        <!-- Header -->
+    .action-button {
+        background: linear-gradient(45deg, #007bff, #0056b3);
+        border: none;
+        color: white;
+        padding: 10px 20px;
+        border-radius: 8px;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .action-button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 15px rgba(0, 123, 255, 0.3);
+        color: white;
+    }
+
+    .action-button:disabled {
+        background: #6c757d;
+        cursor: not-allowed;
+        transform: none;
+        box-shadow: none;
+    }
+
+    .success-button {
+        background: linear-gradient(45deg, #28a745, #20c997);
+    }
+
+    .success-button:hover {
+        box-shadow: 0 4px 15px rgba(40, 167, 69, 0.3);
+    }
+
+    .error-button {
+        background: linear-gradient(45deg, #dc3545, #c82333);
+    }
+
+    .error-button:hover {
+        box-shadow: 0 4px 15px rgba(220, 53, 69, 0.3);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+    <!-- Add proper container padding -->
+    <div class="container-fluid px-4">
+        <!-- Page Header -->
         <div class="row mb-4">
             <div class="col-12">
                 <div class="d-flex justify-content-between align-items-center mb-3">
@@ -214,175 +275,83 @@
                         </button>
                     </div>
                 </div>
-                
-                <!-- Messages -->
-                {% if messages %}
-                    {% for message in messages %}
-                        <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
-                            {% if message.tags == 'success' %}
-                                <i class="fas fa-check-circle"></i>
-                            {% elif message.tags == 'error' %}
-                                <i class="fas fa-exclamation-circle"></i>
-                            {% elif message.tags == 'warning' %}
-                                <i class="fas fa-exclamation-triangle"></i>
-                            {% else %}
-                                <i class="fas fa-info-circle"></i>
-                            {% endif %}
-                            {{ message }}
-                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                        </div>
-                    {% endfor %}
-                {% endif %}
-
-                <!-- PAGES NAVIGATION MENU AT TOP -->
-                <nav class="navbar navbar-expand-lg mb-4"
-                    style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 12px; padding: 12px 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
-                    <div class="container-fluid">
-                        <span class="navbar-brand mb-0 h5 text-white fw-bold">
-                            <i class="fas fa-sitemap me-2"></i>PAGES
-                        </span>
-                        <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
-                            data-bs-target="#pageNavigation">
-                            <span class="navbar-toggler-icon"></span>
-                        </button>
-                        <div class="collapse navbar-collapse" id="pageNavigation">
-                            <ul class="navbar-nav me-auto mb-2 mb-lg-0">
-                                <li class="nav-item">
-                                    <a class="nav-link text-white fw-semibold" href="/dashboard/"
-                                        style="border-radius: 6px;"
-                                        onmouseover="this.style.background='rgba(255,255,255,0.2)'"
-                                        onmouseout="this.style.background='transparent'">
-                                        <i class="fas fa-chart-line me-1"></i> Dashboard
-                                    </a>
-                                </li>
-                                <li class="nav-item">
-                                    <a class="nav-link text-white fw-semibold active" href="/test-page/"
-                                        style="border-radius: 6px; background: rgba(255,255,255,0.2);">
-                                        <i class="fas fa-flask me-1"></i> Test Center
-                                    </a>
-                                </li>
-                                <li class="nav-item">
-                                    <a class="nav-link text-white fw-semibold" href="/close-trade/"
-                                        style="border-radius: 6px;"
-                                        onmouseover="this.style.background='rgba(255,255,255,0.2)'"
-                                        onmouseout="this.style.background='transparent'">
-                                        <i class="fas fa-times-circle me-1"></i> Open Trades
-                                    </a>
-                                </li>
-                                <li class="nav-item">
-                                    <a class="nav-link text-white fw-semibold" href="/admin/" target="_blank"
-                                        style="border-radius: 6px;"
-                                        onmouseover="this.style.background='rgba(255,255,255,0.2)'"
-                                        onmouseout="this.style.background='transparent'">
-                                        <i class="fas fa-cogs me-1"></i> Admin Panel
-                                    </a>
-                                </li>
-                                <li class="nav-item">
-                                    <a class="nav-link text-white fw-semibold" href="/api/" target="_blank"
-                                        style="border-radius: 6px;"
-                                        onmouseover="this.style.background='rgba(255,255,255,0.2)'"
-                                        onmouseout="this.style.background='transparent'">
-                                        <i class="fas fa-code me-1"></i> API Docs
-                                    </a>
-                                </li>
-                            </ul>
-                            <div class="d-flex">
-                                <div class="dropdown">
-                                    <button class="btn btn-outline-light btn-sm dropdown-toggle fw-semibold"
-                                        type="button" data-bs-toggle="dropdown" style="border-radius: 8px;">
-                                        <i class="fas fa-tools me-1"></i> Quick Tools
-                                    </button>
-                                    <ul class="dropdown-menu dropdown-menu-end">
-                                        <li><a class="dropdown-item" href="/admin/core/" target="_blank">
-                                                <i class="fas fa-database me-2"></i> Database Admin
-                                            </a></li>
-                                        <li><a class="dropdown-item" href="#" onclick="exportSystemData()">
-                                                <i class="fas fa-download me-2"></i> Export Data
-                                            </a></li>
-                                        <li>
-                                            <hr class="dropdown-divider">
-                                        </li>
-                                        <li><a class="dropdown-item" href="#" onclick="viewSystemLogs()">
-                                                <i class="fas fa-file-alt me-2"></i> System Logs
-                                            </a></li>
-                                        <li><a class="dropdown-item" href="#" onclick="clearSystemCache()">
-                                                <i class="fas fa-trash me-2"></i> Clear Cache
-                                            </a></li>
-                                    </ul>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </nav>
             </div>
         </div>
 
         <!-- Quick Stats -->
-        <div class="quick-stats">
-            <div class="row">
-                <div class="col-md-3">
-                    <div class="stat-item">
-                        <span class="stat-value" id="total-sources">{{ sources.count }}</span>
-                        <span class="stat-label">Data Sources</span>
-                    </div>
-                </div>
-                <div class="col-md-3">
-                    <div class="stat-item">
-                        <span class="stat-value" id="total-posts">{{ recent_posts.count }}</span>
-                        <span class="stat-label">Total Posts</span>
-                    </div>
-                </div>
-                <div class="col-md-3">
-                    <div class="stat-item">
-                        <span class="stat-value" id="total-analyses">{{ recent_analyses.count }}</span>
-                        <span class="stat-label">Analyses Done</span>
-                    </div>
-                </div>
-                <div class="col-md-3">
-                    <div class="stat-item">
-                        <span class="stat-value" id="system-status">
-                            <i class="fas fa-check-circle"></i>
-                        </span>
-                        <span class="stat-label">System Status</span>
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="quick-stats">
+                    <div class="row">
+                        <div class="col-md-3">
+                            <div class="stat-item">
+                                <span class="stat-value" id="total-sources">{{ sources.count }}</span>
+                                <span class="stat-label">Data Sources</span>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="stat-item">
+                                <span class="stat-value" id="total-posts">{{ recent_posts.count }}</span>
+                                <span class="stat-label">Total Posts</span>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="stat-item">
+                                <span class="stat-value" id="total-analyses">{{ recent_analyses.count }}</span>
+                                <span class="stat-label">Analyses Done</span>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="stat-item">
+                                <span class="stat-value" id="system-status">
+                                    <i class="fas fa-check-circle"></i>
+                                </span>
+                                <span class="stat-label">System Status</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
 
         <!-- Workflow Progress -->
-        <div class="workflow-progress">
-            <h5><i class="fas fa-tasks"></i> Complete Trading Workflow</h5>
-            <div class="row">
-                <div class="col-md-4">
-                    <div class="progress-step" id="step-scrape">
-                        <div class="progress-icon pending">
-                            <i class="fas fa-download"></i>
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="workflow-progress">
+                    <h5><i class="fas fa-tasks"></i> Complete Trading Workflow</h5>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="progress-step" id="step-scrape">
+                                <div class="progress-icon pending">
+                                    <i class="fas fa-download"></i>
+                                </div>
+                                <div>
+                                    <strong>1. Data Collection</strong>
+                                    <div class="text-muted small">Scrape news from sources</div>
+                                </div>
+                            </div>
                         </div>
-                        <div>
-                            <strong>1. Data Collection</strong>
-                            <div class="text-muted small">Scrape news from sources</div>
+                        <div class="col-md-4">
+                            <div class="progress-step" id="step-analyze">
+                                <div class="progress-icon pending">
+                                    <i class="fas fa-brain"></i>
+                                </div>
+                                <div>
+                                    <strong>2. AI Analysis</strong>
+                                    <div class="text-muted small">LLM processes content</div>
+                                </div>
+                            </div>
                         </div>
-                    </div>
-                </div>
-                <div class="col-md-4">
-                    <div class="progress-step" id="step-analyze">
-                        <div class="progress-icon pending">
-                            <i class="fas fa-brain"></i>
-                        </div>
-                        <div>
-                            <strong>2. AI Analysis</strong>
-                            <div class="text-muted small">LLM processes content</div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-4">
-                    <div class="progress-step" id="step-trade">
-                        <div class="progress-icon pending">
-                            <i class="fas fa-chart-line"></i>
-                        </div>
-                        <div>
-                            <strong>3. Trade Execution</strong>
-                            <div class="text-muted small">Execute trading decisions</div>
+                        <div class="col-md-4">
+                            <div class="progress-step" id="step-manual">
+                                <div class="progress-icon pending">
+                                    <i class="fas fa-vial"></i>
+                                </div>
+                                <div>
+                                    <strong>3. Manual Test Trading</strong>
+                                    <div class="text-muted small">Direct API testing</div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -405,29 +374,31 @@
                     <div class="card action-card">
                         <div class="card-body">
                             <h6><i class="fas fa-rss"></i> Source Selection & Scraping</h6>
-                            <form method="post" class="mb-3">
+                            <form id="scrape-form" class="mb-3">
                                 {% csrf_token %}
-                                <input type="hidden" name="action" value="trigger_scrape">
                                 <div class="row">
                                     <div class="col-md-8">
-                                        <select class="form-select" name="source_id" required>
+                                        <select class="form-select" name="source_id" id="source-select" required>
                                             <option value="">Choose a data source...</option>
                                             {% for source in sources %}
+                                            {% if source.scraping_enabled %}
                                             <option value="{{ source.id }}"
                                                 data-method="{{ source.get_scraping_method_display }}"
-                                                data-enabled="{{ source.scraping_enabled }}">
+                                                data-enabled="{{ source.scraping_enabled }}"
+                                                data-name="{{ source.name }}">
                                                 {{ source.name }}
                                                 ({{ source.get_scraping_method_display }})
-                                                {% if not source.scraping_enabled %} - DISABLED{% endif %}
                                             </option>
+                                            {% endif %}
                                             {% empty %}
-                                            <option value="">No sources configured</option>
+                                            <option value="">No enabled sources available</option>
                                             {% endfor %}
                                         </select>
                                     </div>
                                     <div class="col-md-4">
-                                        <button type="submit" class="btn btn-primary w-100">
-                                            <i class="fas fa-play"></i> Start Scrape
+                                        <button type="submit" id="scrape-button" class="btn btn-primary w-100">
+                                            <i id="scrape-icon" class="fas fa-play"></i> 
+                                            <span id="scrape-text">Start Scrape</span>
                                         </button>
                                     </div>
                                 </div>
@@ -471,12 +442,11 @@
                     <div class="card action-card">
                         <div class="card-body">
                             <h6><i class="fas fa-brain"></i> Post Analysis</h6>
-                            <form method="post" class="mb-3">
+                            <form id="analysis-form" class="mb-3">
                                 {% csrf_token %}
-                                <input type="hidden" name="action" value="trigger_analysis">
                                 <div class="row">
                                     <div class="col-md-8">
-                                        <select class="form-select" name="post_id">
+                                        <select class="form-select" name="post_id" id="post-select" required>
                                             <option value="">Select a post to analyze...</option>
                                             {% for post in recent_posts|slice:":20" %}
                                             <option value="{{ post.id }}" data-source="{{ post.source.name }}">
@@ -489,109 +459,23 @@
                                         </select>
                                     </div>
                                     <div class="col-md-4">
-                                        <button type="submit" class="btn btn-primary w-100">
-                                            <i class="fas fa-magic"></i> Analyze
+                                        <button type="submit" id="analysis-button" class="btn btn-primary w-100">
+                                            <i id="analysis-icon" class="fas fa-magic"></i> 
+                                            <span id="analysis-text">Analyze</span>
                                         </button>
                                     </div>
                                 </div>
                             </form>
 
-                            <div class="d-flex action-buttons">
-                                <div class="dropdown">
-                                    <button class="btn btn-outline-primary btn-sm dropdown-toggle quick-action-btn"
-                                        type="button" data-bs-toggle="dropdown">
-                                        <i class="fas fa-brain"></i> Analysis Tools
-                                    </button>
-                                    <ul class="dropdown-menu">
-                                        <li><a class="dropdown-item" href="#" onclick="analyzeLatestPosts()"><i
-                                                    class="fas fa-fast-forward"></i> Analyze Latest Posts</a></li>
-                                        <li><a class="dropdown-item" href="#" onclick="reanalyzeAll()"><i
-                                                    class="fas fa-redo"></i> Re-analyze All Posts</a></li>
-                                        <li>
-                                            <hr class="dropdown-divider">
-                                        </li>
-                                        <li><a class="dropdown-item" href="#" onclick="batchAnalyze()"><i
-                                                    class="fas fa-layer-group"></i> Batch Analysis</a></li>
-                                        <li><a class="dropdown-item" href="#" onclick="analyzeBySource()"><i
-                                                    class="fas fa-filter"></i> Analyze by Source</a></li>
-                                    </ul>
-                                </div>
-                            </div>
+
                         </div>
                     </div>
                 </div>
 
-                <!-- Step 3: Trading -->
-                <div class="workflow-step step-3">
-                    <div class="d-flex align-items-center mb-3">
-                        <div class="step-number">3</div>
-                        <div>
-                            <h5 class="mb-1">Trade Execution</h5>
-                            <small>Execute trades based on analysis signals</small>
-                        </div>
-                    </div>
-
-                    <div class="card action-card">
-                        <div class="card-body">
-                            <h6><i class="fas fa-chart-line"></i> Trade Execution</h6>
-                            <form method="post" class="mb-3">
-                                {% csrf_token %}
-                                <input type="hidden" name="action" value="trigger_trade">
-                                <div class="row">
-                                    <div class="col-md-8">
-                                        <select class="form-select" name="analysis_id">
-                                            <option value="">Select analysis for trading...</option>
-                                            {% for analysis in recent_analyses|slice:":20" %}
-                                            <option value="{{ analysis.id }}" data-symbol="{{ analysis.symbol }}"
-                                                data-direction="{{ analysis.direction }}"
-                                                data-confidence="{{ analysis.confidence }}">
-                                                Analysis #{{ analysis.id }} - {{ analysis.symbol }}
-                                                {{ analysis.direction|upper }} ({{ analysis.confidence|floatformat:2 }})
-                                            </option>
-                                            {% empty %}
-                                            <option value="">No analyses available</option>
-                                            {% endfor %}
-                                        </select>
-                                    </div>
-                                    <div class="col-md-4">
-                                        <button type="submit" class="btn btn-primary w-100">
-                                            <i class="fas fa-rocket"></i> Execute
-                                        </button>
-                                    </div>
-                                </div>
-                            </form>
-
-                            <div class="d-flex action-buttons">
-                                <div class="dropdown">
-                                    <button class="btn btn-outline-success btn-sm dropdown-toggle quick-action-btn"
-                                        type="button" data-bs-toggle="dropdown">
-                                        <i class="fas fa-rocket"></i> Trading Tools
-                                    </button>
-                                    <ul class="dropdown-menu">
-                                        <li><a class="dropdown-item" href="#" onclick="executeHighConfidence()"><i
-                                                    class="fas fa-thumbs-up"></i> Execute High Confidence</a></li>
-                                        <li><a class="dropdown-item" href="#" onclick="viewOpenTrades()"><i
-                                                    class="fas fa-eye"></i> View Open Trades</a></li>
-                                        <li>
-                                            <hr class="dropdown-divider">
-                                        </li>
-                                        <li><a class="dropdown-item" href="#" onclick="executeBatch()"><i
-                                                    class="fas fa-layer-group"></i> Batch Execute</a></li>
-                                        <li><a class="dropdown-item" href="#" onclick="simulateTrades()"><i
-                                                    class="fas fa-play-circle"></i> Simulate Trades</a></li>
-                                        <li><a class="dropdown-item" href="#" onclick="riskAnalysis()"><i
-                                                    class="fas fa-shield-alt"></i> Risk Analysis</a></li>
-                                    </ul>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- Step 4: Manual Test Trading -->
+                <!-- Step 3: Manual Test Trading -->
                 <div class="workflow-step" style="background: linear-gradient(135deg, #ff9a00 0%, #ffad00 100%);">
                     <div class="d-flex align-items-center mb-3">
-                        <div class="step-number">4</div>
+                        <div class="step-number">3</div>
                         <div>
                             <h5 class="mb-1">Manual Test Trading</h5>
                             <small>Direct Alpaca API testing - creates real trades</small>
@@ -680,18 +564,6 @@
                                     <i class="fas fa-newspaper"></i> Posts ({{ recent_posts.count }})
                                 </button>
                             </li>
-                            <li class="nav-item" role="presentation">
-                                <button class="nav-link" id="analyses-tab" data-bs-toggle="tab"
-                                    data-bs-target="#analyses" type="button">
-                                    <i class="fas fa-brain"></i> Analyses ({{ recent_analyses.count }})
-                                </button>
-                            </li>
-                            <li class="nav-item" role="presentation">
-                                <button class="nav-link" id="sources-tab" data-bs-toggle="tab" data-bs-target="#sources"
-                                    type="button">
-                                    <i class="fas fa-rss"></i> Sources ({{ sources.count }})
-                                </button>
-                            </li>
                         </ul>
                     </div>
                     <div class="card-body p-0">
@@ -709,8 +581,7 @@
                                                     <span class="text-muted ms-2 small">{{ post.created_at|timesince }}
                                                         ago</span>
                                                 </div>
-                                                <div class="content-preview text-muted">{{
-                                                    post.content|truncatechars:120 }}</div>
+                                                <div class="content-preview text-dark">{{ post.content|truncatechars:120 }}</div>
                                                 {% if post.url %}
                                                 <a href="{{ post.url }}" target="_blank"
                                                     class="small text-decoration-none">
@@ -735,99 +606,44 @@
                                 </div>
                             </div>
 
-                            <!-- Analyses Tab -->
-                            <div class="tab-pane fade" id="analyses" role="tabpanel">
-                                <div class="data-table">
-                                    {% for analysis in recent_analyses|slice:":15" %}
-                                    <div class="border-bottom p-3">
-                                        <div class="d-flex justify-content-between align-items-start">
-                                            <div class="flex-grow-1">
-                                                <div class="d-flex align-items-center mb-2">
-                                                    <span class="badge bg-info me-2">#{{ analysis.id }}</span>
-                                                    <strong>{{ analysis.symbol|default:"N/A" }}</strong>
-                                                    <span
-                                                        class="badge bg-{{ analysis.direction|yesno:'success,danger,secondary' }} ms-2">
-                                                        {{ analysis.direction|upper }}
-                                                    </span>
-                                                    <span class="text-muted ms-2 small">{{ analysis.created_at|timesince
-                                                        }} ago</span>
-                                                </div>
-                                                <div class="small">
-                                                    <strong>Confidence:</strong> {{ analysis.confidence|floatformat:2 }}
-                                                    <span class="text-muted">| Post #{{ analysis.post.id }}</span>
-                                                </div>
-                                                {% if analysis.reason %}
-                                                <div class="content-preview text-muted small">{{
-                                                    analysis.reason|truncatechars:100 }}</div>
-                                                {% endif %}
-                                            </div>
-                                            <div class="ms-3">
-                                                <button class="btn btn-sm btn-outline-success"
-                                                    onclick="executeTrade({{ analysis.id }})">
-                                                    <i class="fas fa-rocket"></i>
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    {% empty %}
-                                    <div class="text-center p-4 text-muted">
-                                        <i class="fas fa-brain fa-2x mb-2"></i>
-                                        <div>No analyses found. Try analyzing some posts first.</div>
-                                    </div>
-                                    {% endfor %}
-                                </div>
-                            </div>
 
-                            <!-- Sources Tab -->
-                            <div class="tab-pane fade" id="sources" role="tabpanel">
-                                <div class="data-table">
-                                    {% for source in sources %}
-                                    <div class="border-bottom p-3">
-                                        <div class="d-flex justify-content-between align-items-center">
-                                            <div class="flex-grow-1">
-                                                <div class="d-flex align-items-center mb-1">
-                                                    {% if source.scraping_enabled %}
-                                                    <i class="fas fa-play-circle text-success me-2"></i>
-                                                    {% else %}
-                                                    <i class="fas fa-pause-circle text-danger me-2"></i>
-                                                    {% endif %}
-                                                    <strong>{{ source.name }}</strong>
-                                                    <span class="badge bg-secondary ms-2">{{
-                                                        source.get_scraping_method_display }}</span>
-                                                </div>
-                                                <div class="small text-muted">
-                                                    Posts: {{ source.individual_posts.count }} |
-                                                    Last scraped: {% if source.last_scraped_at %}{{
-                                                    source.last_scraped_at|timesince }} ago{% else %}Never{% endif %}
-                                                </div>
-                                                {% if source.error_count > 0 %}
-                                                <div class="small text-danger">
-                                                    <i class="fas fa-exclamation-triangle"></i> {{ source.error_count }}
-                                                    error(s)
-                                                </div>
-                                                {% endif %}
-                                            </div>
-                                            <div class="ms-3">
-                                                <button class="btn btn-sm btn-outline-primary"
-                                                    onclick="scrapeSource({{ source.id }})">
-                                                    <i class="fas fa-download"></i>
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    {% empty %}
-                                    <div class="text-center p-4 text-muted">
-                                        <i class="fas fa-rss fa-2x mb-2"></i>
-                                        <div>No sources configured. Add some in the admin panel.</div>
-                                    </div>
-                                    {% endfor %}
-                                </div>
-                            </div>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
+    </div>
+    
+    <!-- Analysis Details Modal -->
+    <div class="modal fade" id="analysisModal" tabindex="-1" aria-labelledby="analysisModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="analysisModalLabel">
+                        <i class="fas fa-brain"></i> Analysis Recommendation
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" id="analysisModalBody">
+                    <!-- Analysis content will be populated here -->
+                    <div class="text-center">
+                        <div class="spinner-border" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p>Loading analysis...</p>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-primary" id="executeTradeFromModal" style="display: none;">
+                        <i class="fas fa-chart-line"></i> Execute Trade
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Close main container -->
     </div>
 
     <!-- Bootstrap 5 JS -->
@@ -848,13 +664,247 @@
         }
 
         function analyzePost(postId) {
-            const form = document.createElement('form');
-            form.method = 'post';
-            form.innerHTML = '<input type="hidden" name="csrfmiddlewaretoken" value="' + csrfToken + '">' +
-                '<input type="hidden" name="action" value="trigger_analysis">' +
-                '<input type="hidden" name="post_id" value="' + postId + '">';
-            document.body.appendChild(form);
-            form.submit();
+            // Show the modal with loading state
+            const modal = new bootstrap.Modal(document.getElementById('analysisModal'));
+            const modalBody = document.getElementById('analysisModalBody');
+            const executeButton = document.getElementById('executeTradeFromModal');
+            
+            // Reset modal content to loading state
+            modalBody.innerHTML = `
+                <div class="text-center">
+                    <div class="spinner-border" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p>Loading analysis...</p>
+                </div>
+            `;
+            executeButton.style.display = 'none';
+            modal.show();
+            
+            // Fetch analysis data
+            fetch(`/api/post-analysis/${postId}/`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        displayAnalysisInModal(data.analysis);
+                    } else {
+                        modalBody.innerHTML = `
+                            <div class="alert alert-warning">
+                                <h6><i class="fas fa-exclamation-triangle"></i> No Analysis Found</h6>
+                                <p>${data.error}</p>
+                                <p>Would you like to trigger a new analysis for this post?</p>
+                                <button class="btn btn-primary btn-sm" onclick="triggerNewAnalysis(${postId})">
+                                    <i class="fas fa-magic"></i> Analyze Post
+                                </button>
+                            </div>
+                        `;
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching analysis:', error);
+                    modalBody.innerHTML = `
+                        <div class="alert alert-danger">
+                            <h6><i class="fas fa-exclamation-circle"></i> Error</h6>
+                            <p>Failed to load analysis data: ${error.message}</p>
+                        </div>
+                    `;
+                });
+        }
+
+        function displayAnalysisInModal(analysis) {
+            const modalBody = document.getElementById('analysisModalBody');
+            const executeButton = document.getElementById('executeTradeFromModal');
+            
+            // Determine confidence color and icon
+            let confidenceClass = 'text-secondary';
+            let confidenceIcon = 'fas fa-question-circle';
+            if (analysis.confidence >= 0.8) {
+                confidenceClass = 'text-success';
+                confidenceIcon = 'fas fa-check-circle';
+            } else if (analysis.confidence >= 0.6) {
+                confidenceClass = 'text-warning';
+                confidenceIcon = 'fas fa-exclamation-circle';
+            } else {
+                confidenceClass = 'text-danger';
+                confidenceIcon = 'fas fa-times-circle';
+            }
+            
+            // Determine direction color and icon
+            let directionClass = 'text-secondary';
+            let directionIcon = 'fas fa-minus';
+            if (analysis.direction === 'buy') {
+                directionClass = 'text-success';
+                directionIcon = 'fas fa-arrow-up';
+            } else if (analysis.direction === 'sell') {
+                directionClass = 'text-danger';
+                directionIcon = 'fas fa-arrow-down';
+            }
+            
+            modalBody.innerHTML = `
+                <div class="row">
+                    <div class="col-md-8">
+                        <h6><i class="fas fa-newspaper"></i> Post Information</h6>
+                        <div class="card mb-3">
+                            <div class="card-body">
+                                <h6 class="card-title">${analysis.post_source}</h6>
+                                <p class="card-text text-muted small">${analysis.post_content}</p>
+                                <a href="${analysis.post_url}" target="_blank" class="btn btn-sm btn-outline-primary">
+                                    <i class="fas fa-external-link-alt"></i> View Original
+                                </a>
+                                <small class="text-muted d-block mt-2">Posted: ${analysis.post_created_at}</small>
+                            </div>
+                        </div>
+                        
+                        <h6><i class="fas fa-brain"></i> Analysis Details</h6>
+                        <div class="card">
+                            <div class="card-body">
+                                <div class="row mb-3">
+                                    <div class="col-6">
+                                        <strong>Symbol:</strong> 
+                                        <span class="badge bg-primary">${analysis.symbol}</span>
+                                    </div>
+                                    <div class="col-6">
+                                        <strong>Direction:</strong> 
+                                        <span class="badge ${directionClass.replace('text-', 'bg-')}">
+                                            <i class="${directionIcon}"></i> ${analysis.direction.toUpperCase()}
+                                        </span>
+                                    </div>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <strong>Confidence:</strong> 
+                                    <span class="${confidenceClass}">
+                                        <i class="${confidenceIcon}"></i> ${analysis.confidence_percentage}%
+                                    </span>
+                                    <div class="progress mt-1" style="height: 8px;">
+                                        <div class="progress-bar ${confidenceClass.replace('text-', 'bg-')}" 
+                                             style="width: ${analysis.confidence_percentage}%"></div>
+                                    </div>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <strong>Reasoning:</strong>
+                                    <p class="mt-1">${analysis.reason}</p>
+                                </div>
+                                
+                                ${analysis.sentiment_score !== null ? `
+                                <div class="mb-2">
+                                    <strong>Sentiment Score:</strong> 
+                                    <span class="${analysis.sentiment_score > 0 ? 'text-success' : analysis.sentiment_score < 0 ? 'text-danger' : 'text-secondary'}">
+                                        ${analysis.sentiment_score}
+                                    </span>
+                                </div>
+                                ` : ''}
+                                
+                                ${analysis.market_impact_score !== null ? `
+                                <div class="mb-2">
+                                    <strong>Market Impact:</strong> 
+                                    <span class="text-info">${analysis.market_impact_score}</span>
+                                </div>
+                                ` : ''}
+                                
+                                <small class="text-muted">
+                                    Config: ${analysis.trading_config_used} | 
+                                    Analyzed: ${analysis.analysis_created_at}
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-4">
+                        <h6><i class="fas fa-chart-line"></i> Trading Recommendation</h6>
+                        <div class="card text-center">
+                            <div class="card-body">
+                                <div class="display-6 ${directionClass} mb-2">
+                                    <i class="${directionIcon}"></i>
+                                </div>
+                                <h5 class="${directionClass}">${analysis.direction.toUpperCase()}</h5>
+                                <p class="card-text">
+                                    <span class="${confidenceClass}">
+                                        ${analysis.confidence_percentage}% Confidence
+                                    </span>
+                                </p>
+                                ${analysis.direction !== 'hold' ? `
+                                <button class="btn btn-primary btn-sm" onclick="executeTradeFromAnalysis(${analysis.post_id})">
+                                    <i class="fas fa-chart-line"></i> Execute Trade
+                                </button>
+                                ` : ''}
+                            </div>
+                        </div>
+                        
+                        ${analysis.raw_llm_response ? `
+                        <div class="mt-3">
+                            <h6><i class="fas fa-code"></i> Raw Response</h6>
+                            <div class="card">
+                                <div class="card-body">
+                                    <pre class="small text-muted" style="max-height: 200px; overflow-y: auto;">${JSON.stringify(analysis.raw_llm_response, null, 2)}</pre>
+                                </div>
+                            </div>
+                        </div>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+        }
+
+        function triggerNewAnalysis(postId) {
+            const modalBody = document.getElementById('analysisModalBody');
+            
+            // Show loading state
+            modalBody.innerHTML = `
+                <div class="text-center">
+                    <div class="spinner-border" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p>Triggering new analysis...</p>
+                </div>
+            `;
+            
+            // Trigger analysis using existing AJAX endpoint
+            fetch('/api/trigger-analysis/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `csrfmiddlewaretoken=${csrfToken}&post_id=${postId}`
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    modalBody.innerHTML = `
+                        <div class="alert alert-success">
+                            <h6><i class="fas fa-check-circle"></i> Analysis Started</h6>
+                            <p>${data.message}</p>
+                            <p>The analysis will be completed shortly. You can refresh the page or check back in a moment.</p>
+                        </div>
+                    `;
+                } else {
+                    modalBody.innerHTML = `
+                        <div class="alert alert-danger">
+                            <h6><i class="fas fa-exclamation-circle"></i> Error</h6>
+                            <p>${data.error}</p>
+                        </div>
+                    `;
+                }
+            })
+            .catch(error => {
+                console.error('Error triggering analysis:', error);
+                modalBody.innerHTML = `
+                    <div class="alert alert-danger">
+                        <h6><i class="fas fa-exclamation-circle"></i> Error</h6>
+                        <p>Failed to trigger analysis: ${error.message}</p>
+                    </div>
+                `;
+            });
+        }
+
+        function executeTradeFromAnalysis(postId) {
+            // This function can be called to execute trade from the modal
+            // For now, it will close the modal and show a message
+            const modal = bootstrap.Modal.getInstance(document.getElementById('analysisModal'));
+            modal.hide();
+            
+            showNotification("Trade execution feature coming soon!", "info");
         }
 
         function executeTrade(analysisId) {
@@ -981,19 +1031,24 @@
 
         // Update progress indicators
         function updateProgress() {
-            const totalPosts = {{ recent_posts.count }
-        };
-        const totalAnalyses = {{ recent_analyses.count }};
+            const totalPosts = {{ recent_posts.count }};
+            const totalAnalyses = {{ recent_analyses.count }};
 
-        if (totalPosts > 0) {
-            document.getElementById('step-scrape').classList.add('completed');
-            document.querySelector('#step-scrape .progress-icon').className = 'progress-icon completed';
-        }
+            // Step 1: Data Collection - completed if we have posts
+            if (totalPosts > 0) {
+                document.getElementById('step-scrape').classList.add('completed');
+                document.querySelector('#step-scrape .progress-icon').className = 'progress-icon completed';
+            }
 
-        if (totalAnalyses > 0) {
-            document.getElementById('step-analyze').classList.add('completed');
-            document.querySelector('#step-analyze .progress-icon').className = 'progress-icon completed';
-        }
+            // Step 2: AI Analysis - completed if we have analyses  
+            if (totalAnalyses > 0) {
+                document.getElementById('step-analyze').classList.add('completed');
+                document.querySelector('#step-analyze .progress-icon').className = 'progress-icon completed';
+            }
+
+            // Step 3: Manual Test Trading - always available for testing
+            document.getElementById('step-manual').classList.add('completed');
+            document.querySelector('#step-manual .progress-icon').className = 'progress-icon completed';
         }
 
         // Load recent activity from API
@@ -1040,12 +1095,22 @@
         function getActivityIcon(type) {
             const icons = {
                 'scraper_status': 'fas fa-download text-primary',
+                'scraper_error': 'fas fa-exclamation-triangle text-danger',
+                'scraper_skipped': 'fas fa-skip-forward text-warning',
+                'new_post': 'fas fa-newspaper text-info',
                 'new_analysis': 'fas fa-brain text-info',
-                'manual_trade_success': 'fas fa-check-circle text-success',
+                'analysis_complete': 'fas fa-check-circle text-success',
+                'analysis_error': 'fas fa-exclamation-triangle text-danger',
+                'analysis_skipped': 'fas fa-forward text-warning',
+                'analysis_status': 'fas fa-cog text-primary',
+                'trade_executed': 'fas fa-rocket text-success',
+                'trade_closed': 'fas fa-flag-checkered text-success',
+                'trade_close_requested': 'fas fa-stop-circle text-warning',
                 'trade_error': 'fas fa-exclamation-circle text-danger',
                 'trade_skipped': 'fas fa-pause-circle text-warning',
-                'scraper_error': 'fas fa-exclamation-triangle text-danger',
-                'analysis_error': 'fas fa-exclamation-triangle text-danger'
+                'trade_status': 'fas fa-chart-line text-info',
+                'manual_trade_success': 'fas fa-check-circle text-success',
+                'system_event': 'fas fa-cog text-secondary'
             };
             return icons[type] || 'fas fa-info-circle text-muted';
         }
@@ -1073,10 +1138,207 @@
             }
         }
 
+        // Handle scrape form submission with AJAX
+        function handleScrapeForm() {
+            const form = document.getElementById('scrape-form');
+            const button = document.getElementById('scrape-button');
+            const icon = document.getElementById('scrape-icon');
+            const text = document.getElementById('scrape-text');
+            const select = document.getElementById('source-select');
+
+            form.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                const sourceId = select.value;
+                if (!sourceId) {
+                    alert('Please select a data source');
+                    return;
+                }
+
+                // Show spinner and disable button
+                button.disabled = true;
+                icon.className = 'fas fa-spinner fa-spin';
+                text.textContent = 'Scraping...';
+
+                // Get source name for display
+                const selectedOption = select.options[select.selectedIndex];
+                const sourceName = selectedOption.getAttribute('data-name');
+
+                // Submit AJAX request
+                fetch('/api/trigger-scrape/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-CSRFToken': csrfToken
+                    },
+                    body: `source_id=${sourceId}`
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Show success message
+                        text.textContent = 'Success!';
+                        icon.className = 'fas fa-check';
+                        
+                        // Open results in new tab after short delay
+                        setTimeout(() => {
+                            const resultsUrl = `/api/posts/?source_id=${sourceId}&format=json&ordering=-created_at&page_size=50`;
+                            window.open(resultsUrl, '_blank');
+                            
+                            // Reset button after opening results
+                            setTimeout(() => {
+                                button.disabled = false;
+                                icon.className = 'fas fa-play';
+                                text.textContent = 'Start Scrape';
+                            }, 1000);
+                        }, 1000);
+                        
+                        // Show notification
+                        showNotification(`Scraping started for ${sourceName}! Results will open in a new tab.`, 'success');
+                    } else {
+                        // Show error
+                        button.disabled = false;
+                        icon.className = 'fas fa-exclamation-triangle';
+                        text.textContent = 'Error';
+                        
+                        setTimeout(() => {
+                            icon.className = 'fas fa-play';
+                            text.textContent = 'Start Scrape';
+                        }, 2000);
+                        
+                        showNotification(`Error: ${data.error}`, 'error');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    button.disabled = false;
+                    icon.className = 'fas fa-exclamation-triangle';
+                    text.textContent = 'Error';
+                    
+                    setTimeout(() => {
+                        icon.className = 'fas fa-play';
+                        text.textContent = 'Start Scrape';
+                    }, 2000);
+                    
+                    showNotification('Network error occurred', 'error');
+                });
+            });
+        }
+
+        // Handle analysis form submission with AJAX
+        function handleAnalysisForm() {
+            const form = document.getElementById('analysis-form');
+            const button = document.getElementById('analysis-button');
+            const icon = document.getElementById('analysis-icon');
+            const text = document.getElementById('analysis-text');
+            const select = document.getElementById('post-select');
+
+            form.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                const postId = select.value;
+                if (!postId) {
+                    alert('Please select a post to analyze');
+                    return;
+                }
+
+                // Show spinner and disable button
+                button.disabled = true;
+                icon.className = 'fas fa-spinner fa-spin';
+                text.textContent = 'Analyzing...';
+
+                // Get post info for display
+                const selectedOption = select.options[select.selectedIndex];
+                const postText = selectedOption.textContent;
+
+                // Submit AJAX request
+                fetch('/api/trigger-analysis/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-CSRFToken': csrfToken
+                    },
+                    body: `post_id=${postId}`
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Show success message
+                        text.textContent = 'Success!';
+                        icon.className = 'fas fa-check';
+                        
+                        // Wait a moment, then open results and reset button
+                        setTimeout(() => {
+                            // Open analysis results in new tab
+                            const resultsUrl = `/api/analyses/?post=${postId}&format=json&ordering=-created_at`;
+                            window.open(resultsUrl, '_blank');
+                            
+                            // Reset button
+                            button.disabled = false;
+                            icon.className = 'fas fa-magic';
+                            text.textContent = 'Analyze';
+                        }, 2000);
+                        
+                        // Show notification
+                        showNotification(`Analysis started for ${postText}! Results will open in a new tab.`, 'success');
+                    } else {
+                        // Show error
+                        button.disabled = false;
+                        icon.className = 'fas fa-exclamation-triangle';
+                        text.textContent = 'Error';
+                        
+                        setTimeout(() => {
+                            icon.className = 'fas fa-magic';
+                            text.textContent = 'Analyze';
+                        }, 2000);
+                        
+                        showNotification(`Error: ${data.error}`, 'error');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    button.disabled = false;
+                    icon.className = 'fas fa-exclamation-triangle';
+                    text.textContent = 'Error';
+                    
+                    setTimeout(() => {
+                        icon.className = 'fas fa-magic';
+                        text.textContent = 'Analyze';
+                    }, 2000);
+                    
+                    showNotification('Network error occurred', 'error');
+                });
+            });
+        }
+
+        // Show notification function
+        function showNotification(message, type) {
+            // Create notification element
+            const notification = document.createElement('div');
+            notification.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
+            notification.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
+            notification.innerHTML = `
+                <i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-circle'}"></i>
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            
+            document.body.appendChild(notification);
+            
+            // Auto-remove after 5 seconds
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.remove();
+                }
+            }, 5000);
+        }
+
         // Initialize on page load
         document.addEventListener('DOMContentLoaded', function () {
             updateProgress();
             startActivityPolling(); // Start polling for activities
+            handleScrapeForm(); // Initialize scrape form handler
+            handleAnalysisForm(); // Initialize analysis form handler
         });
     </script>
 
@@ -1098,6 +1360,4 @@
             window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', updateFavicon);
         }
     </script>
-</body>
-
-</html>
+{% endblock %}
