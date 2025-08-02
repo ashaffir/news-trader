@@ -267,13 +267,8 @@
         <!-- Page Header -->
         <div class="row mb-4">
             <div class="col-12">
-                <div class="d-flex justify-content-between align-items-center mb-3">
+                <div class="mb-3">
                     <h1><i class="fas fa-flask"></i> Trading System Test Center</h1>
-                    <div class="d-flex gap-2">
-                        <button id="refresh-data" class="btn btn-outline-primary">
-                            <i id="refresh-icon" class="fas fa-sync-alt"></i> Refresh Data
-                        </button>
-                    </div>
                 </div>
             </div>
         </div>
@@ -1017,17 +1012,7 @@
             }
         }
 
-        // Auto-refresh data
-        function refreshData() {
-            const refreshIcon = document.getElementById('refresh-icon');
-            refreshIcon.classList.add('refresh-indicator');
 
-            setTimeout(() => {
-                location.reload();
-            }, 1000);
-        }
-
-        document.getElementById('refresh-data').addEventListener('click', refreshData);
 
         // Update progress indicators
         function updateProgress() {
