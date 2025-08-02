@@ -515,6 +515,43 @@
         </div>
     </div>
 
+    <!-- Bot Status Confirmation Modal -->
+    <div class="modal fade" id="botToggleConfirmModal" tabindex="-1" aria-labelledby="botToggleConfirmModalLabel"
+        aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="botToggleConfirmModalLabel">
+                        <i class="fas fa-robot me-2"></i>Confirm Bot Status Change
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="botToggleConfirmContent">
+                        <div class="text-center mb-3">
+                            <i id="botToggleConfirmIcon" class="fas fa-question-circle text-warning" style="font-size: 3rem;"></i>
+                        </div>
+                        <div class="alert" id="botToggleConfirmAlert">
+                            <h6 id="botToggleConfirmTitle" class="mb-2"></h6>
+                            <p id="botToggleConfirmMessage" class="mb-0"></p>
+                        </div>
+                        <div class="small text-muted mt-2">
+                            <strong>Note:</strong> This will affect all bot activities including scraping, analysis, and trading.
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="fas fa-times me-1"></i>Cancel
+                    </button>
+                    <button type="button" class="btn" id="botToggleConfirmButton" onclick="confirmBotToggle()">
+                        <i class="fas fa-check me-1"></i><span id="botToggleConfirmButtonText">Confirm</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Bootstrap 5 JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
@@ -674,6 +711,7 @@
                     if (data.trading_config && data.trading_config.bot_enabled !== undefined) {
                         const botEnabled = data.trading_config.bot_enabled;
                         botToggle.checked = botEnabled;
+                        originalBotState = botEnabled; // Store the current state
                         botStatusText.textContent = botEnabled ?
                             'Bot is currently active and monitoring markets' :
                             'Bot is currently disabled';
@@ -771,6 +809,53 @@
         }
 
         // Bot status toggle handler
+        let pendingBotToggle = false;
+        let originalBotState = false;
+
+        function showBotToggleConfirmation(newState) {
+            const isEnabling = newState;
+            
+            // Update modal content based on action
+            const iconElement = document.getElementById('botToggleConfirmIcon');
+            const alertElement = document.getElementById('botToggleConfirmAlert');
+            const titleElement = document.getElementById('botToggleConfirmTitle');
+            const messageElement = document.getElementById('botToggleConfirmMessage');
+            const buttonElement = document.getElementById('botToggleConfirmButton');
+            const buttonTextElement = document.getElementById('botToggleConfirmButtonText');
+            
+            if (isEnabling) {
+                iconElement.className = 'fas fa-play-circle text-success';
+                alertElement.className = 'alert alert-success';
+                titleElement.textContent = 'Enable Trading Bot?';
+                messageElement.textContent = 'This will activate all bot activities including automated scraping, analysis, and trading based on your configuration.';
+                buttonElement.className = 'btn btn-success';
+                buttonTextElement.textContent = 'Enable Bot';
+            } else {
+                iconElement.className = 'fas fa-stop-circle text-danger';
+                alertElement.className = 'alert alert-danger';
+                titleElement.textContent = 'Disable Trading Bot?';
+                messageElement.textContent = 'This will stop all bot activities including scraping, analysis, and trading. Existing open positions will remain active but no new trades will be executed.';
+                buttonElement.className = 'btn btn-danger';
+                buttonTextElement.textContent = 'Disable Bot';
+            }
+            
+            // Store the pending state
+            pendingBotToggle = newState;
+            
+            // Show the modal
+            const modal = new bootstrap.Modal(document.getElementById('botToggleConfirmModal'));
+            modal.show();
+        }
+
+        function confirmBotToggle() {
+            // Close the modal first
+            const modal = bootstrap.Modal.getInstance(document.getElementById('botToggleConfirmModal'));
+            modal.hide();
+            
+            // Execute the actual toggle
+            updateBotStatus();
+        }
+
         function updateBotStatus() {
             fetch('/api/toggle-bot-status/', {
                 method: 'POST',
@@ -784,13 +869,27 @@
                     if (data.success) {
                         const statusText = data.bot_enabled ? 'enabled' : 'disabled';
                         addLogEntry(`Bot ${statusText} successfully`, 'text-success');
+                        
+                        // Update the UI to reflect the actual state
+                        botToggle.checked = data.bot_enabled;
+                        botStatusText.textContent = data.bot_enabled ?
+                            'Bot is currently active and monitoring markets' :
+                            'Bot is currently disabled';
+                        botToggleLabel.textContent = data.bot_enabled ? 'ENABLED' : 'DISABLED';
+                        
+                        // Update stored state
+                        originalBotState = data.bot_enabled;
                     } else {
                         addLogEntry(`Failed to update bot status: ${data.error}`, 'text-danger');
+                        // Reset toggle to original state on error
+                        botToggle.checked = originalBotState;
                     }
                 })
                 .catch(error => {
                     console.error('Error:', error);
                     addLogEntry('Failed to update bot status', 'text-danger');
+                    // Reset toggle to original state on error
+                    botToggle.checked = originalBotState;
                 });
         }
 
@@ -843,17 +942,31 @@
 
             // Bot toggle event listener
             if (botToggle) {
-                botToggle.addEventListener('change', function () {
-                    const isEnabled = this.checked;
-                    const statusText = isEnabled ?
-                        'Bot is currently active and monitoring markets' :
-                        'Bot is currently disabled';
-                    const labelText = isEnabled ? 'ENABLED' : 'DISABLED';
+                botToggle.addEventListener('change', function (event) {
+                    // Prevent the default change behavior
+                    event.preventDefault();
+                    
+                    // Get the intended new state
+                    const newState = this.checked;
+                    
+                    // Reset the toggle to its previous state immediately
+                    // (it will be updated properly after confirmation)
+                    this.checked = originalBotState;
+                    
+                    // Show confirmation modal
+                    showBotToggleConfirmation(newState);
+                });
+            }
 
-                    botStatusText.textContent = statusText;
-                    botToggleLabel.textContent = labelText;
-                    updateBotStatus();
-                    addLogEntry(`Bot status changed to: ${labelText}`, 'text-info');
+            // Bot toggle confirmation modal event listeners
+            const botToggleModal = document.getElementById('botToggleConfirmModal');
+            if (botToggleModal) {
+                // Reset toggle when modal is hidden without confirmation
+                botToggleModal.addEventListener('hidden.bs.modal', function () {
+                    // Ensure the toggle is in the correct state
+                    if (botToggle) {
+                        botToggle.checked = originalBotState;
+                    }
                 });
             }
 

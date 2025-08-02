@@ -105,7 +105,7 @@ def system_status_api(request):
             "total_analyses": Analysis.objects.count(),
             "analyses_24h": Analysis.objects.filter(created_at__gte=last_24h).count(),
             "total_trades": Trade.objects.count(),
-            "open_trades": Trade.objects.filter(status="open").count(),  # Synced database count
+            "open_trades": Trade.objects.filter(status__in=["open", "pending_close"]).count(),  # Synced database count
             "trades_24h": Trade.objects.filter(created_at__gte=last_24h).count(),
         }
 
@@ -523,9 +523,28 @@ def manual_close_trade_view(request):
     # Sync Alpaca positions with database
     sync_alpaca_positions_to_database(alpaca_positions)
 
+    # Get trades with pending_close status first
+    pending_close_trades = Trade.objects.filter(status="pending_close")
+    pending_symbols = {trade.symbol for trade in pending_close_trades}
+
     # Convert Alpaca positions to trade-like objects for the template
     open_trades = []
+    
+    # Add pending_close trades first
+    for trade in pending_close_trades:
+        # Use the database trade object directly, but enhance with Alpaca data if available
+        alpaca_pos = next((pos for pos in alpaca_positions if pos["symbol"] == trade.symbol), None)
+        if alpaca_pos:
+            trade.unrealized_pnl = float(alpaca_pos["unrealized_pl"])
+            trade.alpaca_position = True
+        else:
+            trade.alpaca_position = False
+        open_trades.append(trade)
+
+    # Then add Alpaca positions that aren't pending close
     for pos in alpaca_positions:
+        if pos["symbol"] in pending_symbols:
+            continue  # Skip this position as it's already added as pending_close
         # Create a proper object with all necessary attributes
         class AlpacaTrade:
             def __init__(self, position_data):
@@ -781,8 +800,12 @@ def manual_close_trade_view(request):
             # Handle regular database trades
             try:
                 trade = Trade.objects.get(id=trade_id, status="open")
+                # Update status to pending_close first
+                trade.status = "pending_close"
+                trade.save()
+                
                 close_trade_manually.delay(trade.id)
-                logger.info(f"Initiated manual close for trade {trade.id}.")
+                logger.info(f"Initiated manual close for trade {trade.id} - Status updated to pending_close.")
                 messages.success(
                     request,
                     f"Close order for {trade.symbol} has been submitted"

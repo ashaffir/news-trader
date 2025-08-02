@@ -245,6 +245,7 @@ class Trade(models.Model):
     STATUS_CHOICES = [
         ("pending", "Pending"),
         ("open", "Open"),
+        ("pending_close", "Open - Pending Close"),
         ("closed", "Closed"),
         ("cancelled", "Cancelled"),
         ("failed", "Failed"),
@@ -267,7 +268,7 @@ class Trade(models.Model):
     quantity = models.FloatField()
     entry_price = models.FloatField()
     exit_price = models.FloatField(null=True, blank=True)
-    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default="pending")
+    status = models.CharField(max_length=15, choices=STATUS_CHOICES, default="pending")
 
     # Enhanced trade tracking
     alpaca_order_id = models.CharField(max_length=100, blank=True, null=True)

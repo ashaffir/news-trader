@@ -236,7 +236,7 @@ class TradeViewSet(viewsets.ReadOnlyModelViewSet):
 
         summary = {
             "total_trades": trades.count(),
-            "open_trades": trades.filter(status="open").count(),
+            "open_trades": trades.filter(status__in=["open", "pending_close"]).count(),
             "closed_trades": trades.filter(status="closed").count(),
             "total_pnl": trades.filter(realized_pnl__isnull=False).aggregate(
                 total=Sum("realized_pnl")

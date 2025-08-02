@@ -462,8 +462,8 @@ def analyze_post(post_id):
     # Get active trading configuration
     config = get_active_trading_config()
 
-    openai.api_key = os.getenv("OPENAI_API_KEY")
-    if not openai.api_key:
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
         logger.error(
             "OPENAI_API_KEY not found in environment variables. Cannot analyze post."
         )
@@ -488,7 +488,9 @@ Respond with a JSON object: { "symbol": "STOCK_SYMBOL", "direction": "buy", "con
 Direction can be 'buy', 'sell', or 'hold'. Confidence is a float between 0 and 1."""
         )
 
-        response = openai.OpenAI().chat.completions.create(
+        # Create OpenAI client with API key passed directly
+        client = openai.OpenAI(api_key=api_key)
+        response = client.chat.completions.create(
             model=model,
             messages=[
                 {"role": "system", "content": prompt},
@@ -823,7 +825,8 @@ def close_trade_due_to_conflict(trade_id, conflicting_analysis_id):
     )
 
     try:
-        # Set close reason
+        # Set close reason and status
+        trade.status = "pending_close"
         trade.close_reason = "market_consensus_lost"
         trade.save()
 
@@ -864,7 +867,7 @@ def close_expired_positions():
     
     # Find expired trades
     expired_trades = Trade.objects.filter(
-        status="open",
+        status__in=["open", "pending_close"],
         opened_at__lt=cutoff_time
     )
 
@@ -880,7 +883,8 @@ def close_expired_positions():
 
     for trade in expired_trades:
         try:
-            # Set close reason and initiate close
+            # Set close reason and status, then initiate close
+            trade.status = "pending_close"
             trade.close_reason = "time_limit"
             trade.save()
 
@@ -915,8 +919,8 @@ def monitor_local_stop_take_levels():
         logger.warning("No active trading config found. Skipping TP/SL monitoring.")
         return
 
-    # Get all open trades
-    open_trades = Trade.objects.filter(status="open")
+    # Get all open trades (including those pending close)
+    open_trades = Trade.objects.filter(status__in=["open", "pending_close"])
     
     if not open_trades.exists():
         logger.debug("No open trades to monitor.")
@@ -945,6 +949,7 @@ def monitor_local_stop_take_levels():
             # Check stop loss trigger
             if should_trigger_stop_loss(trade, current_price):
                 logger.info(f"Stop loss triggered for trade {trade.id} ({trade.symbol}): {current_price} vs SL {trade.stop_loss_price}")
+                trade.status = "pending_close"
                 trade.close_reason = "stop_loss"
                 trade.save()
                 close_trade_manually.delay(trade.id)
@@ -953,6 +958,7 @@ def monitor_local_stop_take_levels():
             # Check take profit trigger
             elif should_trigger_take_profit(trade, current_price):
                 logger.info(f"Take profit triggered for trade {trade.id} ({trade.symbol}): {current_price} vs TP {trade.take_profit_price}")
+                trade.status = "pending_close"
                 trade.close_reason = "take_profit"
                 trade.save()
                 close_trade_manually.delay(trade.id)
@@ -996,7 +1002,7 @@ def close_trade_manually(trade_id):
     """Manually close an open trade."""
     logger.info(f"Attempting to manually close trade {trade_id}.")
     try:
-        trade = Trade.objects.get(id=trade_id, status="open")
+        trade = Trade.objects.get(id=trade_id, status__in=["open", "pending_close"])
 
         # Try to close via Alpaca API if we have order ID
         if trade.alpaca_order_id:
@@ -1038,7 +1044,9 @@ def close_trade_manually(trade_id):
                     trade.status = "closed"
                     trade.exit_price = exit_price
                     trade.realized_pnl = pnl
-                    trade.close_reason = "manual"
+                    # Only set to manual if no close reason was already set
+                    if not trade.close_reason:
+                        trade.close_reason = "manual"
                     trade.closed_at = timezone.now()
                     trade.save()
 
@@ -1053,7 +1061,9 @@ def close_trade_manually(trade_id):
                     trade.status = "closed"
                     trade.exit_price = trade.entry_price  # Neutral exit
                     trade.realized_pnl = 0.0
-                    trade.close_reason = "manual"
+                    # Only set to manual if no close reason was already set
+                    if not trade.close_reason:
+                        trade.close_reason = "manual"
                     trade.closed_at = timezone.now()
                     trade.save()
             else:
@@ -1061,7 +1071,9 @@ def close_trade_manually(trade_id):
                 trade.status = "closed"
                 trade.exit_price = trade.entry_price  # Neutral exit
                 trade.realized_pnl = 0.0
-                trade.close_reason = "manual"
+                # Only set to manual if no close reason was already set
+                if not trade.close_reason:
+                    trade.close_reason = "manual"
                 trade.closed_at = timezone.now()
                 trade.save()
         else:
@@ -1069,7 +1081,9 @@ def close_trade_manually(trade_id):
             trade.status = "closed"
             trade.exit_price = trade.entry_price  # Neutral exit
             trade.realized_pnl = 0.0
-            trade.close_reason = "manual"
+            # Only set to manual if no close reason was already set
+            if not trade.close_reason:
+                trade.close_reason = "manual"
             trade.closed_at = timezone.now()
             trade.save()
 
@@ -1282,10 +1296,14 @@ def close_all_trades_manually():
 
         for trade in open_trades:
             try:
+                # Update status to pending_close first
+                trade.status = "pending_close"
+                trade.save()
+                
                 # Use the existing close trade logic
                 close_trade_manually.delay(trade.id)
                 closed_count += 1
-                logger.info(f"Initiated close for trade {trade.id} ({trade.symbol})")
+                logger.info(f"Initiated close for trade {trade.id} ({trade.symbol}) - Status updated to pending_close")
             except Exception as e:
                 failed_count += 1
                 error_msg = (

@@ -45,6 +45,7 @@ INSTALLED_APPS = [
 
     "rest_framework",
     "rest_framework.authtoken",
+    "django_celery_beat",  # Enable admin-controlled task scheduling
     "core",
 ]
 
@@ -88,11 +89,11 @@ WSGI_APPLICATION = "news_trader.wsgi.application"
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": "news_trader",
-        "USER": "news_trader",
-        "PASSWORD": "news_trader",
-        "HOST": "db",
-        "PORT": "5432",
+        "NAME": os.getenv("DB_NAME", "news_trader"),
+        "USER": os.getenv("DB_USER", "news_trader"), 
+        "PASSWORD": os.getenv("DB_PASSWORD", "news_trader"),
+        "HOST": os.getenv("DB_HOST", "localhost"),  # Changed from "db" to "localhost"
+        "PORT": os.getenv("DB_PORT", "5432"),
     }
 }
 
@@ -183,8 +184,8 @@ LOGGING = {
 }
 
 # Celery Configuration
-CELERY_BROKER_URL = "redis://redis:6379/0"
-CELERY_RESULT_BACKEND = "redis://redis:6379/0"
+CELERY_BROKER_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+CELERY_RESULT_BACKEND = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
@@ -194,7 +195,7 @@ CELERY_TIMEZONE = "UTC"
 CELERY_BEAT_SCHEDULE = {
     "scrape-posts-every-5-minutes": {
         "task": "core.tasks.scrape_posts",
-        "schedule": 300.0,  # Default to 5 minutes
+        "schedule": 300.0,  # Back to 5 minutes
     },
     "update-trade-status-every-minute": {
         "task": "core.tasks.update_trade_status",
@@ -210,6 +211,8 @@ CELERY_BEAT_SCHEDULE = {
     },
 }
 
+# Use default scheduler for static schedules (comment out for database scheduling)
+CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
 # Django REST Framework Configuration
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [

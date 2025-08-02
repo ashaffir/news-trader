@@ -78,6 +78,11 @@
         color: #155724;
     }
 
+    .status-pending-close {
+        background-color: #fff3cd;
+        color: #856404;
+    }
+
     .close-btn {
         background: linear-gradient(45deg, #dc3545, #c82333);
         border: none;
@@ -343,7 +348,7 @@
                                 </div>
                             </td>
                             <td>
-                                <span class="status-badge status-open">{{ trade.status|capfirst }}</span>
+                                <span class="status-badge status-{{ trade.status|slugify }}">{{ trade.status|capfirst }}</span>
                             </td>
                             <td>
                                 {% if trade.alpaca_position %}
@@ -552,8 +557,7 @@
                                 {% if trade.alpaca_position %}
                                 <small
                                     class="{% if trade.unrealized_pnl > 0 %}text-success{% elif trade.unrealized_pnl < 0 %}text-danger{% else %}text-muted{% endif %}">
-                                    ({% if trade.unrealized_pnl > 0 %}+{% endif %}${{ trade.unrealized_pnl|floatformat:2
-                                    }})
+                                    ({% if trade.unrealized_pnl > 0 %}+{% endif %}${{ trade.unrealized_pnl|floatformat:2 }})
                                 </small>
                                 {% endif %}
                             </div>

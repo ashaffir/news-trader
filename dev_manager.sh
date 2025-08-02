@@ -41,7 +41,7 @@ print_warning() {
 activate_venv() {
     if [ -d "$VENV_PATH" ]; then
         source "$VENV_PATH/bin/activate"
-        export DJANGO_SETTINGS_MODULE=news_trader.local_settings
+        export DJANGO_SETTINGS_MODULE=news_trader.settings
     else
         print_error "Virtual environment not found at $VENV_PATH"
         print_error "Please create it with: python3 -m venv $VENV_PATH && source $VENV_PATH/bin/activate && pip install -r requirements.txt"
@@ -90,7 +90,7 @@ start_services() {
     # Start Django development server with hot reloading
     if ! is_running "django"; then
         print_status "Starting Django development server with hot reloading..."
-        DJANGO_SETTINGS_MODULE=news_trader.local_settings python manage.py runserver 0.0.0.0:8000 > "$LOGS_DIR/django.log" 2>&1 &
+        DJANGO_SETTINGS_MODULE=news_trader.settings python manage.py runserver 0.0.0.0:8000 > "$LOGS_DIR/django.log" 2>&1 &
         echo $! > "$PIDS_DIR/django.pid"
         print_success "Django development server started (PID: $!)"
     else
@@ -187,7 +187,7 @@ show_status() {
     echo -e "${BLUE}🗄️  Database Status:${NC}"
     echo "==================="
     
-    local db_check=$(DJANGO_SETTINGS_MODULE=news_trader.local_settings python manage.py shell -c "
+    local db_check=$(DJANGO_SETTINGS_MODULE=news_trader.settings python manage.py shell -c "
 from django.db import connection
 from django.core.management.color import no_style
 import sys
@@ -271,13 +271,13 @@ migrate_database() {
     
     # Run makemigrations to detect changes
     echo -e "${BLUE}Running makemigrations...${NC}"
-    DJANGO_SETTINGS_MODULE=news_trader.local_settings python manage.py makemigrations
+    DJANGO_SETTINGS_MODULE=news_trader.settings python manage.py makemigrations
     local makemigrations_exit_code=$?
     
     if [ $makemigrations_exit_code -eq 0 ]; then
         echo
         print_status "Applying migrations..."
-        DJANGO_SETTINGS_MODULE=news_trader.local_settings python manage.py migrate
+        DJANGO_SETTINGS_MODULE=news_trader.settings python manage.py migrate
         local migrate_exit_code=$?
         
         if [ $migrate_exit_code -eq 0 ]; then
@@ -286,7 +286,7 @@ migrate_database() {
             # Show updated table count
             echo
             print_status "Updated database status:"
-            local db_check=$(DJANGO_SETTINGS_MODULE=news_trader.local_settings python manage.py shell -c "
+            local db_check=$(DJANGO_SETTINGS_MODULE=news_trader.settings python manage.py shell -c "
 from django.db import connection
 try:
     with connection.cursor() as cursor:
@@ -488,10 +488,10 @@ show_help() {
     echo "Command Line Mode:"
     echo "  start     Start all services with hot reloading"
     echo "  stop      Stop all services and cleanup"
-    echo "  restart   Restart all services" 
-      echo "  reload    Reload code changes without full restart"
-  echo "  migrate   Run database migrations (makemigrations + migrate)"
-  echo "  status    Show service status"
+    echo "  restart   Restart all services"
+    echo "  reload    Reload code changes without full restart"
+    echo "  migrate   Run database migrations (makemigrations + migrate)"
+    echo "  status    Show service status"
     echo "  cleanup   Kill any stuck processes"
     echo "  logs [service]  View logs (django, celery_worker, celery_beat)"
     echo "  help      Show this help"
