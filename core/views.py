@@ -762,7 +762,7 @@ def manual_close_trade_view(request):
         open_trades.append(trade_obj)
 
     # Also include local database trades that might have Alpaca order IDs
-    local_trades = Trade.objects.filter(status="open")
+    local_trades = Trade.objects.filter(status__in=["open", "pending"])
     for trade in local_trades:
         # Only add if not already represented by Alpaca position
         if not any(pos["symbol"] == trade.symbol for pos in alpaca_positions):
@@ -806,7 +806,7 @@ def manual_close_trade_view(request):
                 messages.error(
                     request, f"Failed to initiate close all trades: {str(e)}"
                 )
-            return redirect("manual_close_trade")
+            return redirect("close_trade")
 
         elif action == "close_trade" and trade_id:
             logger.info(f"Attempting to close trade with ID: {trade_id}")
@@ -829,7 +829,7 @@ def manual_close_trade_view(request):
                     if not ALPACA_API_KEY or not ALPACA_SECRET_KEY:
                         logger.error("Alpaca API credentials not found")
                         messages.error(request, "Alpaca API credentials not configured")
-                        return redirect("manual_close_trade")
+                        return redirect("close_trade")
 
                     # Initialize Alpaca API
                     api = tradeapi.REST(ALPACA_API_KEY, ALPACA_SECRET_KEY, base_url=ALPACA_BASE_URL)
@@ -950,7 +950,7 @@ def manual_close_trade_view(request):
                         f"Failed to close position for {symbol}: {str(e)}"
                     )
 
-                return redirect("manual_close_trade")
+                return redirect("close_trade")
 
             # Handle regular database trades
             try:
@@ -976,7 +976,7 @@ def manual_close_trade_view(request):
                         "status": "initiated"
                     }
                 )
-                return redirect("manual_close_trade")  # Redirect to refresh the page
+                return redirect("close_trade")  # Redirect to refresh the page
             except Trade.DoesNotExist:
                 logger.warning(
                     f"Attempted to close non-existent or already closed trade with ID: {trade_id}"
@@ -1169,6 +1169,54 @@ def manual_close_trade_view(request):
                     })
                 else:
                     return redirect("close_trade")
+
+        elif action == "cancel_trade" and trade_id:
+            logger.info(f"Attempting to cancel pending trade with ID: {trade_id}")
+            try:
+                trade = Trade.objects.get(id=trade_id, status="pending")
+                
+                # Cancel the order via Alpaca API if it has an order ID
+                if trade.alpaca_order_id:
+                    import os
+                    import alpaca_trade_api as tradeapi
+                    
+                    api_key = os.getenv("ALPACA_API_KEY")
+                    secret_key = os.getenv("ALPACA_SECRET_KEY")
+                    base_url = os.getenv("ALPACA_BASE_URL", "https://paper-api.alpaca.markets")
+                    
+                    if api_key and secret_key:
+                        api = tradeapi.REST(api_key, secret_key, base_url=base_url)
+                        api.cancel_order(trade.alpaca_order_id)
+                        logger.info(f"Cancelled Alpaca order {trade.alpaca_order_id} for trade {trade_id}")
+                
+                # Update trade status to cancelled
+                trade.status = "cancelled"
+                trade.save()
+                
+                messages.success(
+                    request,
+                    f"Pending order for {trade.symbol} has been cancelled successfully"
+                )
+                
+                # Send update to dashboard activity log
+                send_dashboard_update(
+                    "trade_cancelled", 
+                    {
+                        "trade_id": trade.id,
+                        "symbol": trade.symbol,
+                        "message": f"Pending order for {trade.symbol} cancelled by user",
+                        "status": "cancelled"
+                    }
+                )
+                
+            except Trade.DoesNotExist:
+                logger.warning(f"Attempted to cancel non-existent or non-pending trade with ID: {trade_id}")
+                messages.error(request, "Trade not found or not in pending status")
+            except Exception as e:
+                logger.error(f"Error cancelling trade {trade_id}: {e}")
+                messages.error(request, f"Error cancelling trade: {str(e)}")
+            
+            return redirect("close_trade")
 
     # Calculate total unrealized P&L for summary
     total_unrealized_pnl = sum(

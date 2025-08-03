@@ -89,6 +89,11 @@
         color: white;
     }
 
+    .status-pending {
+        background: linear-gradient(45deg, #ffc107, #fd7e14);
+        color: white;
+    }
+
     .status-closed {
         background: linear-gradient(45deg, #6c757d, #495057);
         color: white;
@@ -96,6 +101,12 @@
 
     .close-btn {
         background: linear-gradient(45deg, #dc3545, #c82333);
+        border: none;
+        color: white;
+    }
+
+    .cancel-btn {
+        background: linear-gradient(45deg, #ffc107, #fd7e14);
         border: none;
         color: white;
         border-radius: 8px;
@@ -328,6 +339,14 @@
                                                     data-sl-percent="{{ trade.stop_loss_price_percentage|default:'' }}">
                                                     <i class="fas fa-pencil-alt"></i>Edit
                                                 </button>
+                                                {% if trade.status == 'pending' %}
+                                                <button type="button" class="cancel-btn" data-bs-toggle="modal"
+                                                    data-bs-target="#cancelTradeModal" data-trade-id="{{ trade.id }}"
+                                                    data-symbol="{{ trade.symbol }}" data-quantity="{{ trade.quantity }}"
+                                                    data-entry-price="{{ trade.entry_price }}">
+                                                    <i class="fas fa-ban"></i>Cancel
+                                                </button>
+                                                {% else %}
                                                 <button type="button" class="close-btn" data-bs-toggle="modal"
                                                     data-bs-target="#closeTradeModal" data-trade-id="{{ trade.id }}"
                                                     data-symbol="{{ trade.symbol }}" data-quantity="{{ trade.quantity }}"
@@ -335,6 +354,7 @@
                                                     data-entry-price="{{ trade.entry_price }}">
                                                     <i class="fas fa-times"></i>Close
                                                 </button>
+                                                {% endif %}
                                             </div>
                                         </td>
                                     </tr>
@@ -411,6 +431,60 @@
                         <span class="spinner-border spinner-border-sm me-1" role="status"></span>
                         Closing...
                     </span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Cancel Trade Confirmation Modal -->
+<div class="modal fade" id="cancelTradeModal" tabindex="-1" aria-labelledby="cancelTradeModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="cancelTradeModalLabel">
+                    <i class="fas fa-ban me-2"></i>Cancel Pending Order
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    <strong>Warning:</strong> You are about to cancel this pending order. This action cannot be undone.
+                </div>
+                
+                <div class="row mb-3">
+                    <div class="col-6">
+                        <strong>Symbol:</strong><br>
+                        <span id="cancel-symbol" class="badge bg-primary">-</span>
+                    </div>
+                    <div class="col-6">
+                        <strong>Quantity:</strong><br>
+                        <span id="cancel-quantity">-</span>
+                    </div>
+                </div>
+                
+                <div class="row mb-3">
+                    <div class="col-6">
+                        <strong>Entry Price:</strong><br>
+                        $<span id="cancel-entry-price">-</span>
+                    </div>
+                    <div class="col-6">
+                        <strong>Status:</strong><br>
+                        <span class="badge bg-warning">Pending</span>
+                    </div>
+                </div>
+
+                <form method="post" style="display: inline;" id="cancelTradeForm">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="cancel_trade">
+                    <input type="hidden" name="trade_id" value="" id="cancel-trade-id">
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Keep Order</button>
+                <button type="submit" class="btn btn-warning" form="cancelTradeForm">
+                    <i class="fas fa-ban me-2"></i>Cancel Order
                 </button>
             </div>
         </div>
@@ -564,6 +638,28 @@
             btnSpinner.classList.remove('d-none');
             confirmBtn.disabled = true;
             cancelBtn.disabled = true;
+        });
+
+        // Cancel trade modal
+        const cancelTradeModal = document.getElementById('cancelTradeModal');
+        cancelTradeModal.addEventListener('show.bs.modal', function (event) {
+            const button = event.relatedTarget;
+            const tradeId = button.getAttribute('data-trade-id');
+            const symbol = button.getAttribute('data-symbol');
+            const quantity = button.getAttribute('data-quantity');
+            const entryPrice = parseFloat(button.getAttribute('data-entry-price')) || 0;
+
+            // Populate modal fields
+            document.getElementById('cancel-symbol').textContent = symbol;
+            document.getElementById('cancel-quantity').textContent = quantity;
+            document.getElementById('cancel-entry-price').textContent = entryPrice.toFixed(2);
+            document.getElementById('cancel-trade-id').value = tradeId;
+        });
+
+        // Handle cancel trade form submission
+        const cancelTradeForm = document.getElementById('cancelTradeForm');
+        cancelTradeForm.addEventListener('submit', function(event) {
+            // Note: Cancel uses existing cancel_trade action in views.py
         });
 
         // Edit trade modal

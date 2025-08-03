@@ -1,7 +1,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from . import views
-from .api import TradingConfigViewSet, SourceViewSet, PostViewSet
+from .api import TradingConfigViewSet, SourceViewSet, PostViewSet, AnalysisViewSet, TradeViewSet, ApiResponseViewSet
 from django.http import JsonResponse
 
 # Health check endpoint for Docker
@@ -12,6 +12,9 @@ router = DefaultRouter()
 router.register(r'trading-configs', TradingConfigViewSet)
 router.register(r'sources', SourceViewSet)
 router.register(r'posts', PostViewSet)
+router.register(r'analyses', AnalysisViewSet)
+router.register(r'trades', TradeViewSet)
+router.register(r'api-responses', ApiResponseViewSet)
 
 urlpatterns = [
     path('', views.dashboard_view, name='dashboard'),
@@ -32,6 +35,8 @@ urlpatterns = [
     path('api/trade-status/<int:trade_id>/', views.trade_status_api, name='api_trade_status'),
     path('api/check-connection/<str:service>/', views.check_single_connection, name='check_single_connection'),
     path('api/trigger-scrape/', views.trigger_scrape_api, name='api_trigger_scrape'),
+    path('api/trigger-analysis/', views.trigger_analysis_ajax, name='api_trigger_analysis'),
+    path('api/post-analysis/<int:post_id>/', views.get_post_analysis_ajax, name='api_post_analysis'),
     path('api/public-posts/', views.public_posts_api, name='public_posts_api'),
     path('api/toggle-bot-status/', views.toggle_bot_status, name='api_toggle_bot_status'),
     path('api/', include(router.urls)),

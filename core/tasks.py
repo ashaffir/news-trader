@@ -1274,7 +1274,10 @@ def create_manual_test_trade(symbol, direction, quantity=None, position_size=Non
             "trade_error",
             {"error": "Alpaca API keys not configured"},
         )
-        return
+        return {
+            "success": False,
+            "error": "Alpaca API keys not configured"
+        }
 
     api = tradeapi.REST(ALPACA_API_KEY, ALPACA_SECRET_KEY, base_url=ALPACA_BASE_URL)
 
@@ -1343,7 +1346,10 @@ def create_manual_test_trade(symbol, direction, quantity=None, position_size=Non
         error_msg = f"Failed to create manual test trade: {str(e)}"
         logger.error(error_msg)
         send_dashboard_update("trade_error", {"error": error_msg})
-        return {"success": False, "error": error_msg}
+        return {
+            "success": False,
+            "error": error_msg
+        }
 
 
 @shared_task
