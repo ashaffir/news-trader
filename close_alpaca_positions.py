@@ -6,7 +6,7 @@ load_dotenv()
 
 API_KEY = os.getenv('ALPACA_API_KEY')
 SECRET_KEY = os.getenv('ALPACA_SECRET_KEY')
-BASE_URL = os.getenv('ALPACA_API_URL')
+BASE_URL = os.getenv('ALPACA_BASE_URL')
 
 HEADERS = {
     'APCA-API-KEY-ID': API_KEY,

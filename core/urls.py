@@ -34,5 +34,6 @@ urlpatterns = [
     path('api/check-connection/<str:service>/', views.check_single_connection, name='check_single_connection'),
     path('api/trigger-scrape/', views.trigger_scrape_api, name='api_trigger_scrape'),
     path('api/public-posts/', views.public_posts_api, name='public_posts_api'),
+    path('api/toggle-bot-status/', views.toggle_bot_status, name='api_toggle_bot_status'),
     path('api/', include(router.urls)),
 ]

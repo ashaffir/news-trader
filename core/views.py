@@ -401,7 +401,7 @@ def check_alpaca_api():
     """Check if Alpaca API is accessible with real connection test using alpaca-py."""
     api_key = os.getenv("ALPACA_API_KEY")
     secret_key = os.getenv("ALPACA_SECRET_KEY")
-    base_url = os.getenv("ALPACA_API_URL", "https://paper-api.alpaca.markets")
+    base_url = os.getenv("ALPACA_BASE_URL", "https://paper-api.alpaca.markets")
 
     if not api_key or not secret_key:
         return {"status": "error", "message": "API keys not configured"}
@@ -444,6 +444,7 @@ def get_alpaca_trading_data():
     """Get real trading data from Alpaca API."""
     api_key = os.getenv("ALPACA_API_KEY")
     secret_key = os.getenv("ALPACA_SECRET_KEY")
+    base_url = os.getenv("ALPACA_BASE_URL", "https://paper-api.alpaca.markets")
 
     if not api_key or not secret_key:
         return {
@@ -465,7 +466,7 @@ def get_alpaca_trading_data():
         account = trading_client.get_account()
 
         # Get positions
-        positions = trading_client.get_all_positions()
+        positions = trading_client.list_positions()
 
         # Calculate metrics
         open_positions = len(positions)
