@@ -16,6 +16,7 @@ from django.utils import timezone
 from datetime import datetime, timedelta
 import requests
 from django.views.decorators.csrf import csrf_exempt
+from django.core.paginator import Paginator
 from django.views.decorators.http import require_POST
 from django.contrib import messages
 
@@ -33,7 +34,6 @@ def dashboard_view(request):
 
 
 @csrf_exempt
-@require_POST
 def trigger_scrape_ajax(request):
     """AJAX endpoint to trigger scraping for a specific source."""
     try:
@@ -407,14 +407,14 @@ def check_alpaca_api():
         return {"status": "error", "message": "API keys not configured"}
 
     try:
-        # Real API test using the new alpaca-py TradingClient
-        from alpaca.trading.client import TradingClient
+        # Real API test using alpaca-trade-api
+        import alpaca_trade_api as tradeapi
 
         # Create TradingClient instance
-        trading_client = TradingClient(
-            api_key=api_key,
-            secret_key=secret_key,
-            paper=True,  # Using paper trading as configured in .env
+        trading_client = tradeapi.REST(
+            api_key,
+            secret_key,
+            base_url=base_url
         )
 
         # Test connection by getting account information
@@ -435,7 +435,7 @@ def check_alpaca_api():
             return {"status": "warning", "message": "Account data incomplete"}
 
     except ImportError:
-        return {"status": "error", "message": "alpaca-py package not installed"}
+        return {"status": "error", "message": "alpaca-trade-api package not installed"}
     except Exception as e:
         return {"status": "error", "message": f"Connection failed: {str(e)}"}
 
@@ -455,10 +455,10 @@ def get_alpaca_trading_data():
         }
 
     try:
-        from alpaca.trading.client import TradingClient
+        import alpaca_trade_api as tradeapi
 
-        trading_client = TradingClient(
-            api_key=api_key, secret_key=secret_key, paper=True
+        trading_client = tradeapi.REST(
+            api_key, secret_key, base_url=base_url
         )
 
         # Get account info
@@ -1286,3 +1286,304 @@ def recent_activities_api(request):
             'activities': [],
             'count': 0
         })
+
+
+def close_trade_view(request):
+    """General close trade page showing all open trades."""
+    from .models import Trade
+    from django.shortcuts import render
+    
+    # Show all active trades (pending, open, and pending_close)
+    open_trades = Trade.objects.filter(status__in=['pending', 'open', 'pending_close']).order_by('-created_at')
+    
+    context = {
+        'trades': open_trades,
+        'title': 'Close Trades'
+    }
+    return render(request, 'core/close_trade.html', context)
+
+
+def close_trade_api(request):
+    """API endpoint for closing trades."""
+    if request.method == 'POST':
+        try:
+            import json
+            from .models import Trade
+            from .tasks import close_trade_manually
+            
+            data = json.loads(request.body)
+            trade_id = data.get('trade_id')
+            
+            if not trade_id:
+                return JsonResponse({'error': 'Trade ID is required'}, status=400)
+            
+            # Verify trade exists and is open
+            try:
+                trade = Trade.objects.get(id=trade_id, status__in=['open', 'pending_close'])
+            except Trade.DoesNotExist:
+                return JsonResponse({'error': 'Trade not found or already closed'}, status=404)
+            
+            # Close the trade
+            close_trade_manually.delay(trade_id)
+            
+            return JsonResponse({
+                'success': True,
+                'message': f'Trade {trade_id} closure initiated',
+                'trade_id': trade_id
+            })
+            
+        except json.JSONDecodeError:
+            return JsonResponse({'error': 'Invalid JSON'}, status=400)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+    
+    elif request.method == 'GET':
+        # Return list of open trades
+        from .models import Trade
+        
+        open_trades = Trade.objects.filter(status__in=['pending', 'open', 'pending_close']).values(
+            'id', 'symbol', 'direction', 'quantity', 'entry_price', 'created_at', 'status'
+        ).order_by('-created_at')
+        
+        return JsonResponse({
+            'success': True,
+            'trades': list(open_trades),
+            'count': len(open_trades)
+        })
+    
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+def cancel_trade_api(request):
+    """API endpoint for canceling pending trades."""
+    if request.method == 'POST':
+        try:
+            import json
+            from .models import Trade
+            
+            data = json.loads(request.body)
+            trade_id = data.get('trade_id')
+            
+            if not trade_id:
+                return JsonResponse({'error': 'Trade ID is required'}, status=400)
+            
+            # Verify trade exists and is pending
+            try:
+                trade = Trade.objects.get(id=trade_id, status='pending')
+            except Trade.DoesNotExist:
+                return JsonResponse({'error': 'Trade not found or not cancelable'}, status=404)
+            
+            # Cancel the trade via Alpaca API
+            try:
+                import alpaca_trade_api as tradeapi
+                import os
+                
+                api_key = os.getenv("ALPACA_API_KEY")
+                secret_key = os.getenv("ALPACA_SECRET_KEY")
+                base_url = os.getenv("ALPACA_BASE_URL", "https://paper-api.alpaca.markets")
+                
+                if not api_key or not secret_key:
+                    return JsonResponse({'error': 'Alpaca API keys not configured'}, status=500)
+                
+                api = tradeapi.REST(api_key, secret_key, base_url=base_url)
+                
+                # Cancel the order
+                if trade.alpaca_order_id:
+                    api.cancel_order(trade.alpaca_order_id)
+                    trade.status = 'cancelled'
+                    trade.save()
+                    
+                    return JsonResponse({
+                        'success': True,
+                        'message': f'Order cancelled for {trade.symbol}',
+                        'trade_id': trade_id
+                    })
+                else:
+                    return JsonResponse({'error': 'No Alpaca order ID found for this trade'}, status=400)
+                    
+            except Exception as e:
+                logger.error(f"Error canceling trade {trade_id}: {e}")
+                return JsonResponse({'error': f'Failed to cancel order: {str(e)}'}, status=500)
+            
+        except json.JSONDecodeError:
+            return JsonResponse({'error': 'Invalid JSON'}, status=400)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+    
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+def trade_status_api(request, trade_id):
+    """API endpoint for refreshing trade status from Alpaca."""
+    if request.method == 'GET':
+        try:
+            from .models import Trade
+            
+            # Verify trade exists
+            try:
+                trade = Trade.objects.get(id=trade_id)
+            except Trade.DoesNotExist:
+                return JsonResponse({'error': 'Trade not found'}, status=404)
+            
+            # Get status from Alpaca API
+            try:
+                import alpaca_trade_api as tradeapi
+                import os
+                
+                api_key = os.getenv("ALPACA_API_KEY")
+                secret_key = os.getenv("ALPACA_SECRET_KEY")
+                base_url = os.getenv("ALPACA_BASE_URL", "https://paper-api.alpaca.markets")
+                
+                if not api_key or not secret_key:
+                    return JsonResponse({'error': 'Alpaca API keys not configured'}, status=500)
+                
+                api = tradeapi.REST(api_key, secret_key, base_url=base_url)
+                
+                if trade.alpaca_order_id:
+                    # Get order status from Alpaca
+                    order = api.get_order(trade.alpaca_order_id)
+                    
+                    # Update trade status based on Alpaca order status
+                    old_status = trade.status
+                    if order.status == 'filled':
+                        trade.status = 'open'
+                        if hasattr(order, 'filled_avg_price') and order.filled_avg_price:
+                            trade.entry_price = float(order.filled_avg_price)
+                    elif order.status == 'cancelled':
+                        trade.status = 'cancelled'
+                    elif order.status in ['pending_new', 'new', 'partially_filled']:
+                        trade.status = 'pending'
+                    elif order.status == 'rejected':
+                        trade.status = 'rejected'
+                    
+                    trade.save()
+                    
+                    status_changed = old_status != trade.status
+                    
+                    return JsonResponse({
+                        'success': True,
+                        'status': trade.status,
+                        'alpaca_status': order.status,
+                        'status_changed': status_changed,
+                        'message': f'Status updated: {trade.status}' if status_changed else f'Status unchanged: {trade.status}'
+                    })
+                else:
+                    return JsonResponse({'error': 'No Alpaca order ID found for this trade'}, status=400)
+                    
+            except Exception as e:
+                logger.error(f"Error refreshing trade status for {trade_id}: {e}")
+                return JsonResponse({'error': f'Failed to refresh status: {str(e)}'}, status=500)
+            
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+    
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+@csrf_exempt
+def trigger_scrape_api(request):
+    """CSRF-exempt API endpoint for triggering scraping."""
+    if request.method == 'POST':
+        try:
+            import json
+            from .models import Source
+            from .tasks import scrape_posts
+            
+            # Parse request data
+            if request.content_type == 'application/json':
+                data = json.loads(request.body)
+                source_id = data.get('source_id')
+            else:
+                source_id = request.POST.get('source_id')
+            
+            if source_id:
+                # Scrape specific source
+                try:
+                    source = Source.objects.get(id=source_id, scraping_enabled=True)
+                    result = scrape_posts.delay(source_id=source_id)
+                    return JsonResponse({
+                        'success': True,
+                        'message': f'Scraping started for {source.name}',
+                        'task_id': result.id,
+                        'source': source.name
+                    })
+                except Source.DoesNotExist:
+                    return JsonResponse({'error': 'Source not found or disabled'}, status=404)
+            else:
+                # Scrape all enabled sources
+                sources = Source.objects.filter(scraping_enabled=True)
+                tasks = []
+                for source in sources:
+                    result = scrape_posts.delay(source_id=source.id)
+                    tasks.append({'source': source.name, 'task_id': result.id})
+                
+                return JsonResponse({
+                    'success': True,
+                    'message': f'Scraping started for {len(tasks)} sources',
+                    'tasks': tasks
+                })
+                
+        except json.JSONDecodeError:
+            return JsonResponse({'error': 'Invalid JSON'}, status=400)
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+    
+    elif request.method == 'GET':
+        # Return scraping status
+        from .models import Source
+        sources = Source.objects.filter(scraping_enabled=True)
+        return JsonResponse({
+            'success': True,
+            'enabled_sources': sources.count(),
+            'sources': [{'id': s.id, 'name': s.name} for s in sources]
+        })
+    
+    return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+
+def public_posts_api(request):
+    """Public API endpoint for posts (no auth required)."""
+    try:
+        from .models import Post
+        from django.core.paginator import Paginator
+        
+        # Get query parameters
+        source_id = request.GET.get("source_id")
+        page = request.GET.get("page", 1)
+        page_size = min(int(request.GET.get("page_size", 20)), 100)
+        
+        # Filter posts
+        posts_queryset = Post.objects.select_related("source").order_by("-created_at")
+        if source_id:
+            posts_queryset = posts_queryset.filter(source_id=source_id)
+        
+        # Paginate
+        paginator = Paginator(posts_queryset, page_size)
+        page_obj = paginator.get_page(page)
+        
+        # Serialize posts
+        posts_data = []
+        for post in page_obj:
+            posts_data.append({
+                "id": post.id,
+                "content": post.content,
+                "url": post.url,
+                "source": {
+                    "id": post.source.id,
+                    "name": post.source.name
+                },
+                "created_at": post.created_at.isoformat(),
+            })
+        
+        return JsonResponse({
+            "count": paginator.count,
+            "total_pages": paginator.num_pages,
+            "current_page": page_obj.number,
+            "next": page_obj.has_next(),
+            "previous": page_obj.has_previous(),
+            "results": posts_data
+        })
+        
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+

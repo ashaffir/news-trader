@@ -1,0 +1,217 @@
+
+]1337;File=inline=1;preserveAspectRatio=0:iVBORw0KGgoAAAANSUhEUgAAAIAAAACACAYAAADDPmHLAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAAyhpVFh0WE1MOmNvbS5hZG9iZS54bXAAAAAAADw/eHBhY2tldCBiZWdpbj0i77u/IiBpZD0iVzVNME1wQ2VoaUh6cmVTek5UY3prYzlkIj8+IDx4OnhtcG1ldGEgeG1sbnM6eD0iYWRvYmU6bnM6bWV0YS8iIHg6eG1wdGs9IkFkb2JlIFhNUCBDb3JlIDUuNi1jMTExIDc5LjE1ODMyNSwgMjAxNS8wOS8xMC0wMToxMDoyMCAgICAgICAgIj4gPHJkZjpSREYgeG1sbnM6cmRmPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjIj4gPHJkZjpEZXNjcmlwdGlvbiByZGY6YWJvdXQ9IiIgeG1sbnM6eG1wPSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvIiB4bWxuczp4bXBNTT0iaHR0cDovL25zLmFkb2JlLmNvbS94YXAvMS4wL21tLyIgeG1sbnM6c3RSZWY9Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC9zVHlwZS9SZXNvdXJjZVJlZiMiIHhtcDpDcmVhdG9yVG9vbD0iQWRvYmUgUGhvdG9zaG9wIENDIDIwMTUgKE1hY2ludG9zaCkiIHhtcE1NOkluc3RhbmNlSUQ9InhtcC5paWQ6Q0ExNUQ3Rjk5QTRDMTFFNkI3QTVBNUM4NjYyNkU4NTQiIHhtcE1NOkRvY3VtZW50SUQ9InhtcC5kaWQ6Q0ExNUQ3RkE5QTRDMTFFNkI3QTVBNUM4NjYyNkU4NTQiPiA8eG1wTU06RGVyaXZlZEZyb20gc3RSZWY6aW5zdGFuY2VJRD0ieG1wLmlpZDpDQTE1RDdGNzlBNEMxMUU2QjdBNUE1Qzg2NjI2RTg1NCIgc3RSZWY6ZG9jdW1lbnRJRD0ieG1wLmRpZDpDQTE1RDdGODlBNEMxMUU2QjdBNUE1Qzg2NjI2RTg1NCIvPiA8L3JkZjpEZXNjcmlwdGlvbj4gPC9yZGY6UkRGPiA8L3g6eG1wbWV0YT4gPD94cGFja2V0IGVuZD0iciI/PhBNwdkAAAZqSURBVHja7J1PTBxVHMffzr/9v+yy/JMtlT+ppZTSWjnUJmg4mbRqrAdN+FNN6EHjzYMn9eLNg4kHLyY1tRQPGkuMtdGTsWgwsRobqVQINdhiQxOg/J/9MzP+XmFx14Lszs48Mf1+mh+zWXgzm/1+5s3bmX1Tj2VZDNy/SHgLIACAAAACAAgAIACAAAACAAgAIACAAAACAAgAIACAAAACAAgAIACAAAACAAgAIACAAAACAAgAIACAAAACAAgAIACAAAACAAgAIACAAAACAAgAdh4K/+HxeBxZ2cXrfc206KRqp3qIag9ViCqIt9odPPTPr0anI97KKa9axjTZG/FIcgU9H6Bfa1SrVJepzlB92BTqNXi77N3hPPxBKQJQ6PtocZKqm6oOkYghqMVn4sHdf/rVSAPFGCqw2RDVCZJgpmQBKPijtHiT6gnEIW5vj/hqbleFGjOSpNbaXA2XoLMx2GNsHAKKDJ7v5e9ykxCJOKibTyciLbOyrFWXuKoOqheoPih6EEjhn6LFNYQvcK/3SOyBcPPc7tgh1YHws7yYNwgsIHg+oHh//TgPBKFJfpaIts1rij/m8KrbCxaAwucbv0B1FJGIw6uE2e7oQV2SlDIXVu8rSID18C9RtSIScfiUCKuLHUpLHsnn0iamsg+kbbr9CwhfcLcvB1hdtC1D4asububitgKsH/PR7QtE8sgsUXbApG5fcXEzKaq3/1WA9dE+BnyCqQnvZTTgc/P0vEnV1xTqndhSgJzP+UAgYW8VC/uq3NzEdarjFP653Cfv6WqSq/rntAggErFdf2V5o1Or4+f+f6Aao5qnus3WrgUMUfjpf/5xngDnR7peSq3qBxGJWGrjzUxVSh7wf0X1Hl9S0KlCG+UJYBqZtxCHWGRJYdWxkvZ+vqefotCHbPU+2QeDV7uPG2mjApGIpTzyIJMVzW7zQapH7Iaf1wOYGeMNxCGeirJddpt+TNWVvb5ve/zxd/dvtCMOsXi1EAvaO83/E9XJUsPfEIAGf0+bpikjErFEArYu7vGRfC+Fn3TkEwj/YVlmF+L4LwSI22l2msL/1bGPoGv9v3UYcYgn4I/aafaOo+cg1noAqwZxiIV/0cOr+os+9tPeP+64AHT8x7d2RQ8AVf6WF/1dzG+cfh1rPYBpYX6AYGTZ1gW/q64IAMQj2bvcP+P067irYShWhkREDwC1nXHUzc4MWmaYvSMU07J1Difu9OvIHgKWEMn/QoD9bgkwjkjEkjb5ZXur2GaPuyXAGCIRi2WZLG3oxTY7PLHUv8cNAS4jEvHoaVtH3lfdEOBrxCGelfS8nWZ91Au0OCrAscbTfL7fDUQiWIDkrJ1m/ARCP0ngdbIH4AwgErGkzBU6DCzaacov3p0lCWQnBTiLSMQzr0/bbfoc1SckQcgRAegwMMrWvlkKBLKg32KmmbbbnE/T/5Ek6LC7grw7hKzf9eM7xCKWeKCeVYTqS11NUV8L3/IWMZ+N9g6bhnkEsYhDkmS2t7bDibkBnIImhmwpwOBI95F0Mjmc/QMghlh4F2tKuPq9XD417BWS4MtcAe65HHyideB7RdP6EYlY5hZvstmFKTc3wWeffEHjhZ4txwC5fHrl+d8z6Uw9ohEHnyXUUt/JvO5eKubjg5bGYM/Epj3AxotR1XZZkRcRizgMM8PGbg6zTCbl5mb4NKTXNjsPkMczLedmSIKHJVnSEY04kqklNk4SmEbGzc0c21aAu+OB/QMTNB5oRU8glmV9jl278S31BEm3RuKJggTIkaBBUZVJRCOOFf0OG5285FnVF9yQQN92ELgZ53/p6s+kUj34iCjwHIFHYnVVbawy5uh4fIgGgY8V1APk8uyBj3pVr/dRWZVvIRoxmJbJJqd/Zr/9MUTjg+WkQ6s9Y6sHyOsNRrpe5jeUMNJGHDGJgedUHqmzEpX7ljTFH7a797Ocm0WXfLv4wZHuJ03DeJ1PL8cMY3FEgtVWdXnDbCRQHaD8/EWE78zt4rfoFZ6yLLObTzbl8w35lDPMOnK/VwgFys1osPZOwB9d9qshWZa1ED3vY4X+hxHgPh5k4i2AAAACAAgAIACAAAACAAgAIACAAAACAAgAIACAAAACAAgAIACAAAACAAgAIACAAAACAAgAIACAAAACAAgAIACAAAACAAgAIACAAAACAAgAIACAAAACgJ3EXwIMAFdh0F0D4bmIAAAAAElFTkSuQmCC
+ 
+celery@Alfreds-MacBook-Pro.local v5.5.3 (immunity)
+
+macOS-15.5-arm64-arm-64bit 2025-08-02 14:09:03
+
+[config]
+.> app:         news_trader:0x102abb5e0
+.> transport:   redis://localhost:6379/0
+.> results:     redis://localhost:6379/0
+.> concurrency: 12 (prefork)
+.> task events: OFF (enable -E to monitor tasks in this worker)
+
+[queues]
+.> celery           exchange=celery(direct) key=celery
+
+
+[tasks]
+  . core.tasks.adjust_position_risk
+  . core.tasks.analyze_post
+  . core.tasks.close_all_trades_manually
+  . core.tasks.close_expired_positions
+  . core.tasks.close_trade_due_to_conflict
+  . core.tasks.close_trade_manually
+  . core.tasks.create_manual_test_trade
+  . core.tasks.create_new_trade
+  . core.tasks.execute_trade
+  . core.tasks.monitor_local_stop_take_levels
+  . core.tasks.scrape_posts
+  . core.tasks.update_trade_status
+
+[2025-08-02 14:09:03,811: INFO/MainProcess] Connected to redis://localhost:6379/0
+[2025-08-02 14:09:03,814: INFO/MainProcess] mingle: searching for neighbors
+[2025-08-02 14:09:04,822: INFO/MainProcess] mingle: all alone
+[2025-08-02 14:09:04,836: INFO/MainProcess] celery@Alfreds-MacBook-Pro.local ready.
+[2025-08-02 14:09:16,387: INFO/MainProcess] Task core.tasks.scrape_posts[d9eca483-3e79-4e51-b579-5ba840c1a922] received
+INFO Scrape posts task initiated. Source ID: 16, Manual test: True
+INFO Manual test scraping - bypassing bot enabled check.
+INFO Starting to scrape: AP News - Business
+INFO Scraping AP News - Business using method: browser
+INFO Headless browser scraping from https://apnews.com/business
+[2025-08-02 14:09:16,469: INFO/ForkPoolWorker-8] ====== WebDriver manager ======
+[2025-08-02 14:09:16,615: INFO/ForkPoolWorker-8] Get LATEST chromedriver version for google-chrome
+[2025-08-02 14:09:16,845: INFO/ForkPoolWorker-8] Get LATEST chromedriver version for google-chrome
+[2025-08-02 14:09:17,080: INFO/ForkPoolWorker-8] Driver [/Users/alfredshaffir/.wdm/drivers/chromedriver/mac64/138.0.7204.183/chromedriver-mac-arm64/chromedriver] found in cache
+INFO Using site-specific configuration for https://apnews.com/business
+INFO Found 43 articles using selector: .PagePromo
+INFO Scraping finished. Processed: AP News - Business
+[2025-08-02 14:09:22,893: INFO/ForkPoolWorker-8] Task core.tasks.scrape_posts[d9eca483-3e79-4e51-b579-5ba840c1a922] succeeded in 6.505076875007944s: None
+[2025-08-02 14:09:46,260: INFO/MainProcess] beat: Starting...
+[2025-08-02 14:09:46,326: INFO/MainProcess] DatabaseScheduler: Schedule changed.
+[2025-08-02 14:09:46,355: INFO/MainProcess] Scheduler: Sending due task Monitor Stop/Take Profit Levels Every Minute (core.tasks.monitor_local_stop_take_levels)
+[2025-08-02 14:09:46,371: INFO/MainProcess] Task core.tasks.monitor_local_stop_take_levels[91cb6086-9d16-4d93-ba14-d6c1b4cf6e15] received
+INFO Monitoring 2 open positions for TP/SL triggers
+[2025-08-02 14:09:46,385: INFO/MainProcess] Scheduler: Sending due task Update Trade Status Every Minute (core.tasks.update_trade_status)
+[2025-08-02 14:09:46,386: INFO/MainProcess] Task core.tasks.update_trade_status[d267b926-e135-4e43-861f-72c5aa762967] received
+INFO Updating trade statuses from Alpaca API.
+[2025-08-02 14:09:46,390: INFO/MainProcess] Scheduler: Sending due task Scrape Posts Every 1 Minutes (core.tasks.scrape_posts)
+[2025-08-02 14:09:46,391: INFO/MainProcess] Task core.tasks.scrape_posts[fc083d99-a4f3-4558-84c7-0c4143474030] received
+INFO Scrape posts task initiated. Source ID: None, Manual test: False
+INFO Bot is disabled. Skipping automated scraping task.
+[2025-08-02 14:09:46,413: INFO/ForkPoolWorker-9] Task core.tasks.scrape_posts[fc083d99-a4f3-4558-84c7-0c4143474030] succeeded in 0.021767749974969774s: None
+[2025-08-02 14:09:47,024: INFO/ForkPoolWorker-8] Task core.tasks.monitor_local_stop_take_levels[91cb6086-9d16-4d93-ba14-d6c1b4cf6e15] succeeded in 0.6524666670011356s: None
+[2025-08-02 14:09:48,622: INFO/ForkPoolWorker-1] Task core.tasks.update_trade_status[d267b926-e135-4e43-861f-72c5aa762967] succeeded in 2.235436667018803s: None
+[2025-08-02 14:10:11,721: INFO/MainProcess] Task core.tasks.scrape_posts[673d6d15-9f5b-4efa-9df5-2a1f9e914ac2] received
+INFO Scrape posts task initiated. Source ID: 16, Manual test: True
+INFO Manual test scraping - bypassing bot enabled check.
+INFO Starting to scrape: AP News - Business
+INFO Scraping AP News - Business using method: browser
+INFO Headless browser scraping from https://apnews.com/business
+[2025-08-02 14:10:11,730: INFO/ForkPoolWorker-8] ====== WebDriver manager ======
+[2025-08-02 14:10:11,935: INFO/ForkPoolWorker-8] Get LATEST chromedriver version for google-chrome
+[2025-08-02 14:10:12,167: INFO/ForkPoolWorker-8] Get LATEST chromedriver version for google-chrome
+[2025-08-02 14:10:12,398: INFO/ForkPoolWorker-8] Driver [/Users/alfredshaffir/.wdm/drivers/chromedriver/mac64/138.0.7204.183/chromedriver-mac-arm64/chromedriver] found in cache
+INFO Using site-specific configuration for https://apnews.com/business
+INFO Found 43 articles using selector: .PagePromo
+INFO Scraping finished. Processed: AP News - Business
+[2025-08-02 14:10:18,535: INFO/ForkPoolWorker-8] Task core.tasks.scrape_posts[673d6d15-9f5b-4efa-9df5-2a1f9e914ac2] succeeded in 6.813601415982703s: None
+[2025-08-02 14:10:34,854: INFO/MainProcess] Task core.tasks.analyze_post[365bc9a1-3939-495d-83e2-fa321885bec7] received
+INFO Analyzing post 507 with LLM (manual_test=True).
+[2025-08-02 14:10:36,519: INFO/ForkPoolWorker-8] HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+INFO Analysis complete for post 507: Symbol=DJIA, Direction=sell, Confidence=0.8
+[2025-08-02 14:10:36,554: INFO/MainProcess] Task core.tasks.execute_trade[e6578233-d37d-4ef6-aaff-d89ce43ef38c] received
+INFO Processing trade analysis 266.
+[2025-08-02 14:10:36,555: INFO/ForkPoolWorker-8] Task core.tasks.analyze_post[365bc9a1-3939-495d-83e2-fa321885bec7] succeeded in 1.6985822079877835s: None
+INFO Bot is disabled. Skipping trade execution.
+[2025-08-02 14:10:36,570: INFO/ForkPoolWorker-1] Task core.tasks.execute_trade[e6578233-d37d-4ef6-aaff-d89ce43ef38c] succeeded in 0.015043791994685307s: None
+[2025-08-02 14:10:46,358: INFO/MainProcess] Scheduler: Sending due task Monitor Stop/Take Profit Levels Every Minute (core.tasks.monitor_local_stop_take_levels)
+[2025-08-02 14:10:46,362: INFO/MainProcess] Task core.tasks.monitor_local_stop_take_levels[2b2161a9-fcb1-4e15-bc42-6b2ea43dcd3a] received
+INFO Monitoring 2 open positions for TP/SL triggers
+[2025-08-02 14:10:46,386: INFO/MainProcess] Scheduler: Sending due task Update Trade Status Every Minute (core.tasks.update_trade_status)
+[2025-08-02 14:10:46,387: INFO/MainProcess] Task core.tasks.update_trade_status[1c06255b-5e84-4058-a3e3-95f1baa8bb96] received
+INFO Updating trade statuses from Alpaca API.
+[2025-08-02 14:10:46,392: INFO/MainProcess] Scheduler: Sending due task Scrape Posts Every 1 Minutes (core.tasks.scrape_posts)
+[2025-08-02 14:10:46,394: INFO/MainProcess] Task core.tasks.scrape_posts[8a508906-0e43-4704-9c92-0b2e1151dc44] received
+INFO Scrape posts task initiated. Source ID: None, Manual test: False
+INFO Bot is disabled. Skipping automated scraping task.
+[2025-08-02 14:10:46,401: INFO/ForkPoolWorker-9] Task core.tasks.scrape_posts[8a508906-0e43-4704-9c92-0b2e1151dc44] succeeded in 0.006684583000605926s: None
+[2025-08-02 14:10:47,095: INFO/ForkPoolWorker-8] Task core.tasks.monitor_local_stop_take_levels[2b2161a9-fcb1-4e15-bc42-6b2ea43dcd3a] succeeded in 0.731653999973787s: None
+[2025-08-02 14:10:48,680: INFO/ForkPoolWorker-1] Task core.tasks.update_trade_status[1c06255b-5e84-4058-a3e3-95f1baa8bb96] succeeded in 2.292535709013464s: None
+[2025-08-02 14:11:46,375: INFO/MainProcess] Scheduler: Sending due task Monitor Stop/Take Profit Levels Every Minute (core.tasks.monitor_local_stop_take_levels)
+[2025-08-02 14:11:46,382: INFO/MainProcess] Task core.tasks.monitor_local_stop_take_levels[143a307b-8a29-4fa4-9a7d-25db908ef1a0] received
+[2025-08-02 14:11:46,394: INFO/MainProcess] Scheduler: Sending due task Update Trade Status Every Minute (core.tasks.update_trade_status)
+[2025-08-02 14:11:46,399: INFO/MainProcess] Task core.tasks.update_trade_status[0b488e7c-43c5-4c72-98ba-4278c831bc87] received
+INFO Updating trade statuses from Alpaca API.
+INFO Monitoring 2 open positions for TP/SL triggers
+[2025-08-02 14:11:46,411: INFO/MainProcess] Scheduler: Sending due task Scrape Posts Every 1 Minutes (core.tasks.scrape_posts)
+[2025-08-02 14:11:46,413: INFO/MainProcess] Task core.tasks.scrape_posts[d4e06106-50db-4239-9e86-76363ad1d4f3] received
+INFO Scrape posts task initiated. Source ID: None, Manual test: False
+INFO Bot is disabled. Skipping automated scraping task.
+[2025-08-02 14:11:46,427: INFO/ForkPoolWorker-9] Task core.tasks.scrape_posts[d4e06106-50db-4239-9e86-76363ad1d4f3] succeeded in 0.013442875002510846s: None
+[2025-08-02 14:11:47,065: INFO/ForkPoolWorker-8] Task core.tasks.monitor_local_stop_take_levels[143a307b-8a29-4fa4-9a7d-25db908ef1a0] succeeded in 0.6807937920093536s: None
+[2025-08-02 14:11:48,619: INFO/ForkPoolWorker-1] Task core.tasks.update_trade_status[0b488e7c-43c5-4c72-98ba-4278c831bc87] succeeded in 2.219519375008531s: None
+[2025-08-02 14:12:46,380: INFO/MainProcess] Scheduler: Sending due task Monitor Stop/Take Profit Levels Every Minute (core.tasks.monitor_local_stop_take_levels)
+[2025-08-02 14:12:46,382: INFO/MainProcess] Task core.tasks.monitor_local_stop_take_levels[82116b70-6865-4b9c-bf34-36b2efe520f8] received
+INFO Monitoring 2 open positions for TP/SL triggers
+[2025-08-02 14:12:46,429: INFO/MainProcess] Scheduler: Sending due task Update Trade Status Every Minute (core.tasks.update_trade_status)
+[2025-08-02 14:12:46,431: INFO/MainProcess] Task core.tasks.update_trade_status[5114299e-02c1-4e0c-bb03-db2d850c0098] received
+INFO Updating trade statuses from Alpaca API.
+[2025-08-02 14:12:46,436: INFO/MainProcess] Scheduler: Sending due task Scrape Posts Every 1 Minutes (core.tasks.scrape_posts)
+[2025-08-02 14:12:46,438: INFO/MainProcess] Task core.tasks.scrape_posts[c53c8a8a-bab7-495c-b561-d859701f4ba0] received
+INFO Scrape posts task initiated. Source ID: None, Manual test: False
+INFO Bot is disabled. Skipping automated scraping task.
+[2025-08-02 14:12:46,445: INFO/ForkPoolWorker-9] Task core.tasks.scrape_posts[c53c8a8a-bab7-495c-b561-d859701f4ba0] succeeded in 0.006636208010604605s: None
+[2025-08-02 14:12:47,027: INFO/ForkPoolWorker-8] Task core.tasks.monitor_local_stop_take_levels[82116b70-6865-4b9c-bf34-36b2efe520f8] succeeded in 0.6445160419971216s: None
+[2025-08-02 14:12:48,632: INFO/ForkPoolWorker-1] Task core.tasks.update_trade_status[5114299e-02c1-4e0c-bb03-db2d850c0098] succeeded in 2.2008419999910984s: None
+[2025-08-02 14:13:46,384: INFO/MainProcess] Scheduler: Sending due task Monitor Stop/Take Profit Levels Every Minute (core.tasks.monitor_local_stop_take_levels)
+[2025-08-02 14:13:46,387: INFO/MainProcess] Task core.tasks.monitor_local_stop_take_levels[52dbe6db-0a2c-46e4-9877-646b5ae3ed80] received
+INFO Monitoring 2 open positions for TP/SL triggers
+[2025-08-02 14:13:46,430: INFO/MainProcess] Scheduler: Sending due task Update Trade Status Every Minute (core.tasks.update_trade_status)
+[2025-08-02 14:13:46,433: INFO/MainProcess] Task core.tasks.update_trade_status[d471ccc9-43cb-4805-9f95-0787df92f311] received
+INFO Updating trade statuses from Alpaca API.
+[2025-08-02 14:13:46,440: INFO/MainProcess] Scheduler: Sending due task Scrape Posts Every 1 Minutes (core.tasks.scrape_posts)
+[2025-08-02 14:13:46,441: INFO/MainProcess] Task core.tasks.scrape_posts[278a2d08-b730-4fd1-afcc-7a4bfc3b8f5d] received
+INFO Scrape posts task initiated. Source ID: None, Manual test: False
+INFO Bot is disabled. Skipping automated scraping task.
+[2025-08-02 14:13:46,447: INFO/ForkPoolWorker-9] Task core.tasks.scrape_posts[278a2d08-b730-4fd1-afcc-7a4bfc3b8f5d] succeeded in 0.005856750009115785s: None
+[2025-08-02 14:13:47,033: INFO/ForkPoolWorker-8] Task core.tasks.monitor_local_stop_take_levels[52dbe6db-0a2c-46e4-9877-646b5ae3ed80] succeeded in 0.6458869999914896s: None
+[2025-08-02 14:13:48,632: INFO/ForkPoolWorker-1] Task core.tasks.update_trade_status[d471ccc9-43cb-4805-9f95-0787df92f311] succeeded in 2.198481625004206s: None
+[2025-08-02 14:14:46,386: INFO/MainProcess] Scheduler: Sending due task Monitor Stop/Take Profit Levels Every Minute (core.tasks.monitor_local_stop_take_levels)
+[2025-08-02 14:14:46,389: INFO/MainProcess] Task core.tasks.monitor_local_stop_take_levels[25a88642-207c-4621-bc2c-ec6bd7dafc40] received
+INFO Monitoring 2 open positions for TP/SL triggers
+[2025-08-02 14:14:46,435: INFO/MainProcess] Scheduler: Sending due task Update Trade Status Every Minute (core.tasks.update_trade_status)
+[2025-08-02 14:14:46,437: INFO/MainProcess] Task core.tasks.update_trade_status[d5e62ddb-0017-49e9-8e16-b398401f90ac] received
+INFO Updating trade statuses from Alpaca API.
+[2025-08-02 14:14:46,445: INFO/MainProcess] Scheduler: Sending due task Scrape Posts Every 1 Minutes (core.tasks.scrape_posts)
+[2025-08-02 14:14:46,448: INFO/MainProcess] Task core.tasks.scrape_posts[a65efb87-be10-41f7-a49c-71843a81d806] received
+INFO Scrape posts task initiated. Source ID: None, Manual test: False
+INFO Bot is disabled. Skipping automated scraping task.
+[2025-08-02 14:14:46,458: INFO/ForkPoolWorker-9] Task core.tasks.scrape_posts[a65efb87-be10-41f7-a49c-71843a81d806] succeeded in 0.00938316699466668s: None
+[2025-08-02 14:14:47,040: INFO/ForkPoolWorker-8] Task core.tasks.monitor_local_stop_take_levels[25a88642-207c-4621-bc2c-ec6bd7dafc40] succeeded in 0.6497937499952968s: None
+[2025-08-02 14:14:48,647: INFO/ForkPoolWorker-1] Task core.tasks.update_trade_status[d5e62ddb-0017-49e9-8e16-b398401f90ac] succeeded in 2.2092890839849133s: None
+[2025-08-02 14:15:46,387: INFO/MainProcess] Scheduler: Sending due task Monitor Stop/Take Profit Levels Every Minute (core.tasks.monitor_local_stop_take_levels)
+[2025-08-02 14:15:46,389: INFO/MainProcess] Task core.tasks.monitor_local_stop_take_levels[67890903-ab4b-4ed1-8e50-efd467a3349b] received
+INFO Monitoring 2 open positions for TP/SL triggers
+[2025-08-02 14:15:46,480: INFO/MainProcess] Scheduler: Sending due task Update Trade Status Every Minute (core.tasks.update_trade_status)
+[2025-08-02 14:15:46,481: INFO/MainProcess] Task core.tasks.update_trade_status[4b3c459b-dab4-4a52-bba7-b006589b8bad] received
+INFO Updating trade statuses from Alpaca API.
+[2025-08-02 14:15:46,486: INFO/MainProcess] Scheduler: Sending due task Scrape Posts Every 1 Minutes (core.tasks.scrape_posts)
+[2025-08-02 14:15:46,489: INFO/MainProcess] Task core.tasks.scrape_posts[9aa8b47a-4206-4eab-9325-0afc90972742] received
+INFO Scrape posts task initiated. Source ID: None, Manual test: False
+INFO Bot is disabled. Skipping automated scraping task.
+[2025-08-02 14:15:46,497: INFO/ForkPoolWorker-9] Task core.tasks.scrape_posts[9aa8b47a-4206-4eab-9325-0afc90972742] succeeded in 0.007850708992918953s: None
+[2025-08-02 14:15:47,046: INFO/ForkPoolWorker-8] Task core.tasks.monitor_local_stop_take_levels[67890903-ab4b-4ed1-8e50-efd467a3349b] succeeded in 0.6567565420118626s: None
+[2025-08-02 14:15:48,679: INFO/ForkPoolWorker-1] Task core.tasks.update_trade_status[4b3c459b-dab4-4a52-bba7-b006589b8bad] succeeded in 2.1966604170156643s: None
+[2025-08-02 14:16:46,399: INFO/MainProcess] Scheduler: Sending due task Monitor Stop/Take Profit Levels Every Minute (core.tasks.monitor_local_stop_take_levels)
+[2025-08-02 14:16:46,407: INFO/MainProcess] Task core.tasks.monitor_local_stop_take_levels[c9a29b8d-04e4-47e8-aaef-d8da3281d501] received
+INFO Monitoring 2 open positions for TP/SL triggers
+[2025-08-02 14:16:46,485: INFO/MainProcess] Scheduler: Sending due task Update Trade Status Every Minute (core.tasks.update_trade_status)
+[2025-08-02 14:16:46,488: INFO/MainProcess] Task core.tasks.update_trade_status[87f46919-4865-42b2-8375-544b3562a38a] received
+INFO Updating trade statuses from Alpaca API.
+[2025-08-02 14:16:46,497: INFO/MainProcess] Scheduler: Sending due task Scrape Posts Every 1 Minutes (core.tasks.scrape_posts)
+[2025-08-02 14:16:46,498: INFO/MainProcess] Task core.tasks.scrape_posts[8efc6ea7-5f2c-45ac-bc78-595e6aa92e4e] received
+INFO Scrape posts task initiated. Source ID: None, Manual test: False
+INFO Bot is disabled. Skipping automated scraping task.
+[2025-08-02 14:16:46,513: INFO/ForkPoolWorker-9] Task core.tasks.scrape_posts[8efc6ea7-5f2c-45ac-bc78-595e6aa92e4e] succeeded in 0.013174249994335696s: None
+[2025-08-02 14:16:47,071: INFO/ForkPoolWorker-8] Task core.tasks.monitor_local_stop_take_levels[c9a29b8d-04e4-47e8-aaef-d8da3281d501] succeeded in 0.6618714579963125s: None
+[2025-08-02 14:16:48,796: INFO/ForkPoolWorker-1] Task core.tasks.update_trade_status[87f46919-4865-42b2-8375-544b3562a38a] succeeded in 2.3067180830112193s: None
+[2025-08-02 14:17:46,416: INFO/MainProcess] Scheduler: Sending due task Monitor Stop/Take Profit Levels Every Minute (core.tasks.monitor_local_stop_take_levels)
+[2025-08-02 14:17:46,423: INFO/MainProcess] Task core.tasks.monitor_local_stop_take_levels[93e5c2b7-f232-42a8-b329-70c755f1d73e] received
+INFO Monitoring 2 open positions for TP/SL triggers
+[2025-08-02 14:17:46,488: INFO/MainProcess] Scheduler: Sending due task Update Trade Status Every Minute (core.tasks.update_trade_status)
+[2025-08-02 14:17:46,492: INFO/MainProcess] Task core.tasks.update_trade_status[038524a9-acfc-4b18-b17a-a6f905bbc2ce] received
+INFO Updating trade statuses from Alpaca API.
+[2025-08-02 14:17:46,499: INFO/MainProcess] Scheduler: Sending due task Scrape Posts Every 1 Minutes (core.tasks.scrape_posts)
+[2025-08-02 14:17:46,500: INFO/MainProcess] Task core.tasks.scrape_posts[543986b0-f01f-4f10-b73a-4636b412cb51] received
+INFO Scrape posts task initiated. Source ID: None, Manual test: False
+INFO Bot is disabled. Skipping automated scraping task.
+[2025-08-02 14:17:46,510: INFO/ForkPoolWorker-9] Task core.tasks.scrape_posts[543986b0-f01f-4f10-b73a-4636b412cb51] succeeded in 0.009014790994115174s: None
+[2025-08-02 14:17:47,090: INFO/ForkPoolWorker-8] Task core.tasks.monitor_local_stop_take_levels[93e5c2b7-f232-42a8-b329-70c755f1d73e] succeeded in 0.6642582920030691s: None
+[2025-08-02 14:17:48,741: INFO/ForkPoolWorker-1] Task core.tasks.update_trade_status[038524a9-acfc-4b18-b17a-a6f905bbc2ce] succeeded in 2.2470856660220306s: None
+[2025-08-02 14:18:46,423: INFO/MainProcess] Scheduler: Sending due task Monitor Stop/Take Profit Levels Every Minute (core.tasks.monitor_local_stop_take_levels)
+[2025-08-02 14:18:46,430: INFO/MainProcess] Task core.tasks.monitor_local_stop_take_levels[c2e3b3e9-6faf-4b41-8805-50344249cbf2] received
+INFO Monitoring 2 open positions for TP/SL triggers
+[2025-08-02 14:18:46,558: INFO/MainProcess] Scheduler: Sending due task Update Trade Status Every Minute (core.tasks.update_trade_status)
+[2025-08-02 14:18:46,560: INFO/MainProcess] Task core.tasks.update_trade_status[726a0335-bfb8-4e14-b990-bd342bcb3110] received
+INFO Updating trade statuses from Alpaca API.
+[2025-08-02 14:18:46,565: INFO/MainProcess] Scheduler: Sending due task Scrape Posts Every 1 Minutes (core.tasks.scrape_posts)
+[2025-08-02 14:18:46,566: INFO/MainProcess] Task core.tasks.scrape_posts[2965bcf0-6d69-44f9-b5b5-31deee484e18] received
+INFO Scrape posts task initiated. Source ID: None, Manual test: False
+INFO Bot is disabled. Skipping automated scraping task.
+[2025-08-02 14:18:46,572: INFO/ForkPoolWorker-9] Task core.tasks.scrape_posts[2965bcf0-6d69-44f9-b5b5-31deee484e18] succeeded in 0.006039875006536022s: None
+[2025-08-02 14:18:47,103: INFO/ForkPoolWorker-8] Task core.tasks.monitor_local_stop_take_levels[c2e3b3e9-6faf-4b41-8805-50344249cbf2] succeeded in 0.6708057080104481s: None
+[2025-08-02 14:18:48,803: INFO/ForkPoolWorker-1] Task core.tasks.update_trade_status[726a0335-bfb8-4e14-b990-bd342bcb3110] succeeded in 2.2419272080005612s: None
+
+worker: Warm shutdown (MainProcess)
+celery beat v5.5.3 (immunity) is starting.
+__    -    ... __   -        _
+LocalTime -> 2025-08-02 14:09:46
+Configuration ->
+    . broker -> redis://localhost:6379/0
+    . loader -> celery.loaders.app.AppLoader
+    . scheduler -> django_celery_beat.schedulers.DatabaseScheduler
+
+    . logfile -> [stderr]@%INFO
+    . maxinterval -> 5.00 seconds (5s)

@@ -6,39 +6,104 @@ services:
     command: python manage.py runserver 0.0.0.0:8000
     volumes:
       - .:/app
+      - static_volume:/app/staticfiles
+      - media_volume:/app/media
     ports:
       - "8000:8000"
+    env_file:
+      - .env
     depends_on:
       - db
       - redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   db:
-    image: postgres:13
+    image: postgres:15-alpine
     volumes:
       - postgres_data:/var/lib/postgresql/data/
     environment:
       - POSTGRES_DB=news_trader
       - POSTGRES_USER=news_trader
       - POSTGRES_PASSWORD=news_trader
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U news_trader"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   redis:
-    image: redis:6.2-alpine
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   celery:
     build: .
-    command: celery -A news_trader worker -l info
+    command: celery -A news_trader worker -l info --concurrency=2
     volumes:
       - .:/app
+      - static_volume:/app/staticfiles
+      - media_volume:/app/media
+    environment:
+      # Chrome/Selenium configuration for Docker
+      - CHROME_BIN=/usr/bin/chromium
+      - CHROME_PATH=/usr/bin/chromium
+      - DISPLAY=:99
+    env_file:
+      - .env
     depends_on:
+      - db
       - redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "celery", "-A", "news_trader", "inspect", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   celery-beat:
     build: .
     command: celery -A news_trader beat -l info
     volumes:
       - .:/app
+      - static_volume:/app/staticfiles
+      - media_volume:/app/media
+    env_file:
+      - .env
+    depends_on:
+      - db
+      - redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "ps aux | grep '[c]elery.*beat' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Optional: Add a monitoring service
+  flower:
+    build: .
+    command: celery -A news_trader flower --port=5555
+    ports:
+      - "5555:5555"
+    env_file:
+      - .env
     depends_on:
       - redis
+    restart: unless-stopped
+    profiles:
+      - monitoring
 
 volumes:
   postgres_data:
+  static_volume:
+  media_volume:

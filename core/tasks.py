@@ -163,33 +163,116 @@ def _scrape_rss_feed(source):
         _create_simulated_post(source, str(e), "rss")
 
 
+def _get_site_specific_selectors(url):
+    """Get site-specific selectors based on URL domain"""
+    site_configs = {
+        'apnews.com': {
+            'container': '.PagePromo',
+            'title': ['h3', 'h2', 'h1'],
+            'content': ['.PagePromo-content', 'p'],
+            'link': 'a'
+        },
+        'cnn.com': {
+            'container': '.container__item',
+            'title': ['.container__headline', 'h3'],
+            'content': ['.container__summary', 'p'],
+            'link': 'a'
+        },
+        'bbc.com': {
+            'container': '[data-testid="liverpool-card"]',
+            'title': ['h3', 'h2'],
+            'content': ['p', '.gs-c-promo-summary'],
+            'link': 'a'
+        },
+        'reuters.com': {
+            'container': '.story-card',
+            'title': ['.story-title', 'h3'],
+            'content': ['.story-excerpt', 'p'],
+            'link': 'a'
+        },
+        'wsj.com': {
+            'container': '.WSJTheme--headline',
+            'title': ['h3', 'h2'],
+            'content': ['.WSJTheme--summary', 'p'],
+            'link': 'a'
+        }
+    }
+    
+    for domain, config in site_configs.items():
+        if domain in url.lower():
+            return config
+    return None
+
+
 def _scrape_with_browser(source):
     """Use headless browser for dynamic content scraping"""
     try:
-        from selenium import webdriver
-        from selenium.webdriver.chrome.options import Options
-        from selenium.webdriver.common.by import By
-        from selenium.webdriver.support.ui import WebDriverWait
-        from selenium.webdriver.support import expected_conditions as EC
-        from webdriver_manager.chrome import ChromeDriverManager
-        from selenium.webdriver.chrome.service import Service
+        # Import with explicit error handling for Celery workers
+        try:
+            from selenium import webdriver
+            from selenium.webdriver.chrome.options import Options
+            from selenium.webdriver.common.by import By
+            from selenium.webdriver.support.ui import WebDriverWait
+            from selenium.webdriver.support import expected_conditions as EC
+            from webdriver_manager.chrome import ChromeDriverManager
+            from selenium.webdriver.chrome.service import Service
+        except ImportError as import_error:
+            import sys
+            logger.error(f"Import error in browser scraping: {import_error}")
+            logger.error(f"Python path: {sys.executable}")
+            raise ImportError(f"Failed to import browser dependencies: {import_error}")
         
         logger.info(f"Headless browser scraping from {source.url}")
         
-        # Set up headless Chrome
+        # Check for site-specific configuration
+        site_config = _get_site_specific_selectors(source.url)
+        
+        # Set up headless Chrome with Docker-optimized options
         chrome_options = Options()
         chrome_options.add_argument("--headless")
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--disable-extensions")
+        chrome_options.add_argument("--disable-plugins")
+        chrome_options.add_argument("--disable-images")  # Faster loading
+        chrome_options.add_argument("--disable-javascript")  # For basic content extraction
         chrome_options.add_argument("--window-size=1920,1080")
-        chrome_options.add_argument("--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
+        chrome_options.add_argument("--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
         
-        # Create driver
-        service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service, options=chrome_options)
+        # Docker-specific Chrome binary detection
+        import os
+        chrome_binary = os.environ.get('CHROME_BIN') or os.environ.get('CHROME_PATH')
+        if chrome_binary and os.path.exists(chrome_binary):
+            chrome_options.binary_location = chrome_binary
+            logger.info(f"Using Chrome binary: {chrome_binary}")
+        else:
+            # Try common Chrome/Chromium locations
+            for chrome_path in ['/usr/bin/chromium', '/usr/bin/google-chrome', '/usr/bin/chromium-browser']:
+                if os.path.exists(chrome_path):
+                    chrome_options.binary_location = chrome_path
+                    logger.info(f"Found Chrome binary: {chrome_path}")
+                    break
+        
+        # Create driver with better error handling
+        try:
+            # Try to use ChromeDriverManager first
+            service = Service(ChromeDriverManager().install())
+            driver = webdriver.Chrome(service=service, options=chrome_options)
+        except Exception as e:
+            logger.warning(f"ChromeDriverManager failed: {e}, trying system chromedriver")
+            # Fallback to system chromedriver (useful in Docker)
+            try:
+                driver = webdriver.Chrome(options=chrome_options)
+            except Exception as e2:
+                logger.error(f"Both ChromeDriverManager and system chromedriver failed: {e2}")
+                raise
         
         try:
+            # Set timeouts
+            driver.set_page_load_timeout(30)
+            driver.implicitly_wait(10)
+            
             driver.get(source.url)
             
             # Wait for page to load
@@ -197,19 +280,34 @@ def _scrape_with_browser(source):
                 EC.presence_of_element_located((By.TAG_NAME, "body"))
             )
             
-            # Extract article content based on common news site patterns
+            # Extract article content based on site-specific or common patterns
             articles = []
             
-            # Try different selectors for news articles
-            selectors = [
-                'article',
-                '.article',
-                '.news-item',
-                '.story',
-                '.post',
-                '[class*="article"]',
-                '[class*="story"]'
-            ]
+            # Use site-specific selectors if available, otherwise try generic ones
+            if site_config:
+                logger.info(f"Using site-specific configuration for {source.url}")
+                selectors = [site_config['container']]
+            else:
+                logger.info(f"Using generic selectors for {source.url}")
+                selectors = [
+                    'article',
+                    '.article',
+                    '.news-item',
+                    '.story',
+                    '.post',
+                    '.card',           # Common card layouts
+                    '.item',           # Generic item containers
+                    '.entry',          # Blog entries
+                    '.headline',       # Headlines containers
+                    '.news',           # News containers
+                    '.content-item',   # Content items
+                    '[class*="article"]',
+                    '[class*="story"]',
+                    '[class*="news"]',
+                    '[class*="post"]',
+                    '[class*="item"]',
+                    '[class*="card"]'
+                ]
             
             for selector in selectors:
                 elements = driver.find_elements(By.CSS_SELECTOR, selector)
@@ -218,13 +316,48 @@ def _scrape_with_browser(source):
                     
                     for i, element in enumerate(elements[:5]):  # Limit to 5 articles
                         try:
-                            title_elem = element.find_element(By.CSS_SELECTOR, 'h1, h2, h3, .title, [class*="title"]')
-                            title = title_elem.text.strip()
+                            # Use site-specific selectors if available
+                            if site_config:
+                                title_selectors = site_config['title']
+                                content_selectors = site_config['content']
+                            else:
+                                title_selectors = ['h3', 'h2', 'h1', '.title', '[class*="title"]']
+                                content_selectors = ['p', '.content', '.summary', '[class*="content"]']
                             
-                            content_elem = element.find_element(By.CSS_SELECTOR, 'p, .content, .summary, [class*="content"]')
-                            content = content_elem.text.strip()
+                            # Try to find title
+                            title = ""
+                            for title_sel in title_selectors:
+                                try:
+                                    title_elem = element.find_element(By.CSS_SELECTOR, title_sel)
+                                    title = title_elem.text.strip()
+                                    if title:
+                                        break
+                                except:
+                                    continue
                             
-                            link_elem = element.find_element(By.CSS_SELECTOR, 'a')
+                            # For content, try various selectors or use the full element text
+                            content = ""
+                            for content_sel in content_selectors:
+                                try:
+                                    content_elem = element.find_element(By.CSS_SELECTOR, content_sel)
+                                    content = content_elem.text.strip()
+                                    if content and content != title:  # Don't duplicate title as content
+                                        break
+                                except:
+                                    continue
+                            
+                            # If no separate content found, use element text but clean it up
+                            if not content:
+                                full_text = element.text.strip()
+                                # Remove title from full text to get description
+                                if title and title in full_text:
+                                    content = full_text.replace(title, "").strip()
+                                else:
+                                    content = full_text
+                            
+                            # Get link using site-specific or generic selector
+                            link_selector = site_config['link'] if site_config else 'a'
+                            link_elem = element.find_element(By.CSS_SELECTOR, link_selector)
                             link = link_elem.get_attribute('href')
                             
                             if title and content and link:
@@ -375,8 +508,8 @@ def scrape_posts(source_id=None, manual_test=False):
     else:
         sources = Source.objects.all()
 
-    # Only process enabled web sources (RSS feeds and browser scraping)
-    active_sources = sources.filter(scraping_enabled=True, scraping_method="web")
+    # Only process enabled sources (RSS feeds, browser scraping, and API)
+    active_sources = sources.filter(scraping_enabled=True)
     
     # Send start message with source names
     if active_sources.exists():
