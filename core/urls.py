@@ -21,8 +21,7 @@ urlpatterns = [
     path('trigger_analysis/', views.trigger_analysis_ajax, name='trigger_analysis'),
     path('test/', views.test_page_view, name='test'),
     path('test-page/', views.test_page_view, name='test_page'),  # Alternative URL
-    path('manual_close_trade/<int:trade_id>/', views.manual_close_trade_view, name='manual_close_trade'),
-    path('close-trade/', views.close_trade_view, name='close_trade'),  # General close trade page
+    path('close-trade/', views.manual_close_trade_view, name='close_trade'),  # Unified close trade page
     path('toggle_bot_status/', views.toggle_bot_status, name='toggle_bot_status'),
     path('system_status/', views.system_status_api, name='system_status'),
     # API endpoints for dashboard

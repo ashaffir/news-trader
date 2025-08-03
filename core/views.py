@@ -1,5 +1,6 @@
 from django.shortcuts import render, redirect
 from django.http import JsonResponse
+from django.contrib import messages
 from .models import Trade, Post, Analysis, Source, TradingConfig, ActivityLog
 from .tasks import (
     close_trade_manually,
@@ -775,8 +776,20 @@ def manual_close_trade_view(request):
             open_trades.append(trade)
 
     if request.method == "POST":
-        action = request.POST.get("action")
-        trade_id = request.POST.get("trade_id")
+        # Handle both form data and JSON requests
+        if request.content_type == 'application/json':
+            import json
+            try:
+                data = json.loads(request.body)
+                action = data.get("action")
+                trade_id = data.get("trade_id")
+                request_data = data
+            except json.JSONDecodeError:
+                return JsonResponse({'success': False, 'error': 'Invalid JSON'}, status=400)
+        else:
+            action = request.POST.get("action")
+            trade_id = request.POST.get("trade_id")
+            request_data = request.POST
 
         if action == "close_all":
             logger.info("Initiating close all trades request.")
@@ -984,8 +997,8 @@ def manual_close_trade_view(request):
         elif action == "edit_trade" and trade_id:
             logger.info(f"Attempting to edit trade settings for ID: {trade_id}")
             try:
-                take_profit_percent = request.POST.get("take_profit_percent")
-                stop_loss_percent = request.POST.get("stop_loss_percent")
+                take_profit_percent = request_data.get("take_profit_percent")
+                stop_loss_percent = request_data.get("stop_loss_percent")
 
                 # Handle Alpaca positions (they have alpaca_ prefix)
                 if trade_id.startswith("alpaca_"):
@@ -1101,11 +1114,33 @@ def manual_close_trade_view(request):
                         f"Trade settings updated successfully for {trade.symbol} - {tp_msg}, {sl_msg}"
                     )
 
-                return redirect("manual_close_trade")
+                # Return JSON response for AJAX requests
+                if request.content_type == 'application/json':
+                    # Determine symbol name for response
+                    response_symbol = symbol if "alpaca_" in trade_id else (trade.symbol if 'trade' in locals() else 'Unknown')
+                    
+                    logger.info(f"Returning JSON success response for {response_symbol}")
+                    return JsonResponse({
+                        'success': True,
+                        'message': f'Trade settings updated successfully for {response_symbol}',
+                        'take_profit_percent': take_profit_percent,
+                        'stop_loss_percent': stop_loss_percent
+                    })
+                else:
+                    return redirect("close_trade")
 
             except Exception as e:
                 logger.error(f"Error updating trade settings for {trade_id}: {e}")
                 messages.error(request, f"Error updating trade settings: {str(e)}")
+                
+                # Return JSON error for AJAX requests
+                if request.content_type == 'application/json':
+                    return JsonResponse({
+                        'success': False,
+                        'error': f'Error updating trade settings: {str(e)}'
+                    })
+                else:
+                    return redirect("close_trade")
 
     # Calculate total unrealized P&L for summary
     total_unrealized_pnl = sum(
@@ -1118,7 +1153,7 @@ def manual_close_trade_view(request):
 
     return render(
         request,
-        "core/manual_close_trade.html",
+        "core/close_trade.html",
         {
             "open_trades": open_trades,
             "total_unrealized_pnl": total_unrealized_pnl,
@@ -1289,19 +1324,7 @@ def recent_activities_api(request):
         })
 
 
-def close_trade_view(request):
-    """General close trade page showing all open trades."""
-    from .models import Trade
-    from django.shortcuts import render
-    
-    # Show all active trades (pending, open, and pending_close)
-    open_trades = Trade.objects.filter(status__in=['pending', 'open', 'pending_close']).order_by('-created_at')
-    
-    context = {
-        'trades': open_trades,
-        'title': 'Close Trades'
-    }
-    return render(request, 'core/close_trade.html', context)
+# OLD close_trade_view function removed - now using unified manual_close_trade_view
 
 
 def close_trade_api(request):
