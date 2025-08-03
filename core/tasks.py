@@ -26,7 +26,7 @@ def format_activity_message(message_type, data):
         'trade_close_requested': f"🚨 Close request: {data.get('symbol', 'N/A')} order submitted (ID: {data.get('order_id', 'N/A')})",
         'scraper_error': f"⚠️ Scraping error from {data.get('source', 'Unknown')}: {data.get('error', 'Unknown error')}",
         'scraper_status': f"🔄 {data.get('status', 'Scraper status update')}",
-        'trade_status': f"📊 {data.get('status', 'Status update')}",
+        'trade_status': f"📊 {data.get('symbol', 'N/A')} - {data.get('status', 'Status update')}" if 'TP/SL updated' in data.get('status', '') else f"📊 {data.get('status', 'Status update')}",
     }
     return messages.get(message_type, f"🔄 Update: {data}")
 

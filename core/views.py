@@ -1077,6 +1077,20 @@ def manual_close_trade_view(request):
                             f"Trade settings updated successfully for {symbol} - {tp_msg}, {sl_msg}"
                         )
 
+                        # Log activity for TP/SL change
+                        send_dashboard_update(
+                            "trade_status",
+                            {
+                                "trade_id": trade_id,
+                                "symbol": symbol,
+                                "status": f"TP/SL updated: {tp_msg}, {sl_msg}",
+                                "take_profit_price": take_profit_price,
+                                "stop_loss_price": stop_loss_price,
+                                "take_profit_percent": take_profit_percent,
+                                "stop_loss_percent": stop_loss_percent,
+                            }
+                        )
+
                         # TODO: Implement actual Alpaca bracket order creation here
                         # This would involve canceling existing position and creating new bracket order
 
@@ -1112,6 +1126,20 @@ def manual_close_trade_view(request):
                     messages.success(
                         request,
                         f"Trade settings updated successfully for {trade.symbol} - {tp_msg}, {sl_msg}"
+                    )
+
+                    # Log activity for TP/SL change
+                    send_dashboard_update(
+                        "trade_status",
+                        {
+                            "trade_id": trade.id,
+                            "symbol": trade.symbol,
+                            "status": f"TP/SL updated: {tp_msg}, {sl_msg}",
+                            "take_profit_price": trade.take_profit_price,
+                            "stop_loss_price": trade.stop_loss_price,
+                            "take_profit_percent": take_profit_percent,
+                            "stop_loss_percent": stop_loss_percent,
+                        }
                     )
 
                 # Return JSON response for AJAX requests
