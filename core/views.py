@@ -1600,7 +1600,7 @@ def trigger_scrape_api(request):
                 # Scrape specific source
                 try:
                     source = Source.objects.get(id=source_id, scraping_enabled=True)
-                    result = scrape_posts.delay(source_id=source_id)
+                    result = scrape_posts.delay(source_id=source_id, manual_test=True)
                     return JsonResponse({
                         'success': True,
                         'message': f'Scraping started for {source.name}',
@@ -1614,7 +1614,7 @@ def trigger_scrape_api(request):
                 sources = Source.objects.filter(scraping_enabled=True)
                 tasks = []
                 for source in sources:
-                    result = scrape_posts.delay(source_id=source.id)
+                    result = scrape_posts.delay(source_id=source.id, manual_test=True)
                     tasks.append({'source': source.name, 'task_id': result.id})
                 
                 return JsonResponse({

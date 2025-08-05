@@ -256,16 +256,22 @@ def _scrape_with_browser(source):
         
         # Create driver with better error handling
         try:
-            # Try to use ChromeDriverManager first
-            service = Service(ChromeDriverManager().install())
-            driver = webdriver.Chrome(service=service, options=chrome_options)
+            # In Docker, prefer system chromedriver over ChromeDriverManager
+            if os.path.exists('/usr/bin/chromedriver'):
+                logger.info("Using system chromedriver in Docker environment")
+                service = Service('/usr/bin/chromedriver')
+                driver = webdriver.Chrome(service=service, options=chrome_options)
+            else:
+                # Try ChromeDriverManager for non-Docker environments
+                service = Service(ChromeDriverManager().install())
+                driver = webdriver.Chrome(service=service, options=chrome_options)
         except Exception as e:
-            logger.warning(f"ChromeDriverManager failed: {e}, trying system chromedriver")
-            # Fallback to system chromedriver (useful in Docker)
+            logger.warning(f"Chrome service setup failed: {e}, trying basic Chrome")
+            # Final fallback to basic Chrome (no explicit service)
             try:
                 driver = webdriver.Chrome(options=chrome_options)
             except Exception as e2:
-                logger.error(f"Both ChromeDriverManager and system chromedriver failed: {e2}")
+                logger.error(f"All Chrome driver methods failed: {e2}")
                 raise
         
         try:
@@ -417,16 +423,180 @@ def _determine_scraping_method(source):
     return 'browser'
 
 
+def _scrape_api_source(source):
+    """Scrape data from API endpoints like Reddit JSON API"""
+    import requests
+    import json
+    from datetime import datetime, timedelta
+    
+    try:
+        logger.info(f"API scraping from {source.api_endpoint or source.url}")
+        
+        # Prepare request
+        url = source.api_endpoint or source.url
+        headers = {
+            'User-Agent': 'NewsTrader/1.0 (by /u/NewsTrader)'
+        }
+        
+        # Add API key if configured
+        if source.api_key_field:
+            api_key = os.environ.get(source.api_key_field)
+            if api_key:
+                if source.api_key_field == 'REDDIT_USER_AGENT':
+                    headers['User-Agent'] = api_key
+                else:
+                    headers['Authorization'] = f'Bearer {api_key}'
+        
+        # Prepare request parameters
+        params = source.request_params or {}
+        
+        # Make request
+        if source.request_type == 'POST':
+            response = requests.post(url, headers=headers, json=params, timeout=30)
+        else:
+            response = requests.get(url, headers=headers, params=params, timeout=30)
+        
+        response.raise_for_status()
+        data = response.json()
+        
+        # Extract posts using data extraction config
+        config = source.data_extraction_config or {}
+        response_path = config.get('response_path', '')
+        content_field = config.get('content_field', 'title')
+        url_field = config.get('url_field', 'url')
+        score_field = config.get('score_field', 'score')
+        min_score = config.get('min_score', 0)
+        
+        # Navigate to the data using response_path
+        current_data = data
+        if response_path:
+            for path_part in response_path.split('.'):
+                if path_part and path_part in current_data:
+                    current_data = current_data[path_part]
+                else:
+                    logger.warning(f"Path '{response_path}' not found in API response")
+                    return
+        
+        if not isinstance(current_data, list):
+            logger.warning(f"Expected list at path '{response_path}', got {type(current_data)}")
+            return
+        
+        new_posts_count = 0
+        cutoff_time = datetime.now() - timedelta(hours=6)
+        
+        for item in current_data[:25]:  # Limit to 25 items
+            try:
+                # Extract fields using dot notation
+                title = _get_nested_value(item, content_field)
+                url = _get_nested_value(item, url_field)
+                score = _get_nested_value(item, score_field, 0)
+                
+                if not title or not url:
+                    continue
+                
+                # Check minimum score threshold
+                if score < min_score:
+                    continue
+                
+                # Ensure URL is absolute
+                if url.startswith('/'):
+                    url = 'https://reddit.com' + url
+                elif not url.startswith('http'):
+                    continue
+                
+                # Check if post already exists
+                if Post.objects.filter(url=url).exists():
+                    continue
+                
+                # Create new post
+                post = Post.objects.create(
+                    source=source,
+                    content=title,  # For Reddit, title is the content
+                    url=url
+                )
+                
+                new_posts_count += 1
+                logger.info(f"Created post: {title[:50]}... (Score: {score})")
+                
+                # Trigger analysis
+                analyze_post.delay(post.id)
+                
+            except Exception as e:
+                logger.error(f"Error processing API item: {e}")
+                continue
+        
+        # Update source status
+        from django.utils import timezone
+        source.last_scraped_at = timezone.now()
+        source.error_count = 0
+        source.last_error = None
+        source.scraping_status = "idle"
+        source.save()
+        
+        logger.info(f"API scraping completed for {source.name}. Created {new_posts_count} new posts.")
+        
+        if new_posts_count == 0:
+            logger.warning(f"No new posts found from {source.name} - check API response format or score threshold")
+        
+    except requests.exceptions.RequestException as e:
+        logger.error(f"API request failed for {source.name}: {e}")
+        source.error_count += 1
+        source.last_error = f"API request failed: {str(e)}"
+        source.scraping_status = "error"
+        source.save()
+        raise
+    except json.JSONDecodeError as e:
+        logger.error(f"Invalid JSON response from {source.name}: {e}")
+        source.error_count += 1
+        source.last_error = f"Invalid JSON response: {str(e)}"
+        source.scraping_status = "error"
+        source.save()
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error in API scraping for {source.name}: {e}")
+        source.error_count += 1
+        source.last_error = f"Unexpected error: {str(e)}"
+        source.scraping_status = "error"
+        source.save()
+        raise
+
+
+def _get_nested_value(data, path, default=None):
+    """Get value from nested dict using dot notation (e.g., 'data.title')"""
+    current = data
+    for key in path.split('.'):
+        if isinstance(current, dict) and key in current:
+            current = current[key]
+        else:
+            return default
+    return current
+
+
 def _scrape_source(source):
     """Main scraping function that routes to appropriate method"""
-    scraping_method = _determine_scraping_method(source)
-    
-    logger.info(f"Scraping {source.name} using method: {scraping_method}")
-    
-    if scraping_method == 'rss':
-        _scrape_rss_feed(source)
+    # Check if source is configured for API scraping
+    if source.scraping_method == 'api':
+        _scrape_api_source(source)
+    elif source.scraping_method == 'both':
+        # Try API first, fallback to other methods
+        try:
+            _scrape_api_source(source)
+        except Exception as e:
+            logger.warning(f"API scraping failed for {source.name}, falling back to other method: {e}")
+            scraping_method = _determine_scraping_method(source)
+            if scraping_method == 'rss':
+                _scrape_rss_feed(source)
+            else:
+                _scrape_with_browser(source)
     else:
-        _scrape_with_browser(source)
+        # Use the existing method determination
+        scraping_method = _determine_scraping_method(source)
+        logger.info(f"Scraping {source.name} using method: {scraping_method}")
+        
+        if scraping_method == 'rss':
+            _scrape_rss_feed(source)
+        else:
+            _scrape_with_browser(source)
 
 
 def get_active_trading_config():
@@ -542,22 +712,11 @@ def scrape_posts(source_id=None, manual_test=False):
                 {"source": source.name, "error": str(e), "method": "scraping"},
             )
     
-    # Log disabled or API sources being skipped
+    # Log disabled sources being skipped
     disabled_sources = sources.filter(scraping_enabled=False)
-    api_sources = sources.filter(scraping_method__in=["api", "both"])
     
     for source in disabled_sources:
         logger.info(f"Skipping disabled source: {source.name}")
-        
-    for source in api_sources:
-        logger.info(f"Skipping API source (deprecated): {source.name}")
-        send_dashboard_update(
-            "scraper_skipped",
-            {
-                "source": source.name,
-                "reason": "API sources are no longer supported - use RSS feeds or browser scraping",
-            },
-        )
 
     # Send final status with results
     if scraped_sources:

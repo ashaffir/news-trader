@@ -436,7 +436,11 @@
 
                     <div class="card action-card">
                         <div class="card-body">
-                            <h6><i class="fas fa-brain"></i> Post Analysis</h6>
+                            <h6><i class="fas fa-brain"></i> Post Analysis 
+                                <button class="btn btn-sm btn-outline-secondary float-end" onclick="refreshPostDropdown()" title="Refresh Posts">
+                                    <i class="fas fa-sync-alt"></i>
+                                </button>
+                            </h6>
                             <form id="analysis-form" class="mb-3">
                                 {% csrf_token %}
                                 <div class="row">
@@ -540,7 +544,11 @@
                 <!-- Recent Activity -->
                 <div class="card mb-4">
                     <div class="card-header">
-                        <h6><i class="fas fa-history"></i> Recent Activity</h6>
+                                                    <h6><i class="fas fa-history"></i> Recent Activity 
+                                <button class="btn btn-sm btn-outline-secondary float-end" onclick="loadRecentActivity()" title="Refresh Activities">
+                                    <i class="fas fa-sync-alt"></i>
+                                </button>
+                            </h6>
                     </div>
                     <div class="card-body" style="max-height: 300px; overflow-y: auto;" id="recent-activity">
                         <div class="text-center text-muted">
@@ -646,6 +654,50 @@
     <script>
         // CSRF token for forms
         const csrfToken = '{{ csrf_token }}';
+
+        // Refresh Post Analysis dropdown with latest posts
+        function refreshPostDropdown() {
+            console.log('Refreshing Post Analysis dropdown...');
+            
+            fetch('/api/public-posts/?page_size=20')
+                .then(response => response.json())
+                .then(data => {
+                    const select = document.getElementById('post-select');
+                    if (!select) return;
+                    
+                    // Clear current options except the first one
+                    select.innerHTML = '<option value="">Select a post to analyze...</option>';
+                    
+                    // Add new posts
+                    if (data.results && data.results.length > 0) {
+                        data.results.forEach(post => {
+                            const option = document.createElement('option');
+                            option.value = post.id;
+                            option.setAttribute('data-source', post.source.name);
+                            
+                            // Calculate time ago (rough approximation)
+                            const createdAt = new Date(post.created_at);
+                            const now = new Date();
+                            const diffMinutes = Math.floor((now - createdAt) / (1000 * 60));
+                            const timeAgo = diffMinutes < 1 ? 'Just now' : 
+                                          diffMinutes < 60 ? `${diffMinutes} minutes ago` :
+                                          `${Math.floor(diffMinutes / 60)} hours ago`;
+                            
+                            option.textContent = `Post #${post.id} - ${post.source.name} (${timeAgo})`;
+                            select.appendChild(option);
+                        });
+                        console.log(`Updated dropdown with ${data.results.length} posts`);
+                    } else {
+                        const option = document.createElement('option');
+                        option.value = '';
+                        option.textContent = 'No posts available';
+                        select.appendChild(option);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error refreshing post dropdown:', error);
+                });
+        }
 
         // Quick action functions
         function scrapeSource(sourceId) {
@@ -1038,12 +1090,15 @@
 
         // Load recent activity from API
         function loadRecentActivity() {
+            console.log('Loading recent activity...');
             fetch('/api/recent-activities/')
                 .then(response => response.json())
                 .then(data => {
+                    console.log('Recent activity data:', data);
                     const activityDiv = document.getElementById('recent-activity');
                     
                     if (data.success && data.activities.length > 0) {
+                        console.log(`Found ${data.activities.length} activities`);
                         let html = '';
                         data.activities.slice(0, 10).forEach(activity => {
                             const icon = getActivityIcon(activity.type);
@@ -1056,8 +1111,13 @@
                                 </div>
                             `;
                         });
+                        console.log('Setting HTML:', html.substring(0, 200) + '...');
+                        console.log('Activity div exists:', !!activityDiv);
+                        console.log('Activity div before:', activityDiv.innerHTML.substring(0, 100));
                         activityDiv.innerHTML = html;
+                        console.log('Activity div after:', activityDiv.innerHTML.substring(0, 100));
                     } else {
+                        console.log('No activities found');
                         activityDiv.innerHTML = `
                             <div class="text-center text-muted">
                                 <i class="fas fa-info-circle"></i> No recent activity
@@ -1165,10 +1225,11 @@
                         text.textContent = 'Success!';
                         icon.className = 'fas fa-check';
                         
-                        // Open results in new tab after short delay
-                        setTimeout(() => {
-                            const resultsUrl = `/api/posts/?source_id=${sourceId}&format=json&ordering=-created_at&page_size=50`;
-                            window.open(resultsUrl, '_blank');
+                                        // Open results in new tab after short delay
+                setTimeout(() => {
+                    const resultsUrl = `/api/posts/?source_id=${sourceId}&format=json&ordering=-created_at&page_size=50`;
+                    console.log('Opening results for source ID:', sourceId, 'URL:', resultsUrl);
+                    window.open(resultsUrl, '_blank');
                             
                             // Reset button after opening results
                             setTimeout(() => {
@@ -1180,6 +1241,11 @@
                         
                         // Show notification
                         showNotification(`Scraping started for ${sourceName}! Results will open in a new tab.`, 'success');
+                        
+                        // Refresh the Post Analysis dropdown after 3 seconds to allow scraping to complete
+                        setTimeout(() => {
+                            refreshPostDropdown();
+                        }, 3000);
                     } else {
                         // Show error
                         button.disabled = false;

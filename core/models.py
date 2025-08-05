@@ -333,6 +333,8 @@ class ActivityLog(models.Model):
         ('trade_closed', 'Trade Closed'),
         ('trade_close_requested', 'Trade Close Requested'),
         ('scraper_error', 'Scraper Error'),
+        ('scraper_status', 'Scraper Status'),
+        ('scraper_skipped', 'Scraper Skipped'),
         ('trade_status', 'Trade Status'),
         ('system_event', 'System Event'),
     ]
