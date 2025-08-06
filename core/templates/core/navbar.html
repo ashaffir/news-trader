@@ -22,27 +22,27 @@
                 <div class="collapse navbar-collapse" id="pageNavigation">
                     <ul class="navbar-nav me-auto mb-2 mb-lg-0">
                         <li class="nav-item">
-                            <a class="nav-link active" href="/dashboard/">
+                            <a class="nav-link {% if request.resolver_match.url_name == 'dashboard' or request.resolver_match.url_name == 'dashboard_alt' or request.path == '/' %}active{% endif %}" href="/dashboard/">
                                 <i class="fas fa-chart-line me-1"></i> Dashboard
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="/test-page/">
+                            <a class="nav-link {% if request.resolver_match.url_name == 'test_page' or request.resolver_match.url_name == 'test' %}active{% endif %}" href="/test-page/">
                                 <i class="fas fa-flask me-1"></i> Test Center
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="/close-trade/">
+                            <a class="nav-link {% if request.resolver_match.url_name == 'close_trade' %}active{% endif %}" href="/close-trade/">
                                 <i class="fas fa-times-circle me-1"></i> Open Trades
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="/admin/" target="_blank">
+                            <a class="nav-link {% if '/admin/' in request.path %}active{% endif %}" href="/admin/" target="_blank">
                                 <i class="fas fa-cogs me-1"></i> Admin Panel
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="/api/" target="_blank">
+                            <a class="nav-link {% if '/api/' in request.path and request.path != '/api/toggle-bot-status/' %}active{% endif %}" href="/api/" target="_blank">
                                 <i class="fas fa-code me-1"></i> API Docs
                             </a>
                         </li>
