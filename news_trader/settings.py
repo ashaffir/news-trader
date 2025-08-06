@@ -118,9 +118,15 @@ STATICFILES_DIRS = [
     BASE_DIR / 'static',
 ]
 
+# Ensure staticfiles directory exists for Docker deployment
+STATIC_ROOT.mkdir(exist_ok=True)
+
 # Media files
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+
+# Ensure media directory exists for Docker deployment  
+MEDIA_ROOT.mkdir(exist_ok=True)
 
 # Default primary key field type
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
@@ -153,6 +159,10 @@ REST_FRAMEWORK = {
     'PAGE_SIZE': 50
 }
 
+# Ensure logs directory exists for Docker deployment
+LOGS_DIR = BASE_DIR / 'logs'
+LOGS_DIR.mkdir(exist_ok=True)
+
 # Logging configuration
 LOGGING = {
     'version': 1,
@@ -171,7 +181,7 @@ LOGGING = {
         'file': {
             'level': 'INFO',
             'class': 'logging.FileHandler',
-            'filename': BASE_DIR / 'logs' / 'django.log',
+            'filename': LOGS_DIR / 'django.log',
             'formatter': 'verbose',
         },
         'console': {
