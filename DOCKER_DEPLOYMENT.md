@@ -84,9 +84,12 @@ cd news-trader
 cp .env.example .env
 # Edit .env with your API keys
 
-# 3. First-time setup using the included script
+# 3. First-time setup using the robust script
 chmod +x docker_dev.sh
 ./docker_dev.sh setup
+
+# If setup fails, clean and retry:
+./docker_dev.sh clean && ./docker_dev.sh setup
 ```
 
 ### Manual Deployment
@@ -171,26 +174,60 @@ docker-compose logs -f celery
 
 ## 🐛 Troubleshooting
 
+### Setup Failures (NEW: Robust Recovery)
+
+**🚀 Failed Setup? No Problem!** The setup script now has automatic error recovery:
+
+```bash
+# If setup fails at any point, simply run:
+./docker_dev.sh clean && ./docker_dev.sh setup
+
+# Or use the interactive menu:
+./docker_dev.sh
+# Choose option 12 (Clean up Docker), then option 1 (Setup)
+```
+
+The setup script now:
+- ✅ **Detects failures** at each step
+- ✅ **Provides clear error messages** with next steps
+- ✅ **Can be safely re-run** multiple times
+- ✅ **Automatically cleans up** after failures
+
 ### Common Issues and Solutions
 
-1. **Services won't start**
+1. **Setup fails partway through**
+   ```bash
+   # NEW: Simple recovery process
+   ./docker_dev.sh clean && ./docker_dev.sh setup
+   
+   # Check what failed in the logs
+   ./docker_dev.sh logs
+   ```
+
+2. **Services won't start**
    ```bash
    # Check if .env file exists and has required variables
    ls -la .env
    
    # Check Docker daemon is running
    docker info
+   
+   # Reset everything and retry
+   ./docker_dev.sh clean && ./docker_dev.sh setup
    ```
 
-2. **Database connection errors**
+3. **Database connection errors**
    ```bash
-   # Reset database volume
+   # NEW: Robust cleanup and retry
+   ./docker_dev.sh clean && ./docker_dev.sh setup
+   
+   # OR manual reset:
    docker-compose down -v
    docker-compose up -d db
    # Wait 30 seconds, then restart other services
    ```
 
-3. **Celery tasks not processing**
+4. **Celery tasks not processing**
    ```bash
    # Check Celery worker logs
    docker-compose logs celery
@@ -199,13 +236,16 @@ docker-compose logs -f celery
    docker-compose restart celery celery-beat
    ```
 
-4. **Health check failures**
+5. **Health check failures**
    ```bash
    # Check service status
    docker-compose ps
    
    # Test health endpoint directly
    curl http://localhost:8000/health/
+   
+   # If still failing, clean restart:
+   ./docker_dev.sh clean && ./docker_dev.sh setup
    ```
 
 ## 📈 Monitoring

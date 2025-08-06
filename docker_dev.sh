@@ -141,37 +141,143 @@ show_docker_status() {
     fi
 }
 
-# Function to setup (first time)
-docker_setup() {
-    print_status "🚀 First time Docker setup..."
-    check_env_file
-    check_docker
-    
-    print_status "🏗️ Building Docker images..."
-    docker-compose build
-    
-    print_status "🗄️ Starting database and Redis..."
-    docker-compose up -d db redis
+# Function to clean up failed setup
+cleanup_failed_setup() {
+    print_warning "🧹 Cleaning up failed setup..."
+    docker-compose down -v 2>/dev/null || true
+    docker system prune -f 2>/dev/null || true
+    print_status "✅ Cleanup completed"
+}
+
+# Function to wait for database with timeout
+wait_for_database() {
+    local max_attempts=30
+    local attempt=1
     
     print_status "⏳ Waiting for database to be ready..."
-    sleep 10
     
-    print_status "📊 Running database migrations..."
-    docker-compose run --rm web python manage.py migrate
+    while [ $attempt -le $max_attempts ]; do
+        if docker-compose exec -T db pg_isready -U news_trader >/dev/null 2>&1; then
+            print_success "✅ Database is ready!"
+            return 0
+        fi
+        
+        echo -n "."
+        sleep 2
+        attempt=$((attempt + 1))
+    done
     
-    print_status "📁 Collecting static files..."
-    docker-compose run --rm web python manage.py collectstatic --noinput
+    print_error "❌ Database failed to start within timeout"
+    return 1
+}
+
+# Function to setup (improved with error handling)
+docker_setup() {
+    print_status "🚀 Docker setup (robust with error recovery)..."
     
-    print_status "🚀 Starting all services..."
-    docker-compose up -d
+    # Disable exit on error for this function
+    set +e
+    local setup_failed=false
     
+    # Check prerequisites
+    if ! check_env_file || ! check_docker; then
+        print_error "❌ Prerequisites not met"
+        set -e
+        return 1
+    fi
+    
+    # Step 1: Clean any existing setup
+    print_status "🧹 Cleaning any existing containers..."
+    docker-compose down -v >/dev/null 2>&1 || true
+    
+    # Step 2: Build Docker images
+    print_status "🏗️ Building Docker images..."
+    if ! docker-compose build; then
+        print_error "❌ Failed to build Docker images"
+        setup_failed=true
+    fi
+    
+    if [ "$setup_failed" = false ]; then
+        # Step 3: Start database and Redis
+        print_status "🗄️ Starting database and Redis..."
+        if ! docker-compose up -d db redis; then
+            print_error "❌ Failed to start database and Redis"
+            setup_failed=true
+        fi
+    fi
+    
+    if [ "$setup_failed" = false ]; then
+        # Step 4: Wait for database to be ready
+        if ! wait_for_database; then
+            print_error "❌ Database failed to become ready"
+            setup_failed=true
+        fi
+    fi
+    
+    if [ "$setup_failed" = false ]; then
+        # Step 5: Run database migrations
+        print_status "📊 Running database migrations..."
+        if ! docker-compose run --rm web python manage.py migrate; then
+            print_error "❌ Failed to run database migrations"
+            setup_failed=true
+        fi
+    fi
+    
+    if [ "$setup_failed" = false ]; then
+        # Step 6: Collect static files
+        print_status "📁 Collecting static files..."
+        if ! docker-compose run --rm web python manage.py collectstatic --noinput; then
+            print_warning "⚠️ Failed to collect static files (continuing anyway...)"
+        fi
+    fi
+    
+    if [ "$setup_failed" = false ]; then
+        # Step 7: Start all services
+        print_status "🚀 Starting all services..."
+        if ! docker-compose up -d; then
+            print_error "❌ Failed to start all services"
+            setup_failed=true
+        fi
+    fi
+    
+    # Check if setup failed
+    if [ "$setup_failed" = true ]; then
+        print_error "❌ Setup failed!"
+        echo ""
+        print_status "🔧 Troubleshooting options:"
+        echo "  1. Run 'cleanup' to clean everything and try again"
+        echo "  2. Check your .env file has all required variables"
+        echo "  3. Ensure Docker has enough resources (2GB+ RAM)"
+        echo "  4. Check Docker logs: docker-compose logs"
+        echo ""
+        cleanup_failed_setup
+        set -e
+        return 1
+    fi
+    
+    # Final health check
+    print_status "🔍 Performing final health check..."
     sleep 5
-    print_success "✅ Setup completed!"
-    echo ""
-    print_success "🌐 Web App: http://localhost:8000"
-    print_success "🌸 Flower Monitor: http://localhost:5555 (use monitor option)"
-    echo ""
-    print_status "💡 Your News Trader is ready for testing!"
+    
+    if curl -sf http://localhost:8000/health/ >/dev/null 2>&1; then
+        print_success "🎉 Setup completed successfully!"
+        echo ""
+        print_success "🌐 Web App: http://localhost:8000/dashboard/"
+        print_success "⚙️  Admin Panel: http://localhost:8000/admin/"
+        print_success "❤️  Health Check: http://localhost:8000/health/"
+        print_success "🌸 Flower Monitor: http://localhost:5555 (use monitor option)"
+        echo ""
+        print_status "💡 Your News Trader is ready for testing!"
+        print_status "💡 Default admin credentials: admin/admin"
+    else
+        print_warning "⚠️ Services started but health check failed"
+        print_status "🔍 Check service status with: ./docker_dev.sh status"
+        print_status "📋 Check logs with: ./docker_dev.sh logs"
+    fi
+    
+    # Re-enable exit on error
+    set -e
+    return 0
 }
 
 # Function to start services
@@ -237,12 +343,26 @@ docker_shell() {
     docker-compose exec web python manage.py shell
 }
 
-# Function to clean up Docker resources
+# Function to clean up Docker resources (enhanced)
 docker_clean() {
     print_status "🧹 Cleaning up Docker resources..."
-    docker-compose down -v
-    docker system prune -f
-    print_success "✅ Cleanup completed"
+    print_warning "⚠️  This will remove all containers, volumes, and unused images"
+    
+    if [ "${1:-}" != "--force" ]; then
+        read -p "Continue? (y/N): " -r
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            print_status "Cleanup cancelled"
+            return 0
+        fi
+    fi
+    
+    docker-compose down -v 2>/dev/null || true
+    docker system prune -f 2>/dev/null || true
+    
+    # Also clean up any dangling images
+    docker image prune -f 2>/dev/null || true
+    
+    print_success "✅ Cleanup completed - ready for fresh setup"
 }
 
 # Function to show logs menu
@@ -357,7 +477,7 @@ show_help() {
     echo "  $0                    Launch interactive menu"
     echo
     echo "Command Line Mode:"
-    echo "  setup     First time setup (build, migrate, start)"
+    echo "  setup     Robust setup with error recovery (can retry)"
     echo "  start     Start all services"
     echo "  stop      Stop all services"
     echo "  restart   Restart all services"
@@ -368,14 +488,18 @@ show_help() {
     echo "  shell     Open Django shell"
     echo "  logs      Show all logs"
     echo "  status    Show service status"
-    echo "  clean     Clean up Docker resources"
+    echo "  clean     Clean up Docker resources (reset for retry)"
     echo "  help      Show this help"
     echo
     echo "Examples:"
     echo "  $0                    # Interactive mode"
-    echo "  $0 setup              # First time setup"
+    echo "  $0 setup              # Robust setup (can retry if failed)"
+    echo "  $0 clean              # Reset after failed setup"
     echo "  $0 start              # Start services"
     echo "  $0 logs               # View all logs"
+    echo ""
+    echo "Recovery from Failed Setup:"
+    echo "  $0 clean && $0 setup  # Clean everything and retry setup"
     echo
     echo "Docker Environment:"
     echo "  - All services run in isolated containers"
@@ -396,7 +520,7 @@ interactive_menu() {
         
         echo -e "${YELLOW}📋 Available Actions:${NC}"
         echo "========================"
-        echo "  1) 🚀 Setup (first time)"
+        echo "  1) 🚀 Setup (robust, can retry)"
         echo "  2) ▶️  Start all services"
         echo "  3) ⏹️  Stop all services" 
         echo "  4) 🔄 Restart all services"
@@ -407,7 +531,7 @@ interactive_menu() {
         echo "  9) 🐚 Django shell"
         echo " 10) 📋 View logs"
         echo " 11) 🔍 Refresh status"
-        echo " 12) 🧹 Clean up Docker"
+        echo " 12) 🧹 Clean up Docker (reset)"
         echo " 13) ❓ Show help"
         echo "  q) 🚪 Quit"
         echo
@@ -522,7 +646,13 @@ else
             show_docker_status
             ;;
         "clean")
-            docker_clean
+            docker_clean --force
+            ;;
+        "cleanup")
+            docker_clean --force
+            ;;
+        "reset")
+            docker_clean --force
             ;;
         "help"|"-h"|"--help")
             show_help
@@ -532,6 +662,9 @@ else
             ;;
         *)
             print_error "Unknown command: $1"
+            echo
+            print_status "💡 Tip: If setup failed, try:"
+            print_status "   $0 clean && $0 setup"
             echo
             show_help
             exit 1
