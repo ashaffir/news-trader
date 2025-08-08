@@ -1,0 +1,392 @@
+{% extends 'core/base.html' %}
+
+{% block title %}Auto-Analyze News Source{% endblock %}
+
+{% block extra_head %}
+<style>
+    .analysis-container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+    }
+
+    .input-section {
+        background: white;
+        border-radius: 12px;
+        padding: 25px;
+        margin-bottom: 30px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    }
+
+    .results-section {
+        background: white;
+        border-radius: 12px;
+        padding: 25px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        display: none;
+    }
+
+    .analyze-btn {
+        background: linear-gradient(45deg, #667eea, #764ba2);
+        border: none;
+        color: white;
+        padding: 12px 30px;
+        border-radius: 8px;
+        font-weight: 600;
+        font-size: 16px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+    }
+
+    .analyze-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+    }
+
+    .analyze-btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+        transform: none;
+    }
+
+    .loading-spinner {
+        display: none;
+        margin-left: 10px;
+    }
+
+    .result-card {
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 20px;
+        margin: 15px 0;
+    }
+
+    .method-badge {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+
+    .method-rss { background: #d4edda; color: #155724; }
+    .method-api { background: #cce7ff; color: #004085; }
+    .method-web { background: #fff3cd; color: #856404; }
+    .method-both { background: #e2e3e5; color: #383d41; }
+
+    .confidence-bar {
+        width: 100%;
+        height: 8px;
+        background: #e0e0e0;
+        border-radius: 4px;
+        overflow: hidden;
+        margin: 10px 0;
+    }
+
+    .confidence-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #ff6b6b, #feca57, #48dbfb, #0abde3);
+        transition: width 0.3s ease;
+    }
+
+    .selector-code {
+        background: #f8f9fa;
+        padding: 10px;
+        border-radius: 4px;
+        font-family: 'Courier New', monospace;
+        font-size: 12px;
+        margin: 5px 0;
+        border-left: 3px solid #667eea;
+    }
+
+    .create-source-section {
+        margin-top: 20px;
+        padding: 20px;
+        background: #f8f9fa;
+        border-radius: 8px;
+        border: 2px dashed #667eea;
+    }
+
+    .btn-success {
+        transition: all 0.3s ease;
+    }
+
+    .btn-success:disabled {
+        opacity: 0.7;
+        cursor: not-allowed;
+        transform: none !important;
+    }
+
+    .force-web-scraping-option {
+        background: #fff8e1;
+        border: 1px solid #ffcc02;
+        border-radius: 6px;
+        padding: 15px;
+        margin-top: 15px;
+    }
+
+    .force-web-scraping-option .form-check-label {
+        font-weight: 500;
+        color: #f57c00;
+    }
+
+    .force-web-scraping-option .form-text {
+        margin-top: 5px;
+        font-size: 0.85em;
+    }
+
+    .success-message {
+        background: #d4edda;
+        color: #155724;
+        padding: 15px;
+        border-radius: 8px;
+        margin: 15px 0;
+    }
+
+    .error-message {
+        background: #f8d7da;
+        color: #721c24;
+        padding: 15px;
+        border-radius: 8px;
+        margin: 15px 0;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="analysis-container">
+    <h1><i class="fas fa-robot"></i> Auto-Analyze News Source</h1>
+    <p class="text-muted">Enter any news website URL and the system will automatically detect the best way to extract articles.</p>
+
+    <div class="input-section">
+        <h3><i class="fas fa-link"></i> News Source URL</h3>
+        <form id="analyze-form">
+            {% csrf_token %}
+            <div class="row">
+                <div class="col-md-8">
+                    <input 
+                        type="url" 
+                        id="source-url" 
+                        class="form-control" 
+                        placeholder="https://example-news-site.com/"
+                        required
+                    >
+                </div>
+                <div class="col-md-4">
+                    <button type="submit" id="analyze-btn" class="analyze-btn w-100">
+                        <i class="fas fa-search"></i> Analyze Source
+                        <div class="loading-spinner">
+                            <i class="fas fa-spinner fa-spin"></i>
+                        </div>
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <div id="results-section" class="results-section">
+        <h3><i class="fas fa-chart-line"></i> Analysis Results</h3>
+        <div id="results-content"></div>
+    </div>
+</div>
+
+<script>
+document.getElementById('analyze-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    const url = document.getElementById('source-url').value;
+    const btn = document.getElementById('analyze-btn');
+    const spinner = btn.querySelector('.loading-spinner');
+    const resultsSection = document.getElementById('results-section');
+    
+    // Show loading state
+    btn.disabled = true;
+    spinner.style.display = 'inline-block';
+    
+    // Make API call
+    fetch('/api/analyze-source/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+        },
+        body: JSON.stringify({ url: url })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            displayResults(data.analysis);
+            resultsSection.style.display = 'block';
+        } else {
+            showError(data.error || 'Analysis failed');
+        }
+    })
+    .catch(error => {
+        showError('Network error: ' + error.message);
+    })
+    .finally(() => {
+        btn.disabled = false;
+        spinner.style.display = 'none';
+    });
+});
+
+function displayResults(analysis) {
+    const config = analysis.recommended_config;
+    const resultsContent = document.getElementById('results-content');
+    
+    const methodClass = `method-${config.recommended_method}`;
+    const confidencePercent = Math.round(config.confidence_score * 100);
+    
+    resultsContent.innerHTML = `
+        <div class="result-card">
+            <h4><i class="fas fa-bullseye"></i> Recommended Method</h4>
+            <span class="method-badge ${methodClass}">${config.recommended_method}</span>
+            
+            <div class="mt-3">
+                <strong>Confidence Score: ${confidencePercent}%</strong>
+                <div class="confidence-bar">
+                    <div class="confidence-fill" style="width: ${confidencePercent}%"></div>
+                </div>
+            </div>
+            
+            <div class="mt-3">
+                <strong>Reasoning:</strong>
+                <ul>
+                    ${config.reasoning.map(reason => `<li>${reason}</li>`).join('')}
+                </ul>
+            </div>
+        </div>
+        
+        ${analysis.rss_feeds.length > 0 ? `
+        <div class="result-card">
+            <h4><i class="fas fa-rss"></i> RSS Feeds Found (${analysis.rss_feeds.length})</h4>
+            ${analysis.rss_feeds.map(feed => `
+                <div>• <strong>${feed.title}</strong>: <code>${feed.url}</code></div>
+            `).join('')}
+        </div>
+        ` : ''}
+        
+        ${analysis.api_endpoints.length > 0 ? `
+        <div class="result-card">
+            <h4><i class="fas fa-plug"></i> API Endpoints Found (${analysis.api_endpoints.length})</h4>
+            ${analysis.api_endpoints.map(api => `
+                <div>• <strong>${api.type}</strong>: <code>${api.url}</code></div>
+            `).join('')}
+        </div>
+        ` : ''}
+        
+        ${config.selectors ? `
+        <div class="result-card">
+            <h4><i class="fas fa-code"></i> Generated Selectors</h4>
+            <div><strong>Container:</strong> <div class="selector-code">${config.selectors.container}</div></div>
+            <div><strong>Title:</strong> <div class="selector-code">${Array.isArray(config.selectors.title) ? config.selectors.title.join(', ') : config.selectors.title}</div></div>
+            <div><strong>Content:</strong> <div class="selector-code">${Array.isArray(config.selectors.content) ? config.selectors.content.join(', ') : config.selectors.content}</div></div>
+            <div><strong>Link:</strong> <div class="selector-code">${config.selectors.link}</div></div>
+        </div>
+        ` : ''}
+        
+        <div class="result-card">
+            <h4><i class="fas fa-chart-bar"></i> Page Analysis</h4>
+            <div>• Total Links: ${analysis.page_analysis.total_links}</div>
+            <div>• Article Links: ${analysis.page_analysis.article_links}</div>
+            <div>• Requires JavaScript: ${analysis.page_analysis.requires_javascript ? 'Yes' : 'No'}</div>
+            <div>• Framework: ${analysis.page_analysis.framework_detected || 'None detected'}</div>
+        </div>
+        
+        <div class="create-source-section">
+            <h4><i class="fas fa-plus-circle"></i> Create News Source</h4>
+            <p>Ready to add this as a news source?</p>
+            <div class="row mb-3">
+                <div class="col-md-8">
+                    <input type="text" id="source-name" class="form-control" placeholder="Enter source name (e.g., Reuters World News)">
+                </div>
+                <div class="col-md-4">
+                    <button onclick="createSource('${analysis.url}')" class="btn btn-success w-100">
+                        <i class="fas fa-plus"></i> Create Source
+                    </button>
+                </div>
+            </div>
+            ${config.recommended_method !== 'web' && config.recommended_method !== 'rss' ? `
+            <div class="force-web-scraping-option">
+                <div class="form-check">
+                    <input type="checkbox" class="form-check-input" id="force-web-scraping">
+                    <label class="form-check-label" for="force-web-scraping">
+                        <i class="fas fa-code"></i> Force Web Scraping (Override ${config.recommended_method.toUpperCase()} detection)
+                    </label>
+                    <div class="form-text text-muted">
+                        <i class="fas fa-info-circle"></i> Use web scraping instead of the detected ${config.recommended_method.toUpperCase()} method to extract more content directly from the page HTML. This can capture additional articles and content that APIs might not provide.
+                    </div>
+                </div>
+            </div>
+            ` : ''}
+        </div>
+    `;
+}
+
+function createSource(url) {
+    const name = document.getElementById('source-name').value;
+    if (!name) {
+        alert('Please enter a name for the source');
+        return;
+    }
+    
+    // Check if force web scraping is enabled
+    const forceWebScraping = document.getElementById('force-web-scraping')?.checked || false;
+    
+    // Get the create button and show loading state
+    const createBtn = document.querySelector('.btn-success');
+    const originalText = createBtn.innerHTML;
+    
+    createBtn.disabled = true;
+    createBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating Source...';
+    
+    fetch('/api/create-source-from-analysis/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+        },
+        body: JSON.stringify({ 
+            url: url, 
+            name: name,
+            force_web_scraping: forceWebScraping
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showSuccess(`Source "${name}" created successfully! You can now use it for scraping.`);
+            // Scroll to top to show success message
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        } else {
+            showError(data.error || 'Failed to create source');
+        }
+    })
+    .catch(error => {
+        showError('Network error: ' + error.message);
+    })
+    .finally(() => {
+        // Restore button state
+        createBtn.disabled = false;
+        createBtn.innerHTML = originalText;
+    });
+}
+
+function showError(message) {
+    const resultsSection = document.getElementById('results-section');
+    const resultsContent = document.getElementById('results-content');
+    
+    resultsContent.innerHTML = `<div class="error-message"><i class="fas fa-exclamation-circle"></i> ${message}</div>`;
+    resultsSection.style.display = 'block';
+}
+
+function showSuccess(message) {
+    const resultsContent = document.getElementById('results-content');
+    const successDiv = document.createElement('div');
+    successDiv.className = 'success-message';
+    successDiv.innerHTML = `<i class="fas fa-check-circle"></i> ${message}`;
+    resultsContent.insertBefore(successDiv, resultsContent.firstChild);
+}
+</script>
+{% endblock %}

@@ -32,6 +32,11 @@
                             </a>
                         </li>
                         <li class="nav-item">
+                            <a class="nav-link {% if request.resolver_match.url_name == 'analyze_source' %}active{% endif %}" href="/analyze-source/">
+                                <i class="fas fa-robot me-1"></i> Analyze Source
+                            </a>
+                        </li>
+                        <li class="nav-item">
                             <a class="nav-link {% if request.resolver_match.url_name == 'close_trade' %}active{% endif %}" href="/close-trade/">
                                 <i class="fas fa-times-circle me-1"></i> Open Trades
                             </a>

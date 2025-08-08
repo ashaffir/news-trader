@@ -39,7 +39,7 @@ DB_PORT=5432
 
 ### Access Task Management:
 1. **Start server**: `python manage.py runserver`
-2. **Go to admin**: `http://localhost:8000/admin/`
+2. **Go to admin**: `http://localhost:8800/admin/`
 3. **Task management**: `/admin/django_celery_beat/periodictask/`
 
 ### Available Tasks (now admin-controlled):

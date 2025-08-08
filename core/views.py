@@ -17,13 +17,17 @@ from django.utils import timezone
 from datetime import datetime, timedelta
 import requests
 from django.views.decorators.csrf import csrf_exempt
+from django.contrib.auth.decorators import login_required
+from django.contrib.admin.views.decorators import staff_member_required
 from django.core.paginator import Paginator
+from .source_llm import analyze_news_source_with_llm, build_source_kwargs_from_llm_analysis
 from django.views.decorators.http import require_POST
 from django.contrib import messages
 
 logger = logging.getLogger(__name__)
 
 
+@staff_member_required
 def dashboard_view(request):
     logger.info("Dashboard view accessed.")
     # Get bot status for the dashboard
@@ -34,7 +38,7 @@ def dashboard_view(request):
     return render(request, "core/dashboard.html", context)
 
 
-@csrf_exempt
+@staff_member_required
 def trigger_scrape_ajax(request):
     """AJAX endpoint to trigger scraping for a specific source."""
     try:
@@ -73,7 +77,7 @@ def trigger_scrape_ajax(request):
         }, status=500)
 
 
-@csrf_exempt
+@staff_member_required
 @require_POST
 def trigger_analysis_ajax(request):
     """AJAX endpoint to trigger analysis for a specific post."""
@@ -120,7 +124,7 @@ def trigger_analysis_ajax(request):
         }, status=500)
 
 
-@csrf_exempt
+@staff_member_required
 def get_post_analysis_ajax(request, post_id):
     """AJAX endpoint to get analysis data for a specific post."""
     try:
@@ -174,7 +178,7 @@ def get_post_analysis_ajax(request, post_id):
         }, status=500)
 
 
-@csrf_exempt
+@staff_member_required
 @require_POST
 def toggle_bot_status(request):
     """Toggle the bot enabled/disabled status."""
@@ -217,6 +221,7 @@ def toggle_bot_status(request):
         return JsonResponse({"success": False, "error": str(e)}, status=500)
 
 
+@staff_member_required
 def system_status_api(request):
     """API endpoint to provide comprehensive system status for the dashboard."""
     try:
@@ -571,6 +576,7 @@ def get_avg_confidence():
     return 0
 
 
+@staff_member_required
 def check_single_connection(request, service):
     """API endpoint to check connection to a specific service."""
     try:
@@ -656,6 +662,7 @@ def sync_alpaca_positions_to_database(alpaca_positions):
             logger.info(f"Marked {db_trade.symbol} as closed (no longer in Alpaca)")
 
 
+@staff_member_required
 def manual_close_trade_view(request):
     logger.info("Manual close trade view accessed.")
 
@@ -1238,6 +1245,7 @@ def manual_close_trade_view(request):
     )
 
 
+@staff_member_required
 def test_page_view(request):
     logger.info("Test page accessed.")
     if request.method == "POST":
@@ -1352,6 +1360,7 @@ def test_page_view(request):
     )
 
 
+@staff_member_required
 def recent_activities_api(request):
     """API endpoint to get recent activity logs from database."""
     try:
@@ -1403,6 +1412,7 @@ def recent_activities_api(request):
 # OLD close_trade_view function removed - now using unified manual_close_trade_view
 
 
+@staff_member_required
 def close_trade_api(request):
     """API endpoint for closing trades."""
     if request.method == 'POST':
@@ -1454,6 +1464,7 @@ def close_trade_api(request):
     return JsonResponse({'error': 'Method not allowed'}, status=405)
 
 
+@staff_member_required
 def cancel_trade_api(request):
     """API endpoint for canceling pending trades."""
     if request.method == 'POST':
@@ -1513,6 +1524,7 @@ def cancel_trade_api(request):
     return JsonResponse({'error': 'Method not allowed'}, status=405)
 
 
+@staff_member_required
 def trade_status_api(request, trade_id):
     """API endpoint for refreshing trade status from Alpaca."""
     if request.method == 'GET':
@@ -1580,7 +1592,7 @@ def trade_status_api(request, trade_id):
     return JsonResponse({'error': 'Method not allowed'}, status=405)
 
 
-@csrf_exempt
+@staff_member_required
 def trigger_scrape_api(request):
     """CSRF-exempt API endpoint for triggering scraping."""
     if request.method == 'POST':
@@ -1641,6 +1653,7 @@ def trigger_scrape_api(request):
     return JsonResponse({'error': 'Method not allowed'}, status=405)
 
 
+@staff_member_required
 def public_posts_api(request):
     """Public API endpoint for posts (no auth required)."""
     try:
@@ -1686,4 +1699,83 @@ def public_posts_api(request):
         
     except Exception as e:
         return JsonResponse({"error": str(e)}, status=500)
+
+
+@staff_member_required
+def analyze_source_page(request):
+    """
+    Render the source analysis page
+    """
+    return render(request, 'core/analyze_source.html')
+
+
+@staff_member_required
+@require_POST
+def analyze_source_api(request):
+    """
+    API endpoint to analyze a news source
+    """
+    try:
+        data = json.loads(request.body)
+        url = data.get('url')
+        
+        if not url:
+            return JsonResponse({"success": False, "error": "URL is required"})
+        
+        # LLM-based analysis
+        analysis = analyze_news_source_with_llm(url)
+        
+        return JsonResponse({
+            "success": True,
+            "analysis": analysis
+        })
+        
+    except Exception as e:
+        logger.error(f"Error analyzing source {url}: {e}")
+        return JsonResponse({
+            "success": False,
+            "error": str(e)
+        })
+
+
+@staff_member_required  
+@require_POST
+def create_source_from_analysis_api(request):
+    """
+    API endpoint to create a source from analysis results
+    """
+    try:
+        data = json.loads(request.body)
+        url = data.get('url')
+        name = data.get('name')
+        # Keep param for compatibility, but we rely on LLM method
+        force_web_scraping = data.get('force_web_scraping', False)
+        
+        if not url or not name:
+            return JsonResponse({"success": False, "error": "URL and name are required"})
+        
+        # Re-run LLM analysis to get fresh results
+        analysis = analyze_news_source_with_llm(url)
+        source_data = build_source_kwargs_from_llm_analysis(url, name, analysis)
+        if force_web_scraping:
+            # Explicitly override
+            source_data['scraping_method'] = 'web'
+            source_data['description'] = source_data.get('description', 'LLM auto-configured') + " (Forced web scraping)"
+        
+        # Create the source
+        source = Source.objects.create(**source_data)
+        
+        return JsonResponse({
+            "success": True,
+            "source_id": source.id,
+            "source_name": source.name,
+            "message": f"Source '{name}' created successfully!"
+        })
+        
+    except Exception as e:
+        logger.error(f"Error creating source from analysis: {e}")
+        return JsonResponse({
+            "success": False,
+            "error": str(e)
+        })
 

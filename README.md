@@ -40,9 +40,9 @@ This Django-based system monitors multiple news sources, analyzes financial rele
 
 | Service      | URL                              | Username | Password |
 | ------------ | -------------------------------- | -------- | -------- |
-| Dashboard    | http://localhost:8000/dashboard/ | -        | -        |
-| Django Admin | http://localhost:8000/admin/     | `admin`  | `admin`  |
-| API          | http://localhost:8000/api/       | -        | -        |
+| Dashboard    | http://localhost:8800/dashboard/ | -        | -        |
+| Django Admin | http://localhost:8800/admin/     | `admin`  | `admin`  |
+| API          | http://localhost:8800/api/       | -        | -        |
 
 ### 1. Environment Setup
 
@@ -76,9 +76,9 @@ docker-compose exec web python manage.py setup_example_sources
 
 ### 3. Access the System
 
-- **Dashboard**: http://localhost:8000/dashboard/
-- **Admin Panel**: http://localhost:8000/admin/ (admin/admin)
-- **API**: http://localhost:8000/api/
+- **Dashboard**: http://localhost:8800/dashboard/
+- **Admin Panel**: http://localhost:8800/admin/ (admin/admin)
+- **API**: http://localhost:8800/api/
 
 #### Default Admin Credentials
 - **Username**: `admin`
@@ -194,8 +194,8 @@ chmod +x dev_manager.sh
 ./dev_manager.sh start
 
 # Access the system
-# Dashboard: http://localhost:8000/dashboard/
-# Admin: http://localhost:8000/admin/ (admin/admin)
+# Dashboard: http://localhost:8800/dashboard/
+# Admin: http://localhost:8800/admin/ (admin/admin)
 ```
 
 #### Manual Setup
@@ -241,16 +241,16 @@ coverage report
 
 ```bash
 # Get trading summary
-curl http://localhost:8000/api/trades/summary/
+curl http://localhost:8800/api/trades/summary/
 
 # Trigger manual scraping
-curl -X POST http://localhost:8000/api/sources/1/trigger_scrape/
+curl -X POST http://localhost:8800/api/sources/1/trigger_scrape/
 
 # Close a trade manually
-curl -X POST http://localhost:8000/api/trades/123/close/
+curl -X POST http://localhost:8800/api/trades/123/close/
 
 # Get recent analyses
-curl http://localhost:8000/api/analyses/?direction=buy&min_confidence=0.8
+curl http://localhost:8800/api/analyses/?direction=buy&min_confidence=0.8
 ```
 
 ### Live Updates

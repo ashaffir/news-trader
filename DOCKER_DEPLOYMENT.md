@@ -7,7 +7,7 @@ This News Trader application is well-configured for Docker deployment on any mac
 ## ✅ What's Already Good
 
 ### 1. **Complete Service Architecture**
-- **Web Service**: Django application on port 8000
+- **Web Service**: Django application on port 8800
 - **Database**: PostgreSQL 15 with persistent data
 - **Cache/Queue**: Redis for Celery tasks
 - **Workers**: Celery worker and beat scheduler
@@ -114,9 +114,9 @@ docker-compose exec web python manage.py collectstatic --noinput
 
 | Service | URL | Purpose |
 |---------|-----|---------|
-| Web Dashboard | http://localhost:8000/dashboard/ | Main application |
-| Django Admin | http://localhost:8000/admin/ | Configuration |
-| Health Check | http://localhost:8000/health/ | Service status |
+| Web Dashboard | http://localhost:8800/dashboard/ | Main application |
+| Django Admin | http://localhost:8800/admin/ | Configuration |
+| Health Check | http://localhost:8800/health/ | Service status |
 | Flower Monitor | http://localhost:5555 | Celery monitoring (optional) |
 
 ## 📊 Management Scripts
@@ -242,7 +242,7 @@ The setup script now:
    docker-compose ps
    
    # Test health endpoint directly
-   curl http://localhost:8000/health/
+   curl http://localhost:8800/health/
    
    # If still failing, clean restart:
    ./docker_dev.sh clean && ./docker_dev.sh setup

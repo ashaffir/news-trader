@@ -61,3 +61,19 @@ CELERY_TASK_EAGER_PROPAGATES = True
 SECRET_KEY = "test-secret-key"
 DEBUG = True
 ALLOWED_HOSTS = ["*"]
+
+# Add DRF authtoken for tests that use Token
+if "rest_framework.authtoken" not in INSTALLED_APPS:
+    INSTALLED_APPS.append("rest_framework.authtoken")
+# Ensure DRF uses TokenAuthentication in tests
+REST_FRAMEWORK = {
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+    ],
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.TokenAuthentication',
+        'rest_framework.authentication.BasicAuthentication',
+    ],
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 50,
+}

@@ -79,9 +79,9 @@ This guide documents the **completely fixed** local development setup that solve
 
 After running `./dev_manager.sh start`:
 
-- **Dashboard**: http://localhost:8000/
-- **Test Page**: http://localhost:8000/test-page/ 
-- **Admin**: http://localhost:8000/admin/
+- **Dashboard**: http://localhost:8800/
+- **Test Page**: http://localhost:8800/test-page/ 
+- **Admin**: http://localhost:8800/admin/
 
 ## No More Issues! 🎉
 - ✅ **Code changes automatically reload**

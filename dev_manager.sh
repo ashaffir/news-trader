@@ -90,7 +90,7 @@ start_services() {
     # Start Django development server with hot reloading
     if ! is_running "django"; then
         print_status "Starting Django development server with hot reloading..."
-        DJANGO_SETTINGS_MODULE=news_trader.settings python manage.py runserver 0.0.0.0:8000 > "$LOGS_DIR/django.log" 2>&1 &
+        DJANGO_SETTINGS_MODULE=news_trader.settings python manage.py runserver 0.0.0.0:8800 > "$LOGS_DIR/django.log" 2>&1 &
         echo $! > "$PIDS_DIR/django.pid"
         print_success "Django development server started (PID: $!)"
     else
@@ -119,9 +119,9 @@ start_services() {
     
     sleep 3
     print_success "All services started with hot reloading!"
-    print_success "🌐 Django server: http://localhost:8000"
-    print_success "⚙️  Admin: http://localhost:8000/admin/"
-    print_success "🧪 Test page: http://localhost:8000/test-page/"
+    print_success "🌐 Django server: http://localhost:8800"
+    print_success "⚙️  Admin: http://localhost:8800/admin/"
+    print_success "🧪 Test page: http://localhost:8800/test-page/"
     print_status "Code changes will automatically reload!"
 }
 
@@ -226,9 +226,9 @@ except Exception as e:
     echo
     if [ $running_count -eq ${#services[@]} ]; then
         echo -e "  ${GREEN}🎉 All services running with hot reloading!${NC}"
-        echo -e "  ${BLUE}🌐 Django: http://localhost:8000${NC}"
-        echo -e "  ${BLUE}⚙️  Admin: http://localhost:8000/admin/${NC}"
-        echo -e "  ${BLUE}🧪 Test: http://localhost:8000/test-page/${NC}"
+        echo -e "  ${BLUE}🌐 Django: http://localhost:8800${NC}"
+        echo -e "  ${BLUE}⚙️  Admin: http://localhost:8800/admin/${NC}"
+        echo -e "  ${BLUE}🧪 Test: http://localhost:8800/test-page/${NC}"
     elif [ $running_count -gt 0 ]; then
         echo -e "  ${YELLOW}⚠️  $running_count of ${#services[@]} services running${NC}"
     else

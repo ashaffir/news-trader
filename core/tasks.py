@@ -14,6 +14,125 @@ import hashlib
 from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
+def _get_recent_hours_default() -> int:
+    try:
+        return int(os.getenv("SCRAPE_RECENT_HOURS", "24"))
+    except Exception:
+        return 24
+
+
+def _looks_like_article_url(url: str) -> bool:
+    """Heuristic to detect article-like URLs.
+
+    Works across many sites and reduces noise from nav/about/contact/tag pages.
+    """
+    if not url:
+        return False
+    u = url.lower()
+    positives = [
+        "/20",  # year-based path e.g., /2025/
+        "/news/",
+        "/article/",
+        "/story/",
+        "/reports/",
+        "/business/",
+    ]
+    negatives = [
+        "#",
+        "javascript:",
+        "/tag/",
+        "/tags/",
+        "/category/",
+        "/author/",
+        "/about",
+        "/contact",
+        "/subscribe",
+        ".pdf",
+        ".jpg",
+        ".png",
+        ".gif",
+        "/privacy",
+        "/terms",
+    ]
+    if any(n in u for n in negatives):
+        return False
+    return any(p in u for p in positives)
+
+
+
+def _normalize_content_for_comparison(content):
+    """Normalize content for duplicate detection"""
+    # Extract title (first line) and normalize it
+    lines = content.strip().split('\n')
+    title = lines[0] if lines else ""
+    
+    # Remove common prefixes/suffixes and normalize whitespace
+    title = title.strip()
+    
+    # Remove common news site patterns
+    patterns_to_remove = [
+        "Live updates", "Breaking:", "BREAKING:", "UPDATE:", "EXCLUSIVE:",
+        "- CNN", "- BBC", "- Reuters", "- AP", "| Reuters", "| AP News",
+        "- CNBC", "| CNBC", "| NBC News"
+    ]
+    
+    for pattern in patterns_to_remove:
+        title = title.replace(pattern, "").strip()
+    
+    # Remove extra whitespace and convert to lowercase for comparison
+    title = ' '.join(title.split()).lower()
+    
+    return title
+
+
+def _is_duplicate_content(content, source, similarity_threshold=0.85):
+    """
+    Check if content is a duplicate based on title similarity and URL
+    
+    Args:
+        content: The article content to check
+        source: Source object
+        similarity_threshold: Minimum similarity to consider as duplicate (0.0-1.0)
+    
+    Returns:
+        True if duplicate found, False otherwise
+    """
+    normalized_new = _normalize_content_for_comparison(content)
+    
+    if not normalized_new:
+        return False
+    
+    # Check against recent posts from the same source (last 7 days)
+    recent_cutoff = timezone.now() - timedelta(days=7)
+    recent_posts = Post.objects.filter(
+        source=source,
+        created_at__gte=recent_cutoff
+    ).values_list('content', flat=True)
+    
+    for existing_content in recent_posts:
+        normalized_existing = _normalize_content_for_comparison(existing_content)
+        
+        if not normalized_existing:
+            continue
+            
+        # Simple similarity check using set intersection
+        words_new = set(normalized_new.split())
+        words_existing = set(normalized_existing.split())
+        
+        if not words_new or not words_existing:
+            continue
+        
+        # Calculate Jaccard similarity
+        intersection = words_new.intersection(words_existing)
+        union = words_new.union(words_existing)
+        
+        similarity = len(intersection) / len(union) if union else 0
+        
+        if similarity >= similarity_threshold:
+            logger.info(f"Duplicate content detected (similarity: {similarity:.2f}): {normalized_new[:50]}...")
+            return True
+    
+    return False
 
 
 def format_activity_message(message_type, data):
@@ -82,7 +201,8 @@ def _create_simulated_post(source, error_message, method):
             "simulated": True,
         },
     )
-    analyze_post.delay(post.id)
+    # Do not queue analysis for simulated posts to avoid wasted jobs
+    # analyze_post will skip simulated posts anyway
 
 
 def _scrape_rss_feed(source):
@@ -103,11 +223,11 @@ def _scrape_rss_feed(source):
             logger.warning(f"No entries found in RSS feed: {source.url}")
             return
             
-        # Get only recent entries (last 24 hours for testing, normally 6 hours for trading)
-        cutoff_time = datetime.now() - timedelta(hours=24)
+        # Get only recent entries (configurable)
+        cutoff_time = datetime.now() - timedelta(hours=_get_recent_hours_default())
         new_posts_count = 0
         
-        for entry in feed.entries[:10]:  # Limit to 10 most recent
+        for entry in feed.entries:  # Process all RSS entries
             try:
                 # Extract entry data
                 title = entry.get('title', 'No title')
@@ -128,8 +248,17 @@ def _scrape_rss_feed(source):
                 # Create content from title and summary
                 content = f"{title}\n\n{summary}"
                 
-                # Use link as unique identifier
-                if link and not Post.objects.filter(url=link).exists():
+                # Check for duplicates by URL and content similarity
+                if link:
+                    url_exists = Post.objects.filter(url=link).exists()
+                    content_duplicate = _is_duplicate_content(content, source)
+                    
+                    if url_exists:
+                        logger.debug(f"Skipping RSS post - URL already exists: {link}")
+                        continue
+                    elif content_duplicate:
+                        logger.debug(f"Skipping RSS post - similar content: {title[:50]}...")
+                        continue
                     post = Post.objects.create(
                         source=source,
                         content=content,
@@ -195,6 +324,18 @@ def _get_site_specific_selectors(url):
             'title': ['h3', 'h2'],
             'content': ['.WSJTheme--summary', 'p'],
             'link': 'a'
+        },
+        'cnbc.com': {
+            'container': 'a[href*="cnbc.com/202"], [data-module*="LatestNews"] a, .trending-item, [class*="Card"]:has(a[href*="/202"])',
+            'title': ['span', 'h3', 'h2', '.Card-title'],
+            'content': ['span', 'p'],
+            'link': 'a'
+        },
+        'bing.com': {
+            'container': '.news-card, .news-item, .newsitem, article[data-module="NewsCardCompact"], .caption, [class*="news"]',
+            'title': ['.title', '.caption .title', 'h3', 'h4', 'a[aria-label]', '[aria-label]'],
+            'content': ['.snippet', '.description', '.excerpt', 'p'],
+            'link': 'a'
         }
     }
     
@@ -206,6 +347,12 @@ def _get_site_specific_selectors(url):
 
 def _scrape_with_browser(source):
     """Use headless browser for dynamic content scraping"""
+    # Allow enabling/disabling Selenium-based scraping by env flag
+    # Default: disabled in production unless explicitly enabled
+    # Default ON; set ENABLE_SELENIUM_SCRAPING=false to disable
+    selenium_enabled = os.getenv("ENABLE_SELENIUM_SCRAPING", "true").lower() in ("1", "true", "yes", "on")
+    if not selenium_enabled:
+        raise RuntimeError("Selenium scraping disabled. Set ENABLE_SELENIUM_SCRAPING=true to enable.")
     try:
         # Import with explicit error handling for Celery workers
         try:
@@ -227,6 +374,13 @@ def _scrape_with_browser(source):
         # Check for site-specific configuration
         site_config = _get_site_specific_selectors(source.url)
         
+        # If no predefined config, try to use auto-generated config from source
+        if not site_config and source.data_extraction_config:
+            extraction_config = source.data_extraction_config
+            if extraction_config.get('selectors'):
+                site_config = extraction_config['selectors']
+                logger.info(f"Using auto-generated selectors for {source.url}")
+        
         # Set up headless Chrome with Docker-optimized options
         chrome_options = Options()
         chrome_options.add_argument("--headless")
@@ -235,10 +389,11 @@ def _scrape_with_browser(source):
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--disable-extensions")
         chrome_options.add_argument("--disable-plugins")
-        chrome_options.add_argument("--disable-images")  # Faster loading
-        chrome_options.add_argument("--disable-javascript")  # For basic content extraction
+        chrome_options.add_argument("--disable-images")  # Faster loading  
+        chrome_options.add_argument("--disable-blink-features=AutomationControlled")  # Hide automation
+        # Note: JavaScript enabled for dynamic content loading
         chrome_options.add_argument("--window-size=1920,1080")
-        chrome_options.add_argument("--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+        chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         
         # Docker-specific Chrome binary detection
         import os
@@ -282,9 +437,13 @@ def _scrape_with_browser(source):
             driver.get(source.url)
             
             # Wait for page to load
-            WebDriverWait(driver, 10).until(
+            WebDriverWait(driver, 15).until(
                 EC.presence_of_element_located((By.TAG_NAME, "body"))
             )
+            
+            # Additional wait for dynamic content to load
+            import time
+            time.sleep(5)  # Allow JavaScript to load dynamic content
             
             # Extract article content based on site-specific or common patterns
             articles = []
@@ -320,8 +479,37 @@ def _scrape_with_browser(source):
                 if elements:
                     logger.info(f"Found {len(elements)} articles using selector: {selector}")
                     
-                    for i, element in enumerate(elements[:5]):  # Limit to 5 articles
+                    for i, element in enumerate(elements):  # Process all found articles
                         try:
+                            # Special-case: when selector returns anchor elements as containers
+                            element_tag = element.tag_name.lower()
+                            if element_tag == 'a':
+                                link = element.get_attribute('href')
+                                title = (element.text or '').strip()
+                                if not title:
+                                    # Fallback to aria-label or title attribute
+                                    title = (element.get_attribute('aria-label') or element.get_attribute('title') or '').strip()
+                                if link and title and _looks_like_article_url(link):
+                                    # Create content from title only in this case
+                                    full_content = title
+                                    url_exists = Post.objects.filter(url=link).exists()
+                                    content_duplicate = _is_duplicate_content(full_content, source)
+                                    if url_exists or content_duplicate:
+                                        continue
+                                    post = Post.objects.create(source=source, content=full_content, url=link)
+                                    logger.info(f"New browser post from {source.name}: {title[:50]}...")
+                                    send_dashboard_update(
+                                        "new_post",
+                                        {
+                                            "source": source.name,
+                                            "content_preview": full_content[:100] + "...",
+                                            "url": link,
+                                            "post_id": post.id,
+                                        },
+                                    )
+                                    analyze_post.delay(post.id)
+                                    continue  # Move to next element
+
                             # Use site-specific selectors if available
                             if site_config:
                                 title_selectors = site_config['title']
@@ -363,13 +551,46 @@ def _scrape_with_browser(source):
                             
                             # Get link using site-specific or generic selector
                             link_selector = site_config['link'] if site_config else 'a'
-                            link_elem = element.find_element(By.CSS_SELECTOR, link_selector)
-                            link = link_elem.get_attribute('href')
+                            try:
+                                link_elem = element.find_element(By.CSS_SELECTOR, link_selector)
+                                link = link_elem.get_attribute('href')
+                                if not link:
+                                    # Check parent anchor
+                                    try:
+                                        parent_a = link_elem.find_element(By.XPATH, './ancestor::a[1]')
+                                        link = parent_a.get_attribute('href')
+                                    except Exception:
+                                        pass
+                            except Exception:
+                                # Fallback: try to extract href from the element itself
+                                link = element.get_attribute('href')
+                            # Validate link shape
+                            if link and not _looks_like_article_url(link):
+                                continue
                             
-                            if title and content and link:
-                                full_content = f"{title}\n\n{content}"
+                            # Ensure URL is absolute
+                            if link and link.startswith('/'):
+                                from urllib.parse import urljoin
+                                link = urljoin(source.url, link)
+                            
+                            # Require at least title and link
+                            if title and link:
+                                # Create content from title and any additional content found
+                                if content and content != title:
+                                    full_content = f"{title}\n\n{content}"
+                                else:
+                                    full_content = title
                                 
-                                if not Post.objects.filter(url=link).exists():
+                                url_exists = Post.objects.filter(url=link).exists()
+                                content_duplicate = _is_duplicate_content(full_content, source)
+                                
+                                if url_exists:
+                                    logger.debug(f"Skipping browser post - URL already exists: {link}")
+                                    continue
+                                elif content_duplicate:
+                                    logger.debug(f"Skipping browser post - similar content: {title[:50]}...")
+                                    continue
+                                else:
                                     post = Post.objects.create(
                                         source=source,
                                         content=full_content,
@@ -387,9 +608,11 @@ def _scrape_with_browser(source):
                                         },
                                     )
                                     analyze_post.delay(post.id)
+                            else:
+                                logger.info(f"Skipping article {i}: missing title ({bool(title)}) or link ({bool(link)})")
                                     
                         except Exception as e:
-                            logger.debug(f"Error extracting article {i}: {e}")
+                            logger.info(f"Error extracting article {i}: {e}")
                             continue
                     break  # Stop after finding articles with first working selector
                     
@@ -401,7 +624,9 @@ def _scrape_with_browser(source):
         send_dashboard_update(
             "scraper_error", {"source": source.name, "error": str(e), "method": "browser"}
         )
-        _create_simulated_post(source, str(e), "browser")
+        # Do not create simulated posts for browser failures when disabled
+        if selenium_enabled:
+            _create_simulated_post(source, str(e), "browser")
 
 
 def _determine_scraping_method(source):
@@ -466,6 +691,7 @@ def _scrape_api_source(source):
         url_field = config.get('url_field', 'url')
         score_field = config.get('score_field', 'score')
         min_score = config.get('min_score', 0)
+        published_field = config.get('published_field')
         
         # Navigate to the data using response_path
         current_data = data
@@ -482,14 +708,29 @@ def _scrape_api_source(source):
             return
         
         new_posts_count = 0
-        cutoff_time = datetime.now() - timedelta(hours=6)
+        cutoff_time = datetime.now() - timedelta(hours=_get_recent_hours_default())
         
-        for item in current_data[:25]:  # Limit to 25 items
+        for item in current_data:  # Process all API items
             try:
                 # Extract fields using dot notation
                 title = _get_nested_value(item, content_field)
                 url = _get_nested_value(item, url_field)
                 score = _get_nested_value(item, score_field, 0)
+                # Optional published timestamp filtering
+                if published_field:
+                    published_raw = _get_nested_value(item, published_field)
+                    if published_raw:
+                        try:
+                            from dateutil import parser as dtparser
+                            published_dt = dtparser.parse(published_raw)
+                            if published_dt.tzinfo is None:
+                                from datetime import timezone as dt_tz
+                                published_dt = published_dt.replace(tzinfo=dt_tz.utc)
+                            # Compare using naive now for simplicity
+                            if published_dt.replace(tzinfo=None) < cutoff_time:
+                                continue
+                        except Exception:
+                            pass
                 
                 if not title or not url:
                     continue
@@ -504,8 +745,15 @@ def _scrape_api_source(source):
                 elif not url.startswith('http'):
                     continue
                 
-                # Check if post already exists
-                if Post.objects.filter(url=url).exists():
+                # Check if post already exists by URL or content similarity
+                url_exists = Post.objects.filter(url=url).exists()
+                content_duplicate = _is_duplicate_content(title, source)
+                
+                if url_exists:
+                    logger.debug(f"Skipping API post - URL already exists: {url}")
+                    continue
+                elif content_duplicate:
+                    logger.debug(f"Skipping API post - similar content: {title[:50]}...")
                     continue
                 
                 # Create new post
@@ -574,6 +822,20 @@ def _get_nested_value(data, path, default=None):
 
 def _scrape_source(source):
     """Main scraping function that routes to appropriate method"""
+    
+    # Check if source has RSS feed configuration from auto-detection
+    extraction_config = getattr(source, 'data_extraction_config', None) or {}
+    if extraction_config.get('rss_feed') and extraction_config.get('feed_url'):
+        logger.info(f"Using RSS feed from auto-detection: {extraction_config['feed_url']}")
+        # Temporarily override the URL for RSS scraping
+        original_url = source.url
+        source.url = extraction_config['feed_url']
+        try:
+            _scrape_rss_feed(source)
+        finally:
+            source.url = original_url  # Always restore original URL
+        return
+    
     # Check if source is configured for API scraping
     if source.scraping_method == 'api':
         _scrape_api_source(source)
@@ -616,10 +878,7 @@ def is_trading_allowed():
     if not config or not config.trading_enabled:
         return False, "Trading is disabled in configuration"
 
-    if config.market_hours_only:
-        # Add market hours check here if needed
-        # For now, allow trading 24/7 unless specifically configured
-        pass
+    # Market-hours-only constraint removed per requirements
 
     return True, "Trading allowed"
 
@@ -750,6 +1009,19 @@ def analyze_post(post_id, manual_test=False):
 
     post = Post.objects.get(id=post_id)
     
+    # Skip if already analyzed
+    if hasattr(post, "analysis"):
+        logger.info(f"Post {post.id} already has analysis. Skipping LLM call.")
+        send_dashboard_update(
+            "analysis_skipped",
+            {
+                "post_id": post.id,
+                "reason": "Post already analyzed",
+                "post_type": "existing",
+            },
+        )
+        return
+
     # Validate: Skip analysis for simulated/error posts
     if _is_simulated_post(post):
         logger.info(f"Skipping LLM analysis for simulated post {post.id}: {post.url}")
@@ -974,7 +1246,7 @@ def create_new_trade(analysis_id):
             quantity = 1
             current_price = 0.0
 
-        # Submit order to Alpaca
+        # Submit order to Alpaca (market order). Broker-side TP/SL intentionally not used per requirements
         order = api.submit_order(
             symbol=analysis.symbol,
             qty=quantity,
@@ -1326,14 +1598,23 @@ def close_trade_manually(trade_id):
                         ALPACA_API_KEY, ALPACA_SECRET_KEY, base_url=ALPACA_BASE_URL
                     )
 
-                    # Submit opposite order to close position
-                    close_side = "sell" if trade.direction == "buy" else "buy"
+                    # Submit reduce-only close using live quantity to avoid over-closing
+                    try:
+                        position = api.get_position(trade.symbol)
+                        live_qty = abs(float(position.qty))
+                        current_side = "long" if float(position.qty) > 0 else "short"
+                        close_side = "sell" if current_side == "long" else "buy"
+                    except Exception:
+                        live_qty = trade.quantity
+                        close_side = "sell" if trade.direction == "buy" else "buy"
+
                     close_order = api.submit_order(
                         symbol=trade.symbol,
-                        qty=trade.quantity,
+                        qty=live_qty,
                         side=close_side,
                         type="market",
                         time_in_force="gtc",
+                        reduce_only=True
                     )
 
                     # Get current price for exit price

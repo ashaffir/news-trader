@@ -7,6 +7,8 @@ from rest_framework.test import APITestCase
 from rest_framework.authtoken.models import Token
 from core.models import Source, Post, Analysis, Trade, TradingConfig, ApiResponse
 from core.tasks import analyze_post, execute_trade, scrape_posts
+from unittest.mock import patch, MagicMock
+from core.source_llm import analyze_news_source_with_llm, build_source_kwargs_from_llm_analysis
 import json
 
 
@@ -333,6 +335,51 @@ class AdminTests(TestCase):
         self.assertContains(response, "Test Config")
 
 
+class SourceLLMTests(TestCase):
+    @patch("core.source_llm.openai.OpenAI")
+    @patch("core.source_llm.requests.get")
+    @patch("core.source_llm.os.getenv")
+    def test_analyze_news_source_with_llm_and_build_kwargs(self, mock_getenv, mock_requests_get, mock_openai):
+        mock_getenv.side_effect = lambda key, default=None: (
+            "fake-key" if key == "OPENAI_API_KEY" else default
+        )
+
+        mock_requests_get.return_value.status_code = 200
+        mock_requests_get.return_value.text = "<html><head><link rel=\"alternate\" type=\"application/rss+xml\" href=\"/rss.xml\"></head><body>News</body></html>"
+
+        mock_resp = MagicMock()
+        mock_resp.choices[0].message.content = json.dumps({
+            "recommended_method": "api",
+            "confidence_score": 0.9,
+            "reasoning": ["API available"],
+            "api": {
+                "endpoint": "https://example.com/api/news",
+                "method": "GET",
+                "response_path": "articles",
+                "content_field": "title",
+                "url_field": "url",
+                "min_score": 0
+            },
+            "selectors": {
+                "container": ".card",
+                "title": ["h3"],
+                "content": ["p"],
+                "link": "a"
+            }
+        })
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = mock_resp
+        mock_openai.return_value = mock_client
+
+        url = "https://example.com/news"
+        analysis = analyze_news_source_with_llm(url)
+        self.assertIn("recommended_config", analysis)
+        self.assertEqual(analysis["recommended_config"]["recommended_method"], "api")
+
+        kwargs = build_source_kwargs_from_llm_analysis(url, "Example News", analysis)
+        self.assertEqual(kwargs["scraping_method"], "api")
+        self.assertIn("data_extraction_config", kwargs)
+
 class IntegrationTests(TestCase):
     """Test integration between components."""
 
@@ -413,6 +460,9 @@ class DashboardTests(TestCase):
 
     def setUp(self):
         self.client = Client()
+        # Staff-only dashboard now requires login
+        self.user = User.objects.create_user(username="staff", password="staffpass", is_staff=True)
+        self.client.login(username="staff", password="staffpass")
 
     def test_dashboard_access(self):
         """Test dashboard page access."""

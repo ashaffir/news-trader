@@ -98,8 +98,8 @@ show_docker_status() {
     echo "=================="
     
     # Check web service health
-    if check_service_health "Web App" "http://localhost:8000/health/" 3; then
-        echo -e "  ${GREEN}✓${NC} Web App (http://localhost:8000)"
+    if check_service_health "Web App" "http://localhost:8800/health/" 3; then
+        echo -e "  ${GREEN}✓${NC} Web App (http://localhost:8800)"
     else
         echo -e "  ${RED}✗${NC} Web App (not responding)"
     fi
@@ -130,8 +130,8 @@ show_docker_status() {
     echo
     if [ $running_count -eq ${#services[@]} ]; then
         echo -e "  ${GREEN}🎉 All core services running!${NC}"
-        echo -e "  ${BLUE}🌐 Web App: http://localhost:8000${NC}"
-        echo -e "  ${BLUE}⚙️  Admin: http://localhost:8000/admin/${NC}"
+        echo -e "  ${BLUE}🌐 Web App: http://localhost:8800${NC}"
+        echo -e "  ${BLUE}⚙️  Admin: http://localhost:8800/admin/${NC}"
         echo -e "  ${BLUE}🌸 Flower: http://localhost:5555${NC} (if started)"
     elif [ $running_count -gt 0 ]; then
         echo -e "  ${YELLOW}⚠️  $running_count of ${#services[@]} core services running${NC}"
@@ -259,12 +259,12 @@ docker_setup() {
     print_status "🔍 Performing final health check..."
     sleep 5
     
-    if curl -sf http://localhost:8000/health/ >/dev/null 2>&1; then
+    if curl -sf http://localhost:8800/health/ >/dev/null 2>&1; then
         print_success "🎉 Setup completed successfully!"
         echo ""
-        print_success "🌐 Web App: http://localhost:8000/dashboard/"
-        print_success "⚙️  Admin Panel: http://localhost:8000/admin/"
-        print_success "❤️  Health Check: http://localhost:8000/health/"
+        print_success "🌐 Web App: http://localhost:8800/dashboard/"
+        print_success "⚙️  Admin Panel: http://localhost:8800/admin/"
+        print_success "❤️  Health Check: http://localhost:8800/health/"
         print_success "🌸 Flower Monitor: http://localhost:5555 (use monitor option)"
         echo ""
         print_status "💡 Your News Trader is ready for testing!"
