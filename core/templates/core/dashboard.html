@@ -737,8 +737,11 @@
                     document.getElementById('last-analysis').textContent = 'Recently';
 
                     document.getElementById('open-positions').textContent = data.statistics.open_trades || 0;
-                    document.getElementById('total-pnl').textContent = '$' + (data.performance.total_pnl_24h || 0).toFixed(2);
-                    document.getElementById('day-pnl').textContent = '$' + (data.performance.day_pnl || 0).toFixed(2);
+                    // Display total P&L and day P&L from API; coerce to numbers safely
+                    const totalPnlVal = Number(data.performance.total_pnl_24h || data.performance.total_pnl || 0);
+                    const dayPnlVal = Number(data.performance.day_pnl || 0);
+                    document.getElementById('total-pnl').textContent = '$' + totalPnlVal.toFixed(2);
+                    document.getElementById('day-pnl').textContent = '$' + dayPnlVal.toFixed(2);
                     document.getElementById('account-value').textContent = '$' + (data.performance.account_value || 10000).toLocaleString();
 
                     // Update bot status

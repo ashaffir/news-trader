@@ -282,12 +282,11 @@ def system_status_api(request):
 
         performance = {
             "win_rate": round(win_rate, 1),
-            "total_pnl_24h": round(alpaca_data["total_pnl"], 2),  # Real Alpaca P&L
-            "day_pnl": round(alpaca_data["day_pnl"], 2),  # Real day P&L
+            # Keep existing field name used by the frontend (total_pnl_24h) but populate from live total_pnl
+            "total_pnl_24h": round(alpaca_data.get("total_pnl", 0.0), 2),
+            "day_pnl": round(alpaca_data.get("day_pnl", 0.0), 2),
             "avg_confidence": get_avg_confidence(),
-            "account_value": round(
-                alpaca_data["account_value"], 2
-            ),  # Real account value
+            "account_value": round(alpaca_data.get("account_value", 0.0), 2),
             "buying_power": round(alpaca_data.get("buying_power", 0), 2),
             "alpaca_positions": alpaca_data.get("positions", []),
         }
@@ -492,27 +491,39 @@ def get_alpaca_trading_data():
             api_key, secret_key, base_url=base_url
         )
 
-        # Get account info
+        # Get account info and open positions from Alpaca
         account = trading_client.get_account()
-
-        # Get positions
         positions = trading_client.list_positions()
 
-        # Calculate metrics
+        # Calculate metrics robustly against API version differences
         open_positions = len(positions)
-        account_value = (
-            float(account.portfolio_value) if account.portfolio_value else 10000
+
+        # Prefer equity when available; fallback to portfolio_value
+        equity_value = (
+            float(getattr(account, "equity", 0)) if getattr(account, "equity", None) else None
         )
-        total_pnl = (
-            float(account.total_profit_loss)
-            if hasattr(account, "total_profit_loss") and account.total_profit_loss
-            else 0.0
+        portfolio_value = (
+            float(getattr(account, "portfolio_value", 0)) if getattr(account, "portfolio_value", None) else None
         )
-        day_pnl = (
-            float(account.day_profit_loss)
-            if hasattr(account, "day_profit_loss") and account.day_profit_loss
-            else 0.0
+        account_value = equity_value if equity_value is not None else (portfolio_value if portfolio_value is not None else 10000)
+
+        # Day P&L: difference between equity and last_equity when available
+        last_equity_val = (
+            float(getattr(account, "last_equity", 0)) if getattr(account, "last_equity", None) else None
         )
+        if equity_value is not None and last_equity_val is not None:
+            day_pnl = equity_value - last_equity_val
+        else:
+            # Fallback to 0 if account doesn't expose intraday equity delta
+            day_pnl = 0.0
+
+        # Total P&L: sum of unrealized P&L across open positions (database realized P&L is handled elsewhere)
+        try:
+            total_pnl = sum(
+                float(getattr(pos, "unrealized_pl", 0) or 0.0) for pos in positions
+            )
+        except Exception:
+            total_pnl = 0.0
 
         return {
             "open_positions": open_positions,
