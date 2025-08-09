@@ -1,0 +1,229 @@
+/* Dashboard styles extracted from template and refined for readability */
+
+:root {
+  --nt-primary: #667eea;
+  --nt-secondary: #764ba2;
+  --nt-success: #28a745;
+  --nt-danger: #dc3545;
+  --nt-warning: #ffc107;
+  --nt-info: #17a2b8;
+  --nt-muted: #6c757d;
+  --nt-bg: #f8f9fa;
+}
+
+/* Layout spacing */
+.nt-section {
+  margin-bottom: 1.25rem;
+}
+
+/* Cards */
+.status-card {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+  border-left: 4px solid #007bff;
+}
+
+.metric-card {
+  background: linear-gradient(135deg, var(--nt-primary) 0%, var(--nt-secondary) 100%);
+  color: white;
+  border-radius: 12px;
+  padding: 18px 20px;
+  margin-bottom: 20px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+}
+
+.metric-card h6 {
+  font-weight: 600;
+  opacity: 0.9;
+}
+
+.metric-card h3 {
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+
+/* Activity log */
+.log-entry {
+  padding: 8px 12px;
+  margin-bottom: 6px;
+  border-radius: 8px;
+  font-size: 14px;
+  border-left: 3px solid #007bff;
+  background-color: #fcfcfd;
+}
+
+/* Polling chip */
+.polling-status {
+  padding: 8px 14px;
+  border-radius: 20px;
+  font-weight: 600;
+  font-size: 13px;
+  background-color: #e9f7ef;
+  color: #155724;
+  border: 1px solid #c3e6cb;
+}
+
+/* API Connection Cards */
+#api-status-row .card {
+  border: 2px solid transparent;
+  transition: border-color 0.2s ease, background 0.2s ease;
+  background: linear-gradient(145deg, #ffffff, #f8f9fa);
+  position: relative;
+  overflow: hidden;
+}
+
+#api-status-row .card::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 4px;
+  background: linear-gradient(135deg, var(--nt-primary) 0%, var(--nt-secondary) 100%);
+}
+
+#api-status-row .card.connected {
+  border-color: var(--nt-success);
+  background: linear-gradient(145deg, #f8fff9, #eefaf0);
+}
+
+#api-status-row .card.disconnected {
+  border-color: var(--nt-danger);
+  background: linear-gradient(145deg, #fff8f8, #faeeee);
+}
+
+#api-status-row .card.loading::before {
+  background: linear-gradient(90deg, var(--nt-warning), #ffca2c);
+  animation: loading-pulse 2s ease-in-out infinite;
+}
+
+@keyframes loading-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.api-card .card-title {
+  font-weight: 700;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.api-card .status-text {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.api-card .status-details {
+  font-size: 12px;
+  opacity: 0.8;
+  margin-top: 4px;
+}
+
+.connected .status-text { color: var(--nt-success); }
+.disconnected .status-text { color: var(--nt-danger); }
+.loading .status-text { color: var(--nt-warning); }
+
+/* Quick buttons */
+.quick-action-btn {
+  background: linear-gradient(45deg, var(--nt-primary), var(--nt-secondary));
+  border: none;
+  color: white;
+  border-radius: 8px;
+  padding: 10px 16px;
+  margin: 4px 6px 4px 0;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.quick-action-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(102, 126, 234, 0.25);
+  color: white;
+}
+
+.quick-action-btn.btn-success {
+  background: linear-gradient(45deg, var(--nt-success), #20c997);
+}
+
+.quick-action-btn.btn-warning {
+  background: linear-gradient(45deg, var(--nt-warning), #fd7e14);
+}
+
+.quick-action-btn.btn-info {
+  background: linear-gradient(45deg, var(--nt-info), #6f42c1);
+}
+
+/* Bot Status Chip (floating) */
+.bot-status {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 1050;
+  padding: 12px 16px;
+  border-radius: 25px;
+  font-weight: 700;
+  font-size: 14px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: transform 0.15s ease;
+}
+
+.bot-status.enabled {
+  background: linear-gradient(45deg, var(--nt-success), #20c997);
+  color: white;
+}
+
+.bot-status.disabled {
+  background: linear-gradient(45deg, var(--nt-danger), #c82333);
+  color: white;
+}
+
+.bot-status:hover { transform: translateY(-2px); cursor: pointer; }
+
+/* Text helpers */
+.text-success { color: var(--nt-success) !important; }
+.text-danger { color: var(--nt-danger) !important; }
+.text-warning { color: var(--nt-warning) !important; }
+.text-info { color: var(--nt-info) !important; }
+.text-muted { color: var(--nt-muted) !important; }
+.text-primary { color: #007bff !important; }
+
+/* Refresh button */
+.refresh-btn {
+  background: linear-gradient(45deg, var(--nt-info), #6f42c1);
+  border: none;
+  color: white;
+  border-radius: 8px;
+  padding: 8px 14px;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.refresh-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(23, 162, 184, 0.25);
+  color: white;
+}
+
+.refresh-btn.refreshing { background: linear-gradient(45deg, var(--nt-warning), #fd7e14); }
+.refresh-btn.refreshing .fa-sync-alt { animation: spin 1s linear infinite; }
+
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+/* Responsive tweaks */
+@media (max-width: 991px) {
+  .metric-card { padding: 16px; }
+}
+
+

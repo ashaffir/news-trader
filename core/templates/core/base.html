@@ -21,50 +21,8 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Font Awesome for icons -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    
-    <style>
-        body {
-            padding-top: 20px;
-            background-color: #f8f9fa;
-        }
-
-        .navbar {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-radius: 12px;
-            padding: 12px 20px;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-            /* Ensure dropdowns are not clipped */
-            overflow: visible;
-        }
-
-        .nav-link {
-            border-radius: 6px;
-            color: white !important;
-            font-weight: 600;
-        }
-
-        .nav-link:hover {
-            background: rgba(255, 255, 255, 0.2) !important;
-        }
-
-        .nav-link.active {
-            background: rgba(255, 255, 255, 0.2) !important;
-        }
-
-        .card {
-            background: rgba(255, 255, 255, 0.95);
-            border: none;
-            border-radius: 15px;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-            margin-bottom: 20px;
-            overflow: hidden;
-        }
-
-        /* Ensure navbar dropdown appears above content */
-        .navbar .dropdown-menu {
-            z-index: 2000;
-        }
-    </style>
+    <!-- App base styles -->
+    <link href="{% static 'css/base.css' %}" rel="stylesheet">
 
     {% block extra_head %}{% endblock %}
 </head>
