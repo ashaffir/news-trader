@@ -409,7 +409,6 @@ def _scrape_with_browser(source):
         chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         
         # Docker-specific Chrome binary detection
-        import os
         chrome_binary = os.environ.get('CHROME_BIN') or os.environ.get('CHROME_PATH')
         if chrome_binary and os.path.exists(chrome_binary):
             chrome_options.binary_location = chrome_binary
