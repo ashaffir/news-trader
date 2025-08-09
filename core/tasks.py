@@ -146,6 +146,7 @@ def format_activity_message(message_type, data):
         'scraper_error': f"⚠️ Scraping error from {data.get('source', 'Unknown')}: {data.get('error', 'Unknown error')}",
         'scraper_status': f"🔄 {data.get('status', 'Scraper status update')}",
         'trade_status': f"📊 {data.get('symbol', 'N/A')} - {data.get('status', 'Status update')}" if 'TP/SL updated' in data.get('status', '') else f"📊 {data.get('status', 'Status update')}",
+        'trade_rejected': f"❌ Trade rejected for {data.get('symbol', '')}: {data.get('reason', 'Limit reached')}",
     }
     return messages.get(message_type, f"🔄 Update: {data}")
 
@@ -1229,6 +1230,26 @@ def create_new_trade(analysis_id):
     api = tradeapi.REST(ALPACA_API_KEY, ALPACA_SECRET_KEY, base_url=ALPACA_BASE_URL)
 
     try:
+        # Enforce configurable limits (concurrent trades and total exposure)
+        if config:
+            # Count currently open or pending trades
+            concurrent_count = Trade.objects.filter(status__in=["open", "pending", "pending_close"]).count()
+            if config.max_concurrent_open_trades and concurrent_count >= config.max_concurrent_open_trades:
+                logger.warning(
+                    f"Rejected new trade due to concurrent open trades limit: {concurrent_count}/{config.max_concurrent_open_trades}"
+                )
+                send_dashboard_update(
+                    "trade_rejected",
+                    {
+                        "analysis_id": analysis.id,
+                        "symbol": analysis.symbol,
+                        "reason": "Concurrent trades limit reached",
+                        "limit": config.max_concurrent_open_trades,
+                        "tag": "Rejected",
+                    },
+                )
+                return
+
         # Determine position size
         position_size = config.default_position_size if config else 100.0
 
@@ -1245,6 +1266,38 @@ def create_new_trade(analysis_id):
             )
             quantity = 1
             current_price = 0.0
+
+        # Check exposure against configured max_total_open_exposure
+        if config and config.max_total_open_exposure:
+            # Current exposure approximated as sum(quantity * entry_price) of open trades
+            current_exposure = 0.0
+            try:
+                open_trades = Trade.objects.filter(status__in=["open", "pending", "pending_close"])
+                for t in open_trades:
+                    # Fallback to entry_price; if missing, treat as zero
+                    if t.entry_price and t.quantity:
+                        current_exposure += abs(float(t.entry_price) * float(t.quantity))
+            except Exception:
+                current_exposure = 0.0
+
+            projected_exposure = current_exposure + float(position_size)
+            if projected_exposure > float(config.max_total_open_exposure):
+                logger.warning(
+                    f"Rejected new trade due to exposure limit: projected {projected_exposure:.2f} > max {config.max_total_open_exposure:.2f}"
+                )
+                send_dashboard_update(
+                    "trade_rejected",
+                    {
+                        "analysis_id": analysis.id,
+                        "symbol": analysis.symbol,
+                        "reason": "Total exposure limit reached",
+                        "current_exposure": current_exposure,
+                        "projected_exposure": projected_exposure,
+                        "max_exposure": config.max_total_open_exposure,
+                        "tag": "Rejected",
+                    },
+                )
+                return
 
         # Submit order to Alpaca (market order). Broker-side TP/SL intentionally not used per requirements
         order = api.submit_order(
@@ -1704,6 +1757,41 @@ def create_manual_test_trade(symbol, direction, quantity=None, position_size=Non
     """Create a manual test trade directly to Alpaca API for testing purposes."""
     logger.info(f"Creating manual test trade: {symbol} {direction}")
 
+    # Enforce configurable limits here as well
+    try:
+        config = get_active_trading_config()
+    except Exception:
+        config = None
+
+    if config:
+        concurrent_count = Trade.objects.filter(status__in=["open", "pending", "pending_close"]).count()
+        if config.max_concurrent_open_trades and concurrent_count >= config.max_concurrent_open_trades:
+            send_dashboard_update(
+                "trade_rejected",
+                {
+                    "symbol": symbol,
+                    "reason": "Concurrent trades limit reached",
+                    "limit": config.max_concurrent_open_trades,
+                    "tag": "Rejected",
+                },
+            )
+            return {"success": False, "error": "Concurrent trades limit reached"}
+
+        # Exposure check using provided position_size (or estimate from quantity)
+        current_exposure = 0.0
+        try:
+            open_trades = Trade.objects.filter(status__in=["open", "pending", "pending_close"])                
+            for t in open_trades:
+                if t.entry_price and t.quantity:
+                    current_exposure += abs(float(t.entry_price) * float(t.quantity))
+        except Exception:
+            current_exposure = 0.0
+
+        additional = 0.0
+        if position_size:
+            additional = float(position_size)
+        # If only quantity is known, we will approximate later after fetching price
+
     ALPACA_API_KEY = os.getenv("ALPACA_API_KEY")
     ALPACA_SECRET_KEY = os.getenv("ALPACA_SECRET_KEY")
     ALPACA_BASE_URL = os.getenv("ALPACA_BASE_URL", "https://paper-api.alpaca.markets")
@@ -1737,6 +1825,32 @@ def create_manual_test_trade(symbol, direction, quantity=None, position_size=Non
             logger.warning(f"Could not get current price for {symbol}: {e}. Using quantity 1.")
             quantity = quantity or 1
             current_price = 0.0
+
+        # Exposure check after price fetch if needed
+        if config and getattr(config, 'max_total_open_exposure', None):
+            try:
+                open_trades = Trade.objects.filter(status__in=["open", "pending", "pending_close"])                
+                current_exposure = 0.0
+                for t in open_trades:
+                    if t.entry_price and t.quantity:
+                        current_exposure += abs(float(t.entry_price) * float(t.quantity))
+                additional = float(position_size) if position_size else (float(quantity) * float(current_price))
+                projected_exposure = current_exposure + additional
+                if projected_exposure > float(config.max_total_open_exposure):
+                    send_dashboard_update(
+                        "trade_rejected",
+                        {
+                            "symbol": symbol,
+                            "reason": "Total exposure limit reached",
+                            "current_exposure": current_exposure,
+                            "projected_exposure": projected_exposure,
+                            "max_exposure": config.max_total_open_exposure,
+                            "tag": "Rejected",
+                        },
+                    )
+                    return {"success": False, "error": "Total exposure limit reached"}
+            except Exception:
+                pass
 
         # Submit order to Alpaca
         logger.info(f"Submitting test order: {symbol}, qty={quantity}, side={direction}")

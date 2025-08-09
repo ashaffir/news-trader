@@ -322,7 +322,7 @@ def system_status_api(request):
 
         # Trading Configuration
         active_config = TradingConfig.objects.filter(is_active=True).first()
-        config_info = None
+        # Always include trading_config in response so UI can render state
         if active_config:
             config_info = {
                 "name": active_config.name,
@@ -331,6 +331,16 @@ def system_status_api(request):
                 "min_confidence": active_config.min_confidence_threshold,
                 "max_daily_trades": active_config.max_daily_trades,
                 "position_size": active_config.default_position_size,
+            }
+        else:
+            # Provide sensible defaults when no active config exists yet
+            config_info = {
+                "name": "Default",
+                "trading_enabled": False,
+                "bot_enabled": False,
+                "min_confidence": 0.7,
+                "max_daily_trades": 0,
+                "position_size": 0.0,
             }
 
         return JsonResponse(

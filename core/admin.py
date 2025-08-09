@@ -11,6 +11,8 @@ class TradingConfigAdmin(admin.ModelAdmin):
         "name",
         "is_active",
         "default_position_size",
+        "max_concurrent_open_trades",
+        "max_total_open_exposure",
         "stop_loss_percentage",
         "take_profit_percentage",
         "min_confidence_threshold",
@@ -65,7 +67,7 @@ class TradingConfigAdmin(admin.ModelAdmin):
         (
             "Trading Constraints",
             {
-                "fields": ("max_daily_trades",),
+                "fields": ("max_daily_trades", "max_concurrent_open_trades", "max_total_open_exposure"),
                 "classes": ("collapse",),
             },
         ),

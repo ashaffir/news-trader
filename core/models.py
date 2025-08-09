@@ -40,6 +40,16 @@ class TradingConfig(models.Model):
     max_daily_trades = models.IntegerField(
         default=10, help_text="Maximum trades per day"
     )
+    max_concurrent_open_trades = models.IntegerField(
+        default=5,
+        validators=[MinValueValidator(0)],
+        help_text="Maximum number of trades that can be open (including pending/pending close) at the same time",
+    )
+    max_total_open_exposure = models.FloatField(
+        default=5000.0,
+        validators=[MinValueValidator(0.0)],
+        help_text="Maximum total dollar exposure across all open positions",
+    )
     min_confidence_threshold = models.FloatField(
         default=0.7,
         validators=[MinValueValidator(0.0), MaxValueValidator(1.0)],
@@ -336,6 +346,7 @@ class ActivityLog(models.Model):
         ('scraper_status', 'Scraper Status'),
         ('scraper_skipped', 'Scraper Skipped'),
         ('trade_status', 'Trade Status'),
+        ('trade_rejected', 'Trade Rejected'),
         ('system_event', 'System Event'),
     ]
     

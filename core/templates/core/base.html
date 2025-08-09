@@ -33,6 +33,8 @@
             border-radius: 12px;
             padding: 12px 20px;
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            /* Ensure dropdowns are not clipped */
+            overflow: visible;
         }
 
         .nav-link {
@@ -56,6 +58,11 @@
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
             margin-bottom: 20px;
             overflow: hidden;
+        }
+
+        /* Ensure navbar dropdown appears above content */
+        .navbar .dropdown-menu {
+            z-index: 2000;
         }
     </style>
 
@@ -94,6 +101,46 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
     <script>
+        // Initialize Bootstrap dropdowns defensively in case auto-init fails
+        document.addEventListener('DOMContentLoaded', function () {
+            // Create dropdown instances if Bootstrap is available
+            if (window.bootstrap && document.querySelectorAll('[data-bs-toggle="dropdown"]').length) {
+                document.querySelectorAll('[data-bs-toggle="dropdown"]').forEach(function (el) {
+                    try { bootstrap.Dropdown.getOrCreateInstance(el); } catch (e) { /* no-op */ }
+                });
+            }
+
+            // Fallback: explicitly toggle the navbar Quick Tools dropdown if needed
+            const quickToolsBtn = document.querySelector('nav .dropdown > .dropdown-toggle');
+            const quickToolsMenu = quickToolsBtn ? quickToolsBtn.parentElement.querySelector('.dropdown-menu') : null;
+            if (quickToolsBtn && quickToolsMenu) {
+                quickToolsBtn.addEventListener('click', function (e) {
+                    // If Bootstrap handled it, menu will have 'show'
+                    setTimeout(function () {
+                        const isShown = quickToolsMenu.classList.contains('show');
+                        if (!isShown) {
+                            // Manual fallback
+                            e.preventDefault();
+                            // Close any other open menus
+                            document.querySelectorAll('.dropdown-menu.show').forEach(function (menu) {
+                                menu.classList.remove('show');
+                            });
+                            quickToolsMenu.classList.add('show');
+                            quickToolsBtn.setAttribute('aria-expanded', 'true');
+                        }
+                    }, 0);
+                });
+
+                // Close when clicking outside
+                document.addEventListener('click', function (ev) {
+                    if (!quickToolsBtn.contains(ev.target) && !quickToolsMenu.contains(ev.target)) {
+                        quickToolsMenu.classList.remove('show');
+                        quickToolsBtn.setAttribute('aria-expanded', 'false');
+                    }
+                });
+            }
+        });
+
         // JavaScript fallback for browsers that don't support CSS media queries in link tags
         function updateFavicon() {
             const isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;

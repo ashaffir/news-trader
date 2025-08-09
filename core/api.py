@@ -102,6 +102,14 @@ class TradingConfigViewSet(viewsets.ModelViewSet):
         config.save()
         return Response({"status": "Configuration activated"})
 
+    @action(detail=False, methods=["get"])
+    def active(self, request):
+        """Get the currently active trading configuration."""
+        config = TradingConfig.objects.filter(is_active=True).first()
+        if not config:
+            return Response({"detail": "No active configuration"}, status=status.HTTP_404_NOT_FOUND)
+        return Response(self.get_serializer(config).data)
+
 
 class SourceViewSet(viewsets.ModelViewSet):
     queryset = Source.objects.all()
