@@ -1,7 +1,7 @@
 from django.shortcuts import render, redirect
 from django.http import JsonResponse
 from django.contrib import messages
-from .models import Trade, Post, Analysis, Source, TradingConfig, ActivityLog
+from .models import Trade, Post, Analysis, Source, TradingConfig, ActivityLog, AlertSettings
 from .tasks import (
     close_trade_manually,
     close_all_trades_manually,
@@ -23,6 +23,7 @@ from django.core.paginator import Paginator
 from .source_llm import analyze_news_source_with_llm, build_source_kwargs_from_llm_analysis
 from django.views.decorators.http import require_POST
 from django.contrib import messages
+from .utils.telegram import send_telegram_message
 
 logger = logging.getLogger(__name__)
 
@@ -207,6 +208,19 @@ def toggle_bot_status(request):
 
         status = "enabled" if trading_config.bot_enabled else "disabled"
         logger.info(f"Bot status toggled to: {status}")
+
+        # Fire alert if configured
+        try:
+            from .utils.telegram import is_alert_enabled
+            logger.info("Bot toggle: considering Telegram alert. status=%s", status)
+            if is_alert_enabled("bot_status"):
+                logger.info("Bot toggle: sending Telegram alert")
+                ok = send_telegram_message(f"🤖 Bot {status.upper()}")
+                logger.info("Bot toggle: Telegram sent=%s", ok)
+            else:
+                logger.info("Bot toggle: Telegram disabled by settings")
+        except Exception as notify_error:
+            logger.warning(f"Failed to send bot status alert: {notify_error}")
 
         return JsonResponse(
             {
@@ -1322,19 +1336,33 @@ def test_page_view(request):
                     if not quantity_int and not position_size_float:
                         quantity_int = 1  # Default to 1 share
 
-                    create_manual_test_trade.delay(
+                    # Run synchronously so we can display an accurate success/error message
+                    result = create_manual_test_trade.run(
                         symbol=symbol,
                         direction=direction,
                         quantity=quantity_int,
-                        position_size=position_size_float
+                        position_size=position_size_float,
                     )
-                    logger.info(
-                        f"Manually triggered test trade: {symbol} {direction} qty={quantity_int} pos_size={position_size_float}"
-                    )
-                    messages.success(
-                        request,
-                        f"Test trade submitted: {symbol} {direction.upper()}"
-                    )
+
+                    if isinstance(result, dict) and result.get("success"):
+                        logger.info(
+                            f"Manual test trade created: {symbol} {direction} qty={quantity_int} pos_size={position_size_float}"
+                        )
+                        messages.success(
+                            request,
+                            f"Test trade created: {symbol} {direction.upper()}"
+                        )
+                    else:
+                        error_message = (
+                            result.get("error") if isinstance(result, dict) else "Unknown error"
+                        )
+                        logger.warning(
+                            f"Manual test trade rejected/failed for {symbol}: {error_message}"
+                        )
+                        messages.error(
+                            request,
+                            f"Test trade failed: {error_message}"
+                        )
                 except ValueError as e:
                     logger.warning(f"Invalid input for manual test trade: {e}")
                     messages.error(request, "Invalid quantity or position size. Please enter valid numbers.")
@@ -1369,6 +1397,68 @@ def test_page_view(request):
         },
     )
 
+
+@staff_member_required
+def alerts_view(request):
+    """Configure alert preferences for Telegram notifications."""
+    settings_obj = AlertSettings.objects.order_by("-created_at").first()
+    if not settings_obj:
+        settings_obj = AlertSettings.objects.create()
+
+    if request.method == "POST":
+        try:
+            # HTML checkbox sends value when checked; use presence to set True/False
+            settings_obj.enabled = bool(request.POST.get("enabled"))
+            settings_obj.bot_status_enabled = bool(request.POST.get("bot_status_enabled"))
+            settings_obj.order_open_enabled = bool(request.POST.get("order_open_enabled"))
+            settings_obj.order_close_enabled = bool(request.POST.get("order_close_enabled"))
+            settings_obj.trading_limit_enabled = bool(request.POST.get("trading_limit_enabled"))
+            settings_obj.heartbeat_enabled = bool(request.POST.get("heartbeat_enabled"))
+            try:
+                interval_val = int(request.POST.get("heartbeat_interval_minutes", settings_obj.heartbeat_interval_minutes))
+                if interval_val < 1:
+                    interval_val = 1
+                if interval_val > 1440:
+                    interval_val = 1440
+                settings_obj.heartbeat_interval_minutes = interval_val
+            except Exception:
+                # keep previous if invalid
+                pass
+            settings_obj.save()
+
+            messages.success(request, "Alert settings saved")
+            return redirect("alerts")
+        except Exception as e:
+            messages.error(request, f"Failed to save: {e}")
+
+    # Pass bot status for navbar and current settings
+    trading_config = TradingConfig.objects.filter(is_active=True).first()
+    bot_enabled = trading_config.bot_enabled if trading_config else False
+
+    return render(
+        request,
+        "core/alerts.html",
+        {
+            "settings": settings_obj,
+            "bot_enabled": bot_enabled,
+        },
+    )
+
+
+@staff_member_required
+@require_POST
+def alerts_send_test(request):
+    """Send a test alert to Telegram to validate configuration."""
+    try:
+        from .utils.telegram import get_telegram_config
+        token, chat_id = get_telegram_config()
+        logger.info("Alerts test requested. token_present=%s chat_id_present=%s", bool(token), bool(chat_id))
+        ok = send_telegram_message("Test alert from News Trader (Alerts page)")
+        messages.success(request, f"Test alert sent: {ok}")
+    except Exception as e:
+        logger.warning("Alerts test failed: %s", e)
+        messages.error(request, f"Test alert failed: {e}")
+    return redirect("alerts")
 
 @staff_member_required
 def recent_activities_api(request):

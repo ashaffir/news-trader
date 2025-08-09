@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.utils.html import format_html
 from django.urls import reverse
 from django.utils.safestring import mark_safe
-from .models import Source, Post, Analysis, Trade, TradingConfig, ApiResponse
+from .models import Source, Post, Analysis, Trade, TradingConfig, ApiResponse, AlertSettings
 
 
 @admin.register(TradingConfig)
@@ -122,6 +122,13 @@ class SourceAdmin(admin.ModelAdmin):
         "scraping_status",
         "request_type",
     )
+
+    def posts_count(self, obj):
+        try:
+            return obj.individual_posts.count()
+        except Exception:
+            return 0
+    posts_count.short_description = "Posts"
     search_fields = ("name", "url", "description")
     readonly_fields = (
         "last_scraped_at",
@@ -179,34 +186,19 @@ class SourceAdmin(admin.ModelAdmin):
         ),
     )
 
-    inlines = [ApiResponseInline, PostInline]
 
-    def posts_count(self, obj):
-        count = obj.individual_posts.count()
-        url = reverse("admin:core_post_changelist") + f"?source__id__exact={obj.id}"
-        return format_html('<a href="{}">{} posts</a>', url, count)
-
-    posts_count.short_description = "Posts"
-
-    actions = ["enable_scraping", "disable_scraping", "reset_error_count"]
-
-    def enable_scraping(self, request, queryset):
-        queryset.update(scraping_enabled=True, scraping_status="idle")
-        self.message_user(request, f"Enabled scraping for {queryset.count()} sources.")
-
-    enable_scraping.short_description = "Enable scraping"
-
-    def disable_scraping(self, request, queryset):
-        queryset.update(scraping_enabled=False, scraping_status="disabled")
-        self.message_user(request, f"Disabled scraping for {queryset.count()} sources.")
-
-    disable_scraping.short_description = "Disable scraping"
-
-    def reset_error_count(self, request, queryset):
-        queryset.update(error_count=0, last_error=None, scraping_status="idle")
-        self.message_user(request, f"Reset error count for {queryset.count()} sources.")
-
-    reset_error_count.short_description = "Reset error count"
+@admin.register(AlertSettings)
+class AlertSettingsAdmin(admin.ModelAdmin):
+    list_display = (
+        "enabled",
+        "bot_status_enabled",
+        "order_open_enabled",
+        "order_close_enabled",
+        "trading_limit_enabled",
+        "updated_at",
+    )
+    list_filter = ("enabled",)
+    readonly_fields = ("created_at", "updated_at")
 
 
 class TradeInline(admin.TabularInline):

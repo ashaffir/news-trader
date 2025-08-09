@@ -1,0 +1,28 @@
+---
+description: Docker services and deployment notes
+---
+
+### Services (docker-compose)
+- `web`: Django runserver on 0.0.0.0:8000, healthcheck `/health/`
+- `db`: Postgres 15
+- `redis`: Redis 7 (Celery broker/result)
+- `celery`: Celery worker
+- `celery-beat`: Celery beat
+- `flower` (optional): Celery monitoring on 5555
+
+See [`docker-compose.yml`](mdc:docker-compose.yml) and [`Dockerfile`](mdc:Dockerfile).
+
+### Volumes & Static
+- App bind-mounted for dev; static collected to `staticfiles` volume
+
+### Headless Chrome
+- Chromium and chromedriver installed in Docker
+- Environment configured via `CHROME_BIN`/`CHROME_PATH`
+
+### Healthchecks
+- Web: curls `/health/`
+- Celery: `celery inspect ping`
+- Beat: process check
+
+### Notes
+- In production, use a proper WSGI server and static hosting; WhiteNoise enabled in settings for simple setups

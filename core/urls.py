@@ -25,6 +25,8 @@ urlpatterns = [
     path('test/', views.test_page_view, name='test'),
     path('test-page/', views.test_page_view, name='test_page'),  # Alternative URL
     path('close-trade/', views.manual_close_trade_view, name='close_trade'),  # Unified close trade page
+    path('alerts/', views.alerts_view, name='alerts'),
+    path('alerts/send-test/', views.alerts_send_test, name='alerts_send_test'),
     path('toggle_bot_status/', views.toggle_bot_status, name='toggle_bot_status'),
     path('system_status/', views.system_status_api, name='system_status'),
     # API endpoints for dashboard

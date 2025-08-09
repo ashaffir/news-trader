@@ -364,3 +364,50 @@ class ActivityLog(models.Model):
     
     def __str__(self):
         return f"{self.activity_type}: {self.message[:100]}"
+
+
+class AlertSettings(models.Model):
+    """User-configurable alert preferences for outbound notifications."""
+
+    enabled = models.BooleanField(
+        default=True, help_text="Master enable/disable for all outbound alerts"
+    )
+
+    # Individual alert toggles
+    bot_status_enabled = models.BooleanField(
+        default=True, help_text="Send alert when bot is enabled/disabled"
+    )
+    order_open_enabled = models.BooleanField(
+        default=True, help_text="Send alert when an order is opened (filled)"
+    )
+    order_close_enabled = models.BooleanField(
+        default=True, help_text="Send alert when an order is closed"
+    )
+    trading_limit_enabled = models.BooleanField(
+        default=True, help_text="Send alert when a trading limit is reached"
+    )
+
+    # Periodic heartbeat when bot is enabled
+    heartbeat_enabled = models.BooleanField(
+        default=False, help_text="Send periodic bot heartbeat while bot is enabled"
+    )
+    heartbeat_interval_minutes = models.IntegerField(
+        default=30,
+        validators=[MinValueValidator(1), MaxValueValidator(1440)],
+        help_text="Heartbeat interval in minutes (default 30)"
+    )
+    last_heartbeat_sent = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Timestamp of the last heartbeat alert sent"
+    )
+
+    # Metadata
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"AlertSettings (enabled={self.enabled})"

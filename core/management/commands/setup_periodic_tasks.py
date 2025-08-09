@@ -26,6 +26,11 @@ class Command(BaseCommand):
             period=IntervalSchedule.HOURS,
         )
 
+        interval_30_minutes, _ = IntervalSchedule.objects.get_or_create(
+            every=30,
+            period=IntervalSchedule.MINUTES,
+        )
+
         # Create periodic tasks
         tasks = [
             {
@@ -51,6 +56,12 @@ class Command(BaseCommand):
                 'task': 'core.tasks.monitor_local_stop_take_levels',
                 'interval': interval_1_minute,
                 'description': 'Monitor local stop loss and take profit levels'
+            },
+            {
+                'name': 'Bot Heartbeat (Telegram)',
+                'task': 'core.tasks.send_bot_heartbeat',
+                'interval': interval_30_minutes,
+                'description': 'Send periodic heartbeat to Telegram when bot is enabled'
             },
         ]
 

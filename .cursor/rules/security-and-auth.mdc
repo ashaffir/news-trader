@@ -1,0 +1,19 @@
+---
+description: Security and authentication patterns in this project
+globs: core/views.py
+---
+
+### Django views
+- Most UI and internal API endpoints are decorated with `@staff_member_required`
+- Keep administrative pages and actions staff-only (dashboard, triggers, trade mgmt)
+
+### DRF defaults
+- `REST_FRAMEWORK` enforces `IsAuthenticated` by default: see [`news_trader/settings.py`](mdc:news_trader/settings.py)
+- Tests add token authentication classes in [`news_trader/test_settings.py`](mdc:news_trader/test_settings.py)
+
+### Public endpoints
+- `public_posts_api` is currently staff-protected; adjust decorator intentionally if exposing publicly
+
+### Best practices for new code
+- Protect any trading, scraping, or analysis triggers behind staff-only or authenticated APIs
+- Avoid leaking secrets in responses or logs

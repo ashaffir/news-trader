@@ -1,0 +1,24 @@
+---
+description: Testing configuration, fast settings, and conventions
+globs: core/tests.py,news_trader/test_settings.py
+---
+
+### Test Settings
+- Use [`news_trader/test_settings.py`](mdc:news_trader/test_settings.py):
+  - In-memory SQLite DB, migrations disabled
+  - Celery runs eagerly (`CELERY_TASK_ALWAYS_EAGER=True`)
+  - Logging silenced, dummy cache
+  - Token auth added for DRF tests
+
+### Where tests live
+- Primary suite: [`core/tests.py`](mdc:core/tests.py)
+  - Model tests, Celery task tests (OpenAI/Alpaca mocked), DRF API tests, admin, integration, dashboard, error-handling
+
+### Conventions
+- Mock external services: `openai.OpenAI`, `alpaca_trade_api.REST`, and `os.getenv`
+- Prefer APITestCase for REST endpoints
+- When adding new Celery tasks, ensure eager-friendly behavior and deterministic logging
+
+### Quick tips
+- Verify `DJANGO_SETTINGS_MODULE=news_trader.test_settings` when running tests
+- Skip real network I/O in tests; patch requests if needed

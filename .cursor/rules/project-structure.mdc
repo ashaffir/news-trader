@@ -1,0 +1,45 @@
+---
+alwaysApply: true
+---
+
+### News Trader Project Structure
+
+- Main Django project: [`news_trader/`](mdc:news_trader)
+  - Settings: [`news_trader/settings.py`](mdc:news_trader/settings.py)
+  - URLs: [`news_trader/urls.py`](mdc:news_trader/urls.py)
+  - Celery app: [`news_trader/celery.py`](mdc:news_trader/celery.py)
+- Core app: [`core/`](mdc:core)
+  - Models: [`core/models.py`](mdc:core/models.py)
+  - Views: [`core/views.py`](mdc:core/views.py)
+  - REST API viewsets: [`core/api.py`](mdc:core/api.py)
+  - Celery tasks: [`core/tasks.py`](mdc:core/tasks.py)
+  - URLs: [`core/urls.py`](mdc:core/urls.py)
+  - Templates: [`core/templates/core/`](mdc:core/templates/core)
+  - Management commands: [`core/management/commands/`](mdc:core/management/commands)
+- Static assets: [`static/`](mdc:static) (collected to [`staticfiles/`](mdc:staticfiles))
+- Entrypoint: [`manage.py`](mdc:manage.py)
+
+### Key Flows
+- Scraping → Analysis → Trading
+  - Scrape sources: `scrape_posts` in [`core/tasks.py`](mdc:core/tasks.py)
+  - Analyze post with LLM: `analyze_post` in [`core/tasks.py`](mdc:core/tasks.py)
+  - Execute trade: `execute_trade` and helpers in [`core/tasks.py`](mdc:core/tasks.py)
+  - Activity updates persisted via `ActivityLog` in [`core/models.py`](mdc:core/models.py); UI polls APIs in [`core/views.py`](mdc:core/views.py)
+
+### Routing
+- Project URLs include core: see [`news_trader/urls.py`](mdc:news_trader/urls.py)
+- Core URLs map dashboard, actions, and APIs: see [`core/urls.py`](mdc:core/urls.py)
+
+### Celery & Scheduling
+- Celery configured via settings with Redis defaults: see [`news_trader/settings.py`](mdc:news_trader/settings.py)
+- Celery app bootstrap: [`news_trader/celery.py`](mdc:news_trader/celery.py)
+- Periodic tasks are managed with `django_celery_beat` and installed via command: [`core/management/commands/setup_periodic_tasks.py`](mdc:core/management/commands/setup_periodic_tasks.py)
+
+### Configuration & Secrets
+- `.env` is loaded in settings; important keys: `OPENAI_API_KEY`, `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`, `CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND`, `NEWSAPI_KEY`. See [`news_trader/settings.py`](mdc:news_trader/settings.py) and [`requirements.txt`](mdc:requirements.txt)
+
+### Docker
+- Services: Django, Postgres, Redis, Celery worker/beat (and optional Flower). See [`docker-compose.yml`](mdc:docker-compose.yml) and [`Dockerfile`](mdc:Dockerfile)
+
+### Testing
+- Tests live in [`core/tests.py`](mdc:core/tests.py) and use [`news_trader/test_settings.py`](mdc:news_trader/test_settings.py) (in-memory DB, eager Celery).

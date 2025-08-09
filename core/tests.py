@@ -5,7 +5,7 @@ from django.utils import timezone
 from unittest.mock import patch, MagicMock
 from rest_framework.test import APITestCase
 from rest_framework.authtoken.models import Token
-from core.models import Source, Post, Analysis, Trade, TradingConfig, ApiResponse
+from core.models import Source, Post, Analysis, Trade, TradingConfig, ApiResponse, AlertSettings
 from core.tasks import analyze_post, execute_trade, scrape_posts
 from unittest.mock import patch, MagicMock
 from core.source_llm import analyze_news_source_with_llm, build_source_kwargs_from_llm_analysis
@@ -469,6 +469,25 @@ class DashboardTests(TestCase):
         response = self.client.get("/dashboard/")
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "News Trader Dashboard")
+
+    def test_alerts_page(self):
+        # Ensure alerts page renders and can save settings
+        response = self.client.get("/alerts/")
+        self.assertEqual(response.status_code, 200)
+
+        resp_post = self.client.post(
+            "/alerts/",
+            {
+                "enabled": "on",
+                "bot_status_enabled": "on",
+                "order_open_enabled": "on",
+                "order_close_enabled": "on",
+                "trading_limit_enabled": "on",
+            },
+        )
+        self.assertEqual(resp_post.status_code, 302)
+        settings = AlertSettings.objects.order_by("-created_at").first()
+        self.assertTrue(settings.enabled)
 
     
 

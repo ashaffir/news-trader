@@ -1,0 +1,24 @@
+---
+description: Celery configuration, tasks, and scheduling conventions
+---
+
+### Celery Setup
+- App bootstrap: [`news_trader/celery.py`](mdc:news_trader/celery.py)
+- Settings: broker/result backend from env with Redis defaults; see [`news_trader/settings.py`](mdc:news_trader/settings.py)
+- Tasks live in [`core/tasks.py`](mdc:core/tasks.py); autodiscovered via `app.autodiscover_tasks()`
+
+### Key Tasks
+- `scrape_posts(source_id=None, manual_test=False)`
+- `analyze_post(post_id, manual_test=False)` (uses OpenAI client)
+- `execute_trade(analysis_id)`, `create_new_trade(analysis_id)` (Alpaca)
+- Position mgmt: `adjust_position_risk`, `close_trade_due_to_conflict`, `close_expired_positions`, `monitor_local_stop_take_levels`
+- Manual ops: `close_trade_manually`, `close_all_trades_manually`, `create_manual_test_trade`
+- Status sync: `update_trade_status`
+
+### Scheduling
+- Managed via `django_celery_beat`; install defaults using command: [`core/management/commands/setup_periodic_tasks.py`](mdc:core/management/commands/setup_periodic_tasks.py)
+- Adds intervals for scraping (5m), status updates (1m), risk monitoring (1m), and expiry checks (1h)
+
+### Notes
+- Tests run Celery eagerly per [`news_trader/test_settings.py`](mdc:news_trader/test_settings.py)
+- Selenium scraping is guarded by `ENABLE_SELENIUM_SCRAPING` (default true) in [`core/tasks.py`](mdc:core/tasks.py)

@@ -1,0 +1,15 @@
+---
+description: Django app conventions for this repository
+---
+
+### Conventions
+- Views return `JsonResponse` for AJAX-style endpoints; keep payloads small and explicit
+- Prefer simple, staff-only server-rendered pages under `core/templates/core/`
+- Use `ActivityLog` for dashboard updates (polling) instead of WebSockets
+- Keep Celery tasks idempotent and log at info level; always catch exceptions and persist status via `send_dashboard_update`
+- For scraping: prefer RSS when available; otherwise guarded Selenium scraping with feature flag
+
+### Code organization
+- Keep files focused and under ~300 LOC; extract helpers where needed (e.g., `_get_nested_value`, `_is_duplicate_content` in [`core/tasks.py`](mdc:core/tasks.py))
+- Add tests for new tasks and endpoints in [`core/tests.py`](mdc:core/tests.py)
+- When adding periodic jobs, register via `django_celery_beat` rather than static settings

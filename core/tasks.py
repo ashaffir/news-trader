@@ -6,7 +6,7 @@ import requests
 from bs4 import BeautifulSoup
 from celery import shared_task
 
-from .models import Source, ApiResponse, Post, Analysis, Trade, TradingConfig, ActivityLog
+from .models import Source, ApiResponse, Post, Analysis, Trade, TradingConfig, ActivityLog, AlertSettings
 from django.utils import timezone
 from django.db.models import Q
 import logging
@@ -164,6 +164,18 @@ def send_dashboard_update(message_type, data):
             data=data
         )
         logger.debug(f"Activity logged to database: {message_type}")
+        # Also notify Telegram if enabled
+        try:
+            from .utils.telegram import send_telegram_message, is_alert_enabled
+            logger.debug("Alert dispatch gate check for type=%s", message_type)
+            if is_alert_enabled(message_type):
+                logger.info("Dispatching Telegram alert for type=%s", message_type)
+                sent = send_telegram_message(message)
+                logger.info("Telegram alert sent=%s type=%s", sent, message_type)
+            else:
+                logger.info("Telegram alert disabled by settings for type=%s", message_type)
+        except Exception as notify_error:
+            logger.warning(f"Alert dispatch failed for {message_type}: {notify_error}")
         
     except Exception as e:
         logger.error(f"Failed to save activity update ({message_type}): {e}")
@@ -1122,6 +1134,17 @@ Direction can be 'buy', 'sell', or 'hold'. Confidence is a float between 0 and 1
                         "reason": f"Trading: {reason}, Daily: {daily_reason}",
                     },
                 )
+                # If daily limit is reached, raise alert via dashboard update
+                if not daily_limit_ok:
+                    send_dashboard_update(
+                        "trade_rejected",
+                        {
+                            "analysis_id": analysis.id,
+                            "symbol": analysis.symbol,
+                            "reason": "Daily trade limit reached",
+                            "tag": "Limit",
+                        },
+                    )
 
         send_dashboard_update(
             "new_analysis",
@@ -1970,6 +1993,55 @@ def update_trade_status():
 
     except Exception as e:
         logger.error(f"Error updating trade statuses: {e}")
+
+
+@shared_task
+def send_bot_heartbeat():
+    """Send a periodic heartbeat to Telegram when bot is enabled and alerts allow it.
+
+    Frequency is managed by django-celery-beat; this task also enforces the
+    per-settings interval using `last_heartbeat_sent` as a guard.
+    """
+    try:
+        from .utils.telegram import is_alert_enabled, send_telegram_message
+
+        # Check alert toggle first
+        if not is_alert_enabled("heartbeat"):
+            return
+
+        settings_obj = AlertSettings.objects.order_by("-created_at").first()
+        if not settings_obj:
+            return
+
+        # Only when bot is enabled
+        config = TradingConfig.objects.filter(is_active=True).first()
+        if not (config and config.bot_enabled):
+            return
+
+        now = timezone.now()
+        interval = max(1, int(getattr(settings_obj, "heartbeat_interval_minutes", 30)))
+        last_sent = getattr(settings_obj, "last_heartbeat_sent", None)
+        if last_sent and (now - last_sent).total_seconds() < interval * 60:
+            return
+
+        # Compose message
+        try:
+            open_positions = Trade.objects.filter(status__in=["open", "pending", "pending_close"]).count()
+        except Exception:
+            open_positions = 0
+
+        msg = (
+            f"🤖 Bot Heartbeat\n"
+            f"Status: ENABLED\n"
+            f"Open/Pending positions: {open_positions}\n"
+            f"Time: {now.strftime('%Y-%m-%d %H:%M:%S UTC')}"
+        )
+        ok = send_telegram_message(msg)
+        if ok:
+            settings_obj.last_heartbeat_sent = now
+            settings_obj.save(update_fields=["last_heartbeat_sent"])
+    except Exception as e:
+        logger.warning(f"Heartbeat send failed: {e}")
 
 
 @shared_task
