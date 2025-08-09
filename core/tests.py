@@ -470,6 +470,18 @@ class DashboardTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "News Trader Dashboard")
 
+    def test_analyze_source_page_includes_bot_status(self):
+        """Analyze Source page should receive correct bot status in context for navbar."""
+        # Ensure active config exists with bot_enabled False -> badge should show disabled text
+        TradingConfig.objects.update_or_create(
+            is_active=True,
+            defaults={"name": "Active", "bot_enabled": False},
+        )
+        resp = self.client.get("/analyze-source/")
+        self.assertEqual(resp.status_code, 200)
+        # Navbar badge text appears when bot is disabled
+        self.assertContains(resp, "BOT DISABLED")
+
     def test_alerts_page(self):
         # Ensure alerts page renders and can save settings
         response = self.client.get("/alerts/")

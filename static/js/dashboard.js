@@ -189,8 +189,20 @@
   }
 
   function confirmBotToggle() {
-    const modal = bootstrap.Modal.getInstance(document.getElementById('botToggleConfirmModal'));
-    modal.hide();
+    const modalEl = document.getElementById('botToggleConfirmModal');
+    const modal = bootstrap.Modal.getInstance(modalEl);
+    if (modal) {
+      modal.hide();
+      // Defensive cleanup for lingering backdrops
+      setTimeout(() => {
+        if (typeof modal.dispose === 'function') {
+          try { modal.dispose(); } catch (e) { /* noop */ }
+        }
+        document.querySelectorAll('.modal-backdrop.show').forEach((el) => el.remove());
+        document.body.classList.remove('modal-open');
+        document.body.style.removeProperty('padding-right');
+      }, 200);
+    }
     updateBotStatus();
   }
 
@@ -307,6 +319,10 @@
     if (botToggleModal) {
       botToggleModal.addEventListener('hidden.bs.modal', function () {
         if (botToggle) botToggle.checked = originalBotState;
+        // Extra cleanup to avoid stuck dark overlay
+        document.querySelectorAll('.modal-backdrop.show').forEach((el) => el.remove());
+        document.body.classList.remove('modal-open');
+        document.body.style.removeProperty('padding-right');
       });
     }
     addLogEntry('Dashboard fully loaded and ready', 'text-success');

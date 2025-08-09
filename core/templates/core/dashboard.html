@@ -659,9 +659,21 @@
         }
 
         function confirmBotToggle() {
-            // Close the modal first
-            const modal = bootstrap.Modal.getInstance(document.getElementById('botToggleConfirmModal'));
-            modal.hide();
+            // Close the modal first and ensure backdrop cleanup
+            const modalEl = document.getElementById('botToggleConfirmModal');
+            const modal = bootstrap.Modal.getInstance(modalEl);
+            if (modal) {
+                modal.hide();
+                // Defensive cleanup after transition
+                setTimeout(() => {
+                    if (typeof modal.dispose === 'function') {
+                        try { modal.dispose(); } catch (e) { /* no-op */ }
+                    }
+                    document.querySelectorAll('.modal-backdrop.show').forEach((el) => el.remove());
+                    document.body.classList.remove('modal-open');
+                    document.body.style.removeProperty('padding-right');
+                }, 200);
+            }
             
             // Execute the actual toggle
             updateBotStatus();
@@ -737,8 +749,8 @@
             }
         }
 
-        // Initialize dashboard
-        document.addEventListener('DOMContentLoaded', function () {
+        // Initialize dashboard (inline version disabled; see static/js/dashboard.js)
+        if (false) document.addEventListener('DOMContentLoaded', function () {
             addLogEntry('🚀 Dashboard initialized with live polling', 'text-success');
             
             // Start polling for updates every 3 seconds
@@ -778,6 +790,10 @@
                     if (botToggle) {
                         botToggle.checked = originalBotState;
                     }
+                    // Extra defensive cleanup for lingering backdrops/state
+                    document.querySelectorAll('.modal-backdrop.show').forEach((el) => el.remove());
+                    document.body.classList.remove('modal-open');
+                    document.body.style.removeProperty('padding-right');
                 });
             }
 

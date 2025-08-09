@@ -1817,7 +1817,17 @@ def analyze_source_page(request):
     """
     Render the source analysis page
     """
-    return render(request, 'core/analyze_source.html')
+    # Provide bot status for navbar indicator
+    trading_config = TradingConfig.objects.filter(is_active=True).first()
+    bot_enabled = trading_config.bot_enabled if trading_config else False
+
+    return render(
+        request,
+        'core/analyze_source.html',
+        {
+            'bot_enabled': bot_enabled,
+        },
+    )
 
 
 @staff_member_required
