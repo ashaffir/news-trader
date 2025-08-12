@@ -537,6 +537,17 @@ def get_alpaca_trading_data():
                 {
                     "symbol": pos.symbol,
                     "qty": float(pos.qty),
+                    # Include avg entry and current price for accurate UI calculations
+                    "avg_entry_price": (
+                        float(getattr(pos, "avg_entry_price", 0.0))
+                        if getattr(pos, "avg_entry_price", None)
+                        else None
+                    ),
+                    "current_price": (
+                        float(getattr(pos, "current_price", 0.0))
+                        if getattr(pos, "current_price", None)
+                        else None
+                    ),
                     "market_value": (
                         float(pos.market_value) if pos.market_value else 0.0
                     ),
@@ -650,15 +661,26 @@ def sync_alpaca_positions_to_database(alpaca_positions):
         direction = "buy" if float(position["qty"]) > 0 else "sell"
         quantity = abs(float(position["qty"]))
 
-        # Calculate entry price from market value and quantity
+        # Prefer Alpaca's average entry price; fallback to market_value/qty
         qty = float(position["qty"])
         market_value = float(position["market_value"])
-        entry_price = abs(market_value) / abs(qty) if qty != 0 else 0
+        avg_entry_price = position.get("avg_entry_price")
+        try:
+            entry_price = float(avg_entry_price) if avg_entry_price is not None else (
+                abs(market_value) / abs(qty) if qty != 0 else 0
+            )
+        except Exception:
+            entry_price = abs(market_value) / abs(qty) if qty != 0 else 0
 
         unrealized_pnl = float(position.get("unrealized_pl", 0))
 
-        # Check if trade record already exists
-        existing_trade = Trade.objects.filter(symbol=symbol, status="open").first()
+        # Check if a non-closed record exists (open, pending, pending_close) to avoid duplicates
+        existing_trade = (
+            Trade.objects
+            .filter(symbol=symbol, status__in=["open", "pending", "pending_close"]) 
+            .order_by("-created_at")
+            .first()
+        )
 
         if not existing_trade:
             # Create new trade record
@@ -678,10 +700,31 @@ def sync_alpaca_positions_to_database(alpaca_positions):
             )
             logger.debug(f"Created new trade record for {symbol}")
         else:
-            # Update existing trade with current Alpaca data
+            # Update existing trade with current Alpaca data (keep its status, including pending_close)
             existing_trade.quantity = quantity
             existing_trade.unrealized_pnl = unrealized_pnl
             existing_trade.updated_at = timezone.now()
+
+            # Ensure DB TP/SL dollar values are synced to the latest entry when percentages are set
+            try:
+                if entry_price and entry_price > 0 and abs((existing_trade.entry_price or 0) - entry_price) > 1e-6:
+                    existing_trade.entry_price = entry_price
+                    # Recompute TP/SL prices from stored percentages to keep celery comparisons correct
+                    if getattr(existing_trade, "take_profit_price_percentage", None) is not None:
+                        tp_pct = float(existing_trade.take_profit_price_percentage)
+                        if direction == "buy":
+                            existing_trade.take_profit_price = entry_price * (1 + tp_pct / 100.0)
+                        else:
+                            existing_trade.take_profit_price = entry_price * (1 - tp_pct / 100.0)
+                    if getattr(existing_trade, "stop_loss_price_percentage", None) is not None:
+                        sl_pct = float(existing_trade.stop_loss_price_percentage)
+                        if direction == "buy":
+                            existing_trade.stop_loss_price = entry_price * (1 - sl_pct / 100.0)
+                        else:
+                            existing_trade.stop_loss_price = entry_price * (1 + sl_pct / 100.0)
+            except Exception:
+                pass
+
             existing_trade.save()
             logger.debug(f"Updated trade record for {symbol}")
 
@@ -737,10 +780,18 @@ def manual_close_trade_view(request):
                 self.symbol = position_data["symbol"]
                 self.direction = "buy" if float(position_data["qty"]) > 0 else "sell"
                 self.quantity = abs(float(position_data["qty"]))
-                qty = float(position_data["qty"])
+                qty = float(position_data["qty"])           
                 market_value = float(position_data["market_value"])
-                # For short positions, market_value is negative, so we need absolute value
-                self.entry_price = abs(market_value) / abs(qty) if qty != 0 else 0
+                avg_entry_price = position_data.get("avg_entry_price")
+                # Use average entry price when available; for shorts, avg entry is positive
+                if avg_entry_price is not None:
+                    try:
+                        self.entry_price = float(avg_entry_price)
+                    except Exception:
+                        self.entry_price = abs(market_value) / abs(qty) if qty != 0 else 0
+                else:
+                    # Fallback: derive from market value (approx current price, not ideal)
+                    self.entry_price = abs(market_value) / abs(qty) if qty != 0 else 0
                 self.status = "open"
                 self.unrealized_pnl = float(position_data["unrealized_pl"])
                 self.created_at = timezone.now()
@@ -752,6 +803,11 @@ def manual_close_trade_view(request):
                     if db_trade:
                         self.take_profit_price = db_trade.take_profit_price
                         self.stop_loss_price = db_trade.stop_loss_price
+                        # Carry through stored percentages to avoid recomputation drift
+                        if getattr(db_trade, "take_profit_price_percentage", None) is not None:
+                            self.take_profit_price_percentage = db_trade.take_profit_price_percentage
+                        if getattr(db_trade, "stop_loss_price_percentage", None) is not None:
+                            self.stop_loss_price_percentage = db_trade.stop_loss_price_percentage
                         self.created_at = db_trade.created_at or timezone.now()
                     else:
                         self.take_profit_price = None
@@ -761,7 +817,7 @@ def manual_close_trade_view(request):
                     self.stop_loss_price = None
 
                 # Calculate P&L percentage based on cost basis
-                cost_basis = self.entry_price * self.quantity
+                cost_basis = (self.entry_price or 0) * self.quantity
                 if cost_basis > 0:
                     self.pnl_percentage = (self.unrealized_pnl / cost_basis) * 100
                 else:
@@ -800,6 +856,23 @@ def manual_close_trade_view(request):
                 if not hasattr(self, 'stop_loss_price_percentage'):
                     self.stop_loss_price_percentage = None  # No stored settings
 
+                # If percentages are available, recompute the dollar TP/SL from current entry price
+                try:
+                    if self.entry_price and self.take_profit_price_percentage is not None:
+                        pct = float(self.take_profit_price_percentage)
+                        if self.direction == "buy":
+                            self.take_profit_price = float(self.entry_price) * (1 + pct / 100.0)
+                        else:
+                            self.take_profit_price = float(self.entry_price) * (1 - pct / 100.0)
+                    if self.entry_price and self.stop_loss_price_percentage is not None:
+                        pct = float(self.stop_loss_price_percentage)
+                        if self.direction == "buy":
+                            self.stop_loss_price = float(self.entry_price) * (1 - pct / 100.0)
+                        else:
+                            self.stop_loss_price = float(self.entry_price) * (1 + pct / 100.0)
+                except Exception:
+                    pass
+
         trade_obj = AlpacaTrade(pos)
         open_trades.append(trade_obj)
 
@@ -815,6 +888,23 @@ def manual_close_trade_view(request):
                 trade.pnl_percentage = ((trade.unrealized_pnl or 0) / cost_basis) * 100
             else:
                 trade.pnl_percentage = 0.0
+
+            # For display consistency: if percent fields exist, compute dollar TP/SL from entry
+            try:
+                if trade.entry_price and trade.take_profit_price_percentage is not None:
+                    pct = float(trade.take_profit_price_percentage)
+                    if trade.direction == "buy":
+                        trade.take_profit_price = float(trade.entry_price) * (1 + pct / 100.0)
+                    else:
+                        trade.take_profit_price = float(trade.entry_price) * (1 - pct / 100.0)
+                if trade.entry_price and trade.stop_loss_price_percentage is not None:
+                    pct = float(trade.stop_loss_price_percentage)
+                    if trade.direction == "buy":
+                        trade.stop_loss_price = float(trade.entry_price) * (1 - pct / 100.0)
+                    else:
+                        trade.stop_loss_price = float(trade.entry_price) * (1 + pct / 100.0)
+            except Exception:
+                pass
             open_trades.append(trade)
 
     if request.method == "POST":
@@ -1099,10 +1189,23 @@ def manual_close_trade_view(request):
                         # Update the take profit and stop loss prices
                         if take_profit_price:
                             trade.take_profit_price = take_profit_price
-                            trade.take_profit_price_percentage = take_profit_percent
+                            try:
+                                trade.take_profit_price_percentage = float(take_profit_percent)
+                            except Exception:
+                                trade.take_profit_price_percentage = None
+                        else:
+                            trade.take_profit_price = None
+                            trade.take_profit_price_percentage = None
+
                         if stop_loss_price:
                             trade.stop_loss_price = stop_loss_price
-                            trade.stop_loss_price_percentage = stop_loss_percent
+                            try:
+                                trade.stop_loss_price_percentage = float(stop_loss_percent)
+                            except Exception:
+                                trade.stop_loss_price_percentage = None
+                        else:
+                            trade.stop_loss_price = None
+                            trade.stop_loss_price_percentage = None
                         trade.save()
 
                         tp_display = f"${take_profit_price:.2f}" if take_profit_price else "None"
@@ -1215,49 +1318,89 @@ def manual_close_trade_view(request):
         elif action == "cancel_trade" and trade_id:
             logger.info(f"Attempting to cancel pending trade with ID: {trade_id}")
             try:
-                trade = Trade.objects.get(id=trade_id, status="pending")
-                
-                # Cancel the order via Alpaca API if it has an order ID
-                if trade.alpaca_order_id:
+                # Support both pending and pending_close
+                trade = Trade.objects.get(id=trade_id, status__in=["pending", "pending_close"])
+
+                # Try to cancel the close order(s) on Alpaca by symbol/side
+                try:
                     import os
                     import alpaca_trade_api as tradeapi
-                    
                     api_key = os.getenv("ALPACA_API_KEY")
                     secret_key = os.getenv("ALPACA_SECRET_KEY")
                     base_url = os.getenv("ALPACA_BASE_URL", "https://paper-api.alpaca.markets")
-                    
                     if api_key and secret_key:
                         api = tradeapi.REST(api_key, secret_key, base_url=base_url)
-                        api.cancel_order(trade.alpaca_order_id)
-                        logger.info(f"Cancelled Alpaca order {trade.alpaca_order_id} for trade {trade_id}")
-                
-                # Update trade status to cancelled
-                trade.status = "cancelled"
+                        # Identify expected close side (opposite to current direction)
+                        close_side = "sell" if trade.direction == "buy" else "buy"
+                        open_orders = api.list_orders(status="open", limit=200)
+                        cancelled = 0
+                        for o in open_orders:
+                            try:
+                                if str(o.symbol).upper() == str(trade.symbol).upper() and str(o.side).lower() == close_side:
+                                    api.cancel_order(o.id)
+                                    cancelled += 1
+                            except Exception:
+                                continue
+                        logger.info(f"Cancel close: symbol={trade.symbol} cancelled_open_orders={cancelled}")
+                except Exception as alpaca_err:
+                    logger.warning(f"Alpaca cancel attempt failed for trade {trade_id}: {alpaca_err}")
+
+                # Reinstate trade to open and restore TP/SL
+                trade.status = "open"
+                trade.close_reason = None
+                try:
+                    # Restore from stored percentages if present; otherwise from original price fields
+                    if trade.entry_price and (trade.take_profit_price_percentage is not None or trade.stop_loss_price_percentage is not None):
+                        if trade.take_profit_price_percentage is not None:
+                            tp_pct = float(trade.take_profit_price_percentage)
+                            trade.take_profit_price = (
+                                float(trade.entry_price) * (1 + tp_pct / 100.0)
+                                if trade.direction == "buy"
+                                else float(trade.entry_price) * (1 - tp_pct / 100.0)
+                            )
+                        if trade.stop_loss_price_percentage is not None:
+                            sl_pct = float(trade.stop_loss_price_percentage)
+                            trade.stop_loss_price = (
+                                float(trade.entry_price) * (1 - sl_pct / 100.0)
+                                if trade.direction == "buy"
+                                else float(trade.entry_price) * (1 + sl_pct / 100.0)
+                            )
+                    else:
+                        # Fallback to original TP/SL prices if they exist
+                        if getattr(trade, "original_take_profit_price", None):
+                            trade.take_profit_price = trade.original_take_profit_price
+                        if getattr(trade, "original_stop_loss_price", None):
+                            trade.stop_loss_price = trade.original_stop_loss_price
+                except Exception:
+                    pass
                 trade.save()
-                
+
                 messages.success(
                     request,
-                    f"Pending order for {trade.symbol} has been cancelled successfully"
+                    f"Close order cancelled. {trade.symbol} reinstated to Open"
                 )
-                
-                # Send update to dashboard activity log
+
                 send_dashboard_update(
-                    "trade_cancelled", 
+                    "trade_cancelled",
                     {
                         "trade_id": trade.id,
                         "symbol": trade.symbol,
-                        "message": f"Pending order for {trade.symbol} cancelled by user",
-                        "status": "cancelled"
-                    }
+                        "message": f"Close order cancelled for {trade.symbol}; position reinstated with TP/SL restored",
+                        "status": "open",
+                        "take_profit_price": trade.take_profit_price,
+                        "stop_loss_price": trade.stop_loss_price,
+                        "take_profit_percent": trade.take_profit_price_percentage,
+                        "stop_loss_percent": trade.stop_loss_price_percentage,
+                    },
                 )
-                
+
             except Trade.DoesNotExist:
                 logger.warning(f"Attempted to cancel non-existent or non-pending trade with ID: {trade_id}")
                 messages.error(request, "Trade not found or not in pending status")
             except Exception as e:
                 logger.error(f"Error cancelling trade {trade_id}: {e}")
                 messages.error(request, f"Error cancelling trade: {str(e)}")
-            
+
             return redirect("close_trade")
 
     # Calculate total unrealized P&L for summary

@@ -457,9 +457,11 @@
                     className = 'text-warning';
                     break;
                 case 'trade_closed':
-                    const pnl = data.pnl > 0 ? `+$${data.pnl.toFixed(2)}` : `-$${Math.abs(data.pnl).toFixed(2)}`;
-                    message = `🎯 Trade closed: ${data.symbol} P&L: ${pnl}`;
-                    className = data.pnl > 0 ? 'text-success' : 'text-danger';
+                    const realized = (data.pnl !== undefined && data.pnl !== null) ? data.pnl : (data.realized_pnl || 0);
+                    const pnl = realized > 0 ? `+$${realized.toFixed(2)}` : `-$${Math.abs(realized).toFixed(2)}`;
+                    const percent = (data.pnl_percent !== undefined && data.pnl_percent !== null) ? ` (${data.pnl_percent.toFixed(1)}%)` : '';
+                    message = `🎯 Trade closed: ${data.symbol} P&L: ${pnl}${percent}`;
+                    className = realized > 0 ? 'text-success' : 'text-danger';
                     break;
                 case 'scraper_error':
                     message = `⚠️ Scraping error from ${data.source}: ${data.error}`;

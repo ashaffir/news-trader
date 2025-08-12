@@ -143,6 +143,20 @@
         color: white;
     }
 
+    /* Disabled state for action buttons */
+    .edit-btn.disabled,
+    .edit-btn[disabled],
+    .close-btn.disabled,
+    .close-btn[disabled] {
+        background: #adb5bd !important; /* gray */
+        color: #f8f9fa !important;
+        box-shadow: none !important;
+        transform: none !important;
+        cursor: not-allowed !important;
+        opacity: 0.8;
+        pointer-events: none;
+    }
+
     .close-all-btn {
         background: linear-gradient(45deg, #dc3545, #c82333);
         border: none;
@@ -284,7 +298,10 @@
                                             </div>
                                         </td>
                                         <td>
-                                            <span class="status-badge status-{{ trade.status|slugify }}">{{ trade.status|capfirst }}</span>
+                                            <span class="status-badge {% if trade.status == 'pending_close' %}status-pending-close{% elif trade.status == 'open' %}status-open{% elif trade.status == 'pending' %}status-pending{% else %}status-{{ trade.status|lower }}{% endif %}"
+                                                  title="{% if trade.status == 'pending_close' %}Close order working at broker...{% endif %}">
+                                                {% if trade.status == 'pending_close' %}Pending Close{% else %}{{ trade.status|title }}{% endif %}
+                                            </span>
                                         </td>
                                         <td>
                                             {% if trade.alpaca_position %}
@@ -330,28 +347,32 @@
                                         </td>
                                         <td>
                                             <div class="action-buttons">
-                                                <button type="button" class="edit-btn" data-bs-toggle="modal"
-                                                    data-bs-target="#editTradeModal" data-trade-id="{{ trade.id }}"
+                                                <button type="button" class="edit-btn{% if trade.status == 'pending' or trade.status == 'pending_close' %} disabled{% endif %}" 
+                                                     {% if trade.status != 'pending' and trade.status != 'pending_close' %}data-bs-toggle="modal" data-bs-target="#editTradeModal"{% endif %}
+                                                     data-trade-id="{{ trade.id }}"
                                                     data-symbol="{{ trade.symbol }}" data-entry-price="{{ trade.entry_price }}"
                                                     data-current-pnl="{{ trade.unrealized_pnl|default:0 }}"
                                                     data-quantity="{{ trade.quantity }}"
                                                     data-tp-percent="{{ trade.take_profit_price_percentage|default:'' }}"
-                                                    data-sl-percent="{{ trade.stop_loss_price_percentage|default:'' }}">
+                                                     data-sl-percent="{{ trade.stop_loss_price_percentage|default:'' }}"
+                                                     {% if trade.status == 'pending' or trade.status == 'pending_close' %}disabled aria-disabled="true" title="Order pending; editing disabled"{% endif %}>
                                                     <i class="fas fa-pencil-alt"></i>Edit
                                                 </button>
-                                                {% if trade.status == 'pending' %}
+                                                {% if trade.status == 'pending' or trade.status == 'pending_close' %}
                                                 <button type="button" class="cancel-btn" data-bs-toggle="modal"
                                                     data-bs-target="#cancelTradeModal" data-trade-id="{{ trade.id }}"
                                                     data-symbol="{{ trade.symbol }}" data-quantity="{{ trade.quantity }}"
                                                     data-entry-price="{{ trade.entry_price }}">
-                                                    <i class="fas fa-ban"></i>Cancel
+                                                    <i class="fas fa-ban"></i>Cancel Close
                                                 </button>
                                                 {% else %}
-                                                <button type="button" class="close-btn" data-bs-toggle="modal"
-                                                    data-bs-target="#closeTradeModal" data-trade-id="{{ trade.id }}"
+                                                <button type="button" class="close-btn{% if trade.status == 'pending' or trade.status == 'pending_close' %} disabled{% endif %}" 
+                                                    {% if trade.status != 'pending' and trade.status != 'pending_close' %}data-bs-toggle="modal" data-bs-target="#closeTradeModal"{% endif %}
+                                                    data-trade-id="{{ trade.id }}"
                                                     data-symbol="{{ trade.symbol }}" data-quantity="{{ trade.quantity }}"
                                                     data-pnl="{{ trade.unrealized_pnl|default:0 }}"
-                                                    data-entry-price="{{ trade.entry_price }}">
+                                                    data-entry-price="{{ trade.entry_price }}" 
+                                                    {% if trade.status == 'pending' or trade.status == 'pending_close' %}disabled aria-disabled="true" title="{% if trade.status == 'pending_close' %}Close order working at broker...{% else %}Order pending; close disabled{% endif %}"{% endif %}>
                                                     <i class="fas fa-times"></i>Close
                                                 </button>
                                                 {% endif %}

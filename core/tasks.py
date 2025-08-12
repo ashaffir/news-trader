@@ -137,11 +137,32 @@ def _is_duplicate_content(content, source, similarity_threshold=0.85):
 
 def format_activity_message(message_type, data):
     """Format activity message for consistent display."""
+    # Normalize common fields
+    def _num(val, default=0.0):
+        try:
+            return float(val)
+        except Exception:
+            return float(default)
+
+    pnl_value = data.get('pnl')
+    if pnl_value is None:
+        pnl_value = data.get('realized_pnl')
+    pnl_value = _num(pnl_value, 0.0)
+
+    pnl_percent_value = data.get('pnl_percent')
+    try:
+        pnl_percent_value = None if pnl_percent_value is None else float(pnl_percent_value)
+    except Exception:
+        pnl_percent_value = None
+
     messages = {
         'new_post': f"📰 New post from {data.get('source', 'Unknown')}: {data.get('content_preview', '')[:100]}...",
         'analysis_complete': f"🧠 Analysis: {data.get('symbol', 'N/A')} {data.get('direction', '').upper()} ({round(data.get('confidence', 0) * 100)}% confidence)",
         'trade_executed': f"💰 Trade: {data.get('direction', '').upper()} {data.get('quantity', 0)} {data.get('symbol', 'N/A')} @ ${data.get('price', 0)}",
-        'trade_closed': f"🎯 Trade closed: {data.get('symbol', 'N/A')} P&L: ${data.get('pnl', 0):.2f}",
+        'trade_closed': (
+            f"🎯 Trade closed: {data.get('symbol', 'N/A')} P&L: ${pnl_value:.2f}"
+            + (f" ({pnl_percent_value:+.1f}%)" if pnl_percent_value is not None else "")
+        ),
         'trade_close_requested': f"🚨 Close request: {data.get('symbol', 'N/A')} order submitted (ID: {data.get('order_id', 'N/A')})",
         'scraper_error': f"⚠️ Scraping error from {data.get('source', 'Unknown')}: {data.get('error', 'Unknown error')}",
         'scraper_status': f"🔄 {data.get('status', 'Scraper status update')}",
@@ -1597,12 +1618,64 @@ def monitor_local_stop_take_levels():
 
     for trade in open_trades:
         try:
-            # Get current price
-            ticker = api.get_latest_trade(trade.symbol)
-            current_price = float(ticker.price)
+            # Prefer Alpaca position's current_price (matches UI/P&L),
+            # fall back to market data latest trade if not available
+            current_price = None
+            try:
+                position = api.get_position(trade.symbol)
+                current_price = float(position.current_price)
+            except Exception:
+                try:
+                    ticker = api.get_latest_trade(trade.symbol)
+                    current_price = float(ticker.price)
+                except Exception:
+                    # As a last resort, use entry price to avoid crashes
+                    current_price = float(trade.entry_price or 0)
+
+            # Diagnostic logging of thresholds
+            try:
+                logger.info(
+                    f"TP/SL check trade #{trade.id} {trade.symbol} dir={trade.direction} "
+                    f"price={current_price:.4f} tp={trade.take_profit_price} sl={trade.stop_loss_price}"
+                )
+            except Exception:
+                # Do not fail monitoring for logging issues
+                pass
+
+            # Prefer percentage-based triggers when percentages are set on the trade
+            use_percent_based_tp = trade.take_profit_price_percentage is not None
+            use_percent_based_sl = trade.stop_loss_price_percentage is not None
+
+            pnl_percent = None
+            if use_percent_based_tp or use_percent_based_sl:
+                try:
+                    if trade.direction == "buy":
+                        pnl_percent = (
+                            (current_price - float(trade.entry_price)) / float(trade.entry_price)
+                        ) * 100.0 if trade.entry_price else None
+                    else:
+                        pnl_percent = (
+                            (float(trade.entry_price) - current_price) / float(trade.entry_price)
+                        ) * 100.0 if trade.entry_price else None
+                except Exception:
+                    pnl_percent = None
 
             # Check stop loss trigger
-            if should_trigger_stop_loss(trade, current_price):
+            stop_triggered = False
+            if use_percent_based_sl and pnl_percent is not None:
+                try:
+                    sl_pct = float(trade.stop_loss_price_percentage)
+                    if pnl_percent <= -sl_pct:
+                        logger.info(
+                            f"Stop loss % triggered for trade {trade.id} ({trade.symbol}): pnl%={pnl_percent:.2f} vs SL% {sl_pct}"
+                        )
+                        stop_triggered = True
+                except Exception:
+                    stop_triggered = False
+            elif should_trigger_stop_loss(trade, current_price):
+                stop_triggered = True
+
+            if stop_triggered:
                 logger.info(f"Stop loss triggered for trade {trade.id} ({trade.symbol}): {current_price} vs SL {trade.stop_loss_price}")
                 trade.status = "pending_close"
                 trade.close_reason = "stop_loss"
@@ -1611,13 +1684,23 @@ def monitor_local_stop_take_levels():
                 triggered_count += 1
 
             # Check take profit trigger
-            elif should_trigger_take_profit(trade, current_price):
+            elif (
+                (use_percent_based_tp and pnl_percent is not None and 
+                 pnl_percent >= float(trade.take_profit_price_percentage))
+                or should_trigger_take_profit(trade, current_price)
+            ):
                 logger.info(f"Take profit triggered for trade {trade.id} ({trade.symbol}): {current_price} vs TP {trade.take_profit_price}")
                 trade.status = "pending_close"
                 trade.close_reason = "take_profit"
                 trade.save()
                 close_trade_manually.delay(trade.id)
                 triggered_count += 1
+            else:
+                # Log when TP/SL are missing to aid debugging
+                if not trade.take_profit_price and not trade.stop_loss_price:
+                    logger.info(
+                        f"No TP/SL set for trade #{trade.id} {trade.symbol}; skipping trigger checks"
+                    )
 
         except Exception as e:
             logger.error(f"Error monitoring trade {trade.id} ({trade.symbol}): {e}")
@@ -1683,27 +1766,47 @@ def close_trade_manually(trade_id):
                         live_qty = trade.quantity
                         close_side = "sell" if trade.direction == "buy" else "buy"
 
+                    # Submit a close order. The alpaca-trade-api client may not
+                    # support reduce_only in all versions; omit it and rely on qty
+                    # derived from live position to avoid over-closing.
                     close_order = api.submit_order(
                         symbol=trade.symbol,
                         qty=live_qty,
                         side=close_side,
                         type="market",
                         time_in_force="gtc",
-                        reduce_only=True
                     )
 
-                    # Get current price for exit price
+                    # Mark trade pending while order is working
+                    trade.status = "pending_close"
+                    trade.save(update_fields=["status"])
+
+                    # Fetch latest filled order or position price for accurate exit
+                    exit_price = None
                     try:
-                        ticker = api.get_latest_trade(trade.symbol)
-                        exit_price = ticker.price
-                    except:
-                        exit_price = trade.entry_price  # Fallback
+                        order = api.get_order(close_order.id)
+                        if getattr(order, "filled_avg_price", None):
+                            exit_price = float(order.filled_avg_price)
+                    except Exception:
+                        pass
+                    if exit_price is None:
+                        try:
+                            pos = api.get_position(trade.symbol)
+                            exit_price = float(getattr(pos, "current_price", 0)) or float(getattr(pos, "avg_entry_price", 0))
+                        except Exception:
+                            pass
+                    if exit_price is None:
+                        try:
+                            ticker = api.get_latest_trade(trade.symbol)
+                            exit_price = float(ticker.price)
+                        except Exception:
+                            exit_price = trade.entry_price  # Fallback
 
                     # Calculate P&L
                     if trade.direction == "buy":
-                        pnl = (exit_price - trade.entry_price) * trade.quantity
+                        pnl = (float(exit_price) - float(trade.entry_price)) * float(trade.quantity)
                     else:
-                        pnl = (trade.entry_price - exit_price) * trade.quantity
+                        pnl = (float(trade.entry_price) - float(exit_price)) * float(trade.quantity)
 
                     trade.status = "closed"
                     trade.exit_price = exit_price
@@ -1722,18 +1825,28 @@ def close_trade_manually(trade_id):
                     logger.warning(
                         f"Could not close trade via Alpaca API: {api_error}. Closing locally."
                     )
+                    # Best-effort: compute pnl using current market price if available
+                    try:
+                        ticker = api.get_latest_trade(trade.symbol)
+                        market_price = float(getattr(ticker, "price", 0) or 0)
+                    except Exception:
+                        market_price = float(trade.entry_price or 0)
+                    if trade.direction == "buy":
+                        pnl = (market_price - float(trade.entry_price)) * float(trade.quantity)
+                    else:
+                        pnl = (float(trade.entry_price) - market_price) * float(trade.quantity)
                     trade.status = "closed"
-                    trade.exit_price = trade.entry_price  # Neutral exit
-                    trade.realized_pnl = 0.0
+                    trade.exit_price = market_price
+                    trade.realized_pnl = pnl
                     # Only set to manual if no close reason was already set
                     if not trade.close_reason:
                         trade.close_reason = "manual"
                     trade.closed_at = timezone.now()
                     trade.save()
             else:
-                # Close locally without API
+                # Close locally without API - estimate using entry (no market access)
                 trade.status = "closed"
-                trade.exit_price = trade.entry_price  # Neutral exit
+                trade.exit_price = trade.entry_price
                 trade.realized_pnl = 0.0
                 # Only set to manual if no close reason was already set
                 if not trade.close_reason:
@@ -1741,9 +1854,9 @@ def close_trade_manually(trade_id):
                 trade.closed_at = timezone.now()
                 trade.save()
         else:
-            # Close locally without API
+            # Close locally without API - estimate P&L as zero if we cannot fetch price
             trade.status = "closed"
-            trade.exit_price = trade.entry_price  # Neutral exit
+            trade.exit_price = trade.entry_price
             trade.realized_pnl = 0.0
             # Only set to manual if no close reason was already set
             if not trade.close_reason:
@@ -1752,6 +1865,19 @@ def close_trade_manually(trade_id):
             trade.save()
 
         logger.info(f"Trade {trade.id} for {trade.symbol} manually closed.")
+        try:
+            # Compute P&L percent for alert
+            pnl_percent = None
+            if trade.entry_price and trade.quantity:
+                try:
+                    cost_basis = float(trade.entry_price) * float(abs(trade.quantity))
+                    if cost_basis > 0:
+                        pnl_percent = (float(trade.realized_pnl or 0) / cost_basis) * 100.0
+                except Exception:
+                    pnl_percent = None
+        except Exception:
+            pnl_percent = None
+
         send_dashboard_update(
             "trade_closed",
             {
@@ -1760,6 +1886,7 @@ def close_trade_manually(trade_id):
                 "status": trade.status,
                 "exit_price": trade.exit_price,
                 "realized_pnl": trade.realized_pnl,
+                "pnl_percent": pnl_percent,
                 "message": "Trade manually closed.",
             },
         )
@@ -1944,51 +2071,102 @@ def update_trade_status():
     try:
         api = tradeapi.REST(ALPACA_API_KEY, ALPACA_SECRET_KEY, base_url=ALPACA_BASE_URL)
 
-        # Get pending trades
-        pending_trades = Trade.objects.filter(
-            status="pending", alpaca_order_id__isnull=False
-        )
-
+        # 1) Update newly filled entry orders → open
+        pending_trades = Trade.objects.filter(status="pending", alpaca_order_id__isnull=False)
         for trade in pending_trades:
             try:
                 order = api.get_order(trade.alpaca_order_id)
-
                 if order.status == "filled":
                     trade.status = "open"
-                    trade.entry_price = float(
-                        order.filled_avg_price or order.limit_price or trade.entry_price
-                    )
+                    trade.entry_price = float(order.filled_avg_price or order.limit_price or trade.entry_price)
                     trade.opened_at = timezone.now()
                     trade.save()
-
-                    logger.info(
-                        f"Trade {trade.id} status updated to open with entry price {trade.entry_price}"
-                    )
-                    send_dashboard_update(
-                        "trade_status_updated",
-                        {
-                            "trade_id": trade.id,
-                            "status": "open",
-                            "entry_price": trade.entry_price,
-                        },
-                    )
-
+                    logger.info(f"Trade {trade.id} status updated to open with entry price {trade.entry_price}")
+                    send_dashboard_update("trade_status_updated", {"trade_id": trade.id, "status": "open", "entry_price": trade.entry_price})
                 elif order.status in ["cancelled", "rejected"]:
                     trade.status = "failed"
                     trade.save()
-
                     logger.info(f"Trade {trade.id} failed: {order.status}")
-                    send_dashboard_update(
-                        "trade_status_updated",
-                        {
-                            "trade_id": trade.id,
-                            "status": "failed",
-                            "reason": order.status,
-                        },
-                    )
-
+                    send_dashboard_update("trade_status_updated", {"trade_id": trade.id, "status": "failed", "reason": order.status})
             except Exception as e:
                 logger.error(f"Error updating status for trade {trade.id}: {e}")
+
+        # 2) Detect working close orders (orders API) → mark trades pending_close
+        try:
+            open_orders = api.list_orders(status="open", limit=200)
+        except Exception:
+            open_orders = []
+
+        symbol_to_close_side = {}
+        for o in open_orders:
+            try:
+                symbol_to_close_side.setdefault(o.symbol, set()).add(str(o.side).lower())
+            except Exception:
+                continue
+
+        candidate_trades = Trade.objects.filter(status__in=["open", "pending_close"])  # monitor both
+        for t in candidate_trades:
+            try:
+                close_side = "sell" if t.direction == "buy" else "buy"
+                if close_side in symbol_to_close_side.get(t.symbol, set()):
+                    if t.status != "pending_close":
+                        t.status = "pending_close"
+                        t.save(update_fields=["status"])
+                        logger.info(f"Marked trade {t.id} ({t.symbol}) as pending_close due to working {close_side} order")
+            except Exception:
+                pass
+
+        # 3) Sync closure via positions list → if symbol no longer present, mark newest non-closed trade as closed
+        try:
+            positions = api.list_positions()
+            live_symbols = {p.symbol for p in positions}
+        except Exception:
+            live_symbols = set()
+
+        to_check = (
+            Trade.objects
+            .filter(status__in=["open", "pending_close"]) 
+            .order_by("-created_at")
+        )
+        for t in to_check:
+            try:
+                if t.symbol not in live_symbols and t.status != "closed":
+                    # Position no longer exists at broker → close locally
+                    try:
+                        ticker = api.get_latest_trade(t.symbol)
+                        exit_price = float(getattr(ticker, "price", 0) or 0)
+                    except Exception:
+                        exit_price = t.entry_price or 0.0
+                    if t.direction == "buy":
+                        pnl = (exit_price - (t.entry_price or 0)) * (t.quantity or 0)
+                    else:
+                        pnl = ((t.entry_price or 0) - exit_price) * (t.quantity or 0)
+                    t.status = "closed"
+                    t.exit_price = exit_price
+                    t.realized_pnl = pnl
+                    t.closed_at = timezone.now()
+                    if not t.close_reason:
+                        t.close_reason = "manual"
+                    t.save()
+                    logger.info(f"Trade {t.id} ({t.symbol}) marked closed after broker position disappeared")
+                    # Include percent for alert formatting
+                    try:
+                        cost_basis = float(t.entry_price or 0) * float(abs(t.quantity or 0))
+                        pnl_percent = (float(t.realized_pnl or 0) / cost_basis) * 100.0 if cost_basis > 0 else None
+                    except Exception:
+                        pnl_percent = None
+                    send_dashboard_update(
+                        "trade_closed",
+                        {
+                            "trade_id": t.id,
+                            "symbol": t.symbol,
+                            "exit_price": t.exit_price,
+                            "realized_pnl": t.realized_pnl,
+                            "pnl_percent": pnl_percent,
+                        },
+                    )
+            except Exception as e:
+                logger.error(f"Error syncing closure for trade {t.id}: {e}")
 
     except Exception as e:
         logger.error(f"Error updating trade statuses: {e}")
