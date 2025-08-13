@@ -181,6 +181,78 @@ def get_post_analysis_ajax(request, post_id):
 
 @staff_member_required
 @require_POST
+def add_source_api(request):
+    """Add a new Source by URL after verifying it's reachable."""
+    try:
+        # Support form-encoded and JSON
+        if request.content_type == "application/json":
+            payload = json.loads(request.body or "{}")
+            url = (payload.get("url") or "").strip()
+        else:
+            url = (request.POST.get("url") or "").strip()
+
+        if not url:
+            return JsonResponse({"success": False, "error": "URL is required"}, status=400)
+
+        # Normalize scheme
+        if not url.lower().startswith(("http://", "https://")):
+            url = f"https://{url}"
+
+        # Reachability check (be permissive: treat any non-5xx as active)
+        def _is_active_status(status_code: int) -> bool:
+            return status_code is not None and status_code < 500
+
+        status_code = None
+        try:
+            resp = requests.head(url, allow_redirects=True, timeout=10)
+            status_code = resp.status_code
+            if status_code in (405,):  # HEAD not allowed → try GET
+                raise requests.RequestException("HEAD not allowed")
+            ok = _is_active_status(status_code)
+        except Exception:
+            try:
+                resp = requests.get(url, allow_redirects=True, timeout=15, stream=True)
+                status_code = resp.status_code
+                ok = _is_active_status(status_code)
+            except Exception:
+                ok = False
+        if not ok:
+            return JsonResponse({
+                "success": False,
+                "error": "URL is not reachable",
+                "status": status_code
+            }, status=400)
+
+        # Create or fetch Source
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        default_name = (parsed.hostname or "Source").lower()
+
+        source, created = Source.objects.get_or_create(
+            url=url,
+            defaults={
+                "name": default_name,
+                "scraping_enabled": True,
+            },
+        )
+
+        return JsonResponse({
+            "success": True,
+            "created": created,
+            "source": {
+                "id": source.id,
+                "name": source.name,
+                "url": source.url,
+            },
+            "message": "Source added" if created else "Source already exists",
+        })
+    except Exception as e:
+        logger.error(f"add_source_api error: {e}")
+        return JsonResponse({"success": False, "error": str(e)}, status=500)
+
+
+@staff_member_required
+@require_POST
 def toggle_bot_status(request):
     """Toggle the bot enabled/disabled status."""
     try:
@@ -728,13 +800,14 @@ def sync_alpaca_positions_to_database(alpaca_positions):
             existing_trade.save()
             logger.debug(f"Updated trade record for {symbol}")
 
-    # Close database trades that no longer exist in Alpaca
-    db_open_trades = Trade.objects.filter(status="open")
-    for db_trade in db_open_trades:
+    # Close database trades that no longer exist in Alpaca (cover open and pending_close)
+    db_trades_to_check = Trade.objects.filter(status__in=["open", "pending_close"])
+    for db_trade in db_trades_to_check:
         if db_trade.symbol not in alpaca_symbols:
             # Position no longer exists in Alpaca, mark as closed
             db_trade.status = "closed"
-            db_trade.close_reason = "position_closed_externally"
+            # Use an allowed close reason within the model choices and length limits
+            db_trade.close_reason = "market_close"
             db_trade.closed_at = timezone.now()
             db_trade.save()
             logger.info(f"Marked {db_trade.symbol} as closed (no longer in Alpaca)")

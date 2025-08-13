@@ -1,7 +1,7 @@
 {% extends 'core/base.html' %}
 {% load static %}
 
-{% block title %}News Trader - Testing & Monitoring{% endblock %}
+{% block title %}News Trader - Source Manager{% endblock %}
 
 {% block extra_head %}
 <style>
@@ -268,7 +268,7 @@
         <div class="row mb-4">
             <div class="col-12">
                 <div class="mb-3">
-                    <h1><i class="fas fa-flask"></i> Trading System Test Center</h1>
+                    <h1><i class="fas fa-sitemap"></i> Source Manager</h1>
                 </div>
             </div>
         </div>
@@ -356,18 +356,35 @@
         <div class="row">
             <!-- Left Column: Actions -->
             <div class="col-lg-6">
-                <!-- Step 1: Data Collection -->
+                <!-- Step 1: Add Source & Scrape -->
                 <div class="workflow-step">
                     <div class="d-flex align-items-center mb-3">
                         <div class="step-number">1</div>
                         <div>
-                            <h5 class="mb-1">Data Collection</h5>
-                            <small>Fetch latest news from configured sources</small>
+                            <h5 class="mb-1">Add Source</h5>
+                            <small>Enter a URL to add a new source, then scrape it</small>
                         </div>
                     </div>
 
                     <div class="card action-card">
                         <div class="card-body">
+                            <h6><i class="fas fa-plus-circle"></i> Add a Source by URL</h6>
+                            <form id="add-source-form" class="mb-3">
+                                {% csrf_token %}
+                                <div class="row g-2">
+                                    <div class="col-md-8">
+                                        <input type="url" class="form-control" id="add-source-url" placeholder="https://example.com" required>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <button type="submit" id="add-source-button" class="btn btn-success w-100">
+                                            <i id="add-source-icon" class="fas fa-plus"></i>
+                                            <span id="add-source-text">Add Source</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            </form>
+
+                            <hr>
                             <h6><i class="fas fa-rss"></i> Source Selection & Scraping</h6>
                             <form id="scrape-form" class="mb-3">
                                 {% csrf_token %}
@@ -390,7 +407,7 @@
                                             {% endfor %}
                                         </select>
                                     </div>
-                                    <div class="col-md-4">
+                                    <div class="col-md-4 mt-2 mt-md-0">
                                         <button type="submit" id="scrape-button" class="btn btn-primary w-100">
                                             <i id="scrape-icon" class="fas fa-play"></i> 
                                             <span id="scrape-text">Start Scrape</span>
@@ -410,8 +427,7 @@
                                                     class="fas fa-globe"></i> Scrape All Sources</a></li>
                                         <li><a class="dropdown-item" href="#" onclick="viewSourceStatus()"><i
                                                     class="fas fa-info-circle"></i> Source Status</a></li>
-                                        <li><a class="dropdown-item" href="/analyze-source/"><i
-                                                    class="fas fa-robot"></i> Analyze New Source</a></li>
+                                        
                                         <li>
                                             <hr class="dropdown-divider">
                                         </li>
@@ -448,11 +464,10 @@
                                 <div class="row">
                                     <div class="col-md-8">
                                         <select class="form-select" name="post_id" id="post-select" required>
-                                            <option value="">Select a post to analyze...</option>
+                                            <option value="">Select a post/headline to analyze...</option>
                                             {% for post in recent_posts|slice:":20" %}
                                             <option value="{{ post.id }}" data-source="{{ post.source.name }}">
-                                                Post #{{ post.id }} - {{ post.source.name }}
-                                                ({{ post.created_at|timesince }} ago)
+                                                #{{ post.id }} - {{ post.source.name }} ({{ post.created_at|timesince }} ago)
                                             </option>
                                             {% empty %}
                                             <option value="">No posts available</option>
@@ -586,7 +601,7 @@
                                                     <span class="text-muted ms-2 small">{{ post.created_at|timesince }}
                                                         ago</span>
                                                 </div>
-                                                <div class="content-preview text-dark">{{ post.content|truncatechars:120 }}</div>
+                                                <div class="content-preview text-dark">{{ post.content|truncatechars:200 }}</div>
                                                 {% if post.url %}
                                                 <a href="{{ post.url }}" target="_blank"
                                                     class="small text-decoration-none">
@@ -603,9 +618,9 @@
                                         </div>
                                     </div>
                                     {% empty %}
-                                    <div class="text-center p-4 text-muted">
+                                        <div class="text-center p-4 text-muted">
                                         <i class="fas fa-inbox fa-2x mb-2"></i>
-                                        <div>No posts found. Try running a scraper first.</div>
+                                        <div>No posts found. Try adding a source and running a scrape.</div>
                                     </div>
                                     {% endfor %}
                                 </div>
@@ -698,6 +713,58 @@
                     console.error('Error refreshing post dropdown:', error);
                 });
         }
+
+        // Add Source handler
+        (function handleAddSourceForm() {
+            const form = document.getElementById('add-source-form');
+            if (!form) return;
+            const button = document.getElementById('add-source-button');
+            const icon = document.getElementById('add-source-icon');
+            const text = document.getElementById('add-source-text');
+            const input = document.getElementById('add-source-url');
+
+            form.addEventListener('submit', function(e) {
+                e.preventDefault();
+                const url = input.value.trim();
+                if (!url) return;
+                button.disabled = true;
+                icon.className = 'fas fa-spinner fa-spin';
+                text.textContent = 'Adding...';
+
+                fetch('/api/add-source/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrfToken
+                    },
+                    body: JSON.stringify({ url })
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        showNotification(`${data.message}: ${data.source.name}`, 'success');
+                        // Add to dropdown if new
+                        const select = document.getElementById('source-select');
+                        if (select && !Array.from(select.options).some(o => o.value == data.source.id)) {
+                            const opt = document.createElement('option');
+                            opt.value = data.source.id;
+                            opt.textContent = `${data.source.name}`;
+                            select.appendChild(opt);
+                        }
+                    } else {
+                        showNotification(`Error: ${data.error}`, 'danger');
+                    }
+                })
+                .catch(err => {
+                    showNotification(`Network error: ${err.message}`, 'danger');
+                })
+                .finally(() => {
+                    button.disabled = false;
+                    icon.className = 'fas fa-plus';
+                    text.textContent = 'Add Source';
+                });
+            });
+        })();
 
         // Quick action functions
         function scrapeSource(sourceId) {
@@ -1228,7 +1295,7 @@
                         
                                         // Open results in new tab after short delay
                 setTimeout(() => {
-                    const resultsUrl = `/api/posts/?source_id=${sourceId}&format=json&ordering=-created_at&page_size=50`;
+                    const resultsUrl = `/api/public-posts/?page_size=100`;
                     console.log('Opening results for source ID:', sourceId, 'URL:', resultsUrl);
                     window.open(resultsUrl, '_blank');
                             

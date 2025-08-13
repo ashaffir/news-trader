@@ -363,7 +363,7 @@
                                                     data-bs-target="#cancelTradeModal" data-trade-id="{{ trade.id }}"
                                                     data-symbol="{{ trade.symbol }}" data-quantity="{{ trade.quantity }}"
                                                     data-entry-price="{{ trade.entry_price }}">
-                                                    <i class="fas fa-ban"></i>Cancel Close
+                                                    <i class="fas fa-ban"></i>Cancel Order
                                                 </button>
                                                 {% else %}
                                                 <button type="button" class="close-btn{% if trade.status == 'pending' or trade.status == 'pending_close' %} disabled{% endif %}" 

@@ -380,286 +380,325 @@ def _get_site_specific_selectors(url):
 
 
 def _scrape_with_browser(source):
-    """Use headless browser for dynamic content scraping"""
-    # Allow enabling/disabling Selenium-based scraping by env flag
-    # Default: disabled in production unless explicitly enabled
-    # Default ON; set ENABLE_SELENIUM_SCRAPING=false to disable
-    selenium_enabled = os.getenv("ENABLE_SELENIUM_SCRAPING", "true").lower() in ("1", "true", "yes", "on")
-    if not selenium_enabled:
-        raise RuntimeError("Selenium scraping disabled. Set ENABLE_SELENIUM_SCRAPING=true to enable.")
-    try:
-        # Import with explicit error handling for Celery workers
-        try:
-            from selenium import webdriver
-            from selenium.webdriver.chrome.options import Options
-            from selenium.webdriver.common.by import By
-            from selenium.webdriver.support.ui import WebDriverWait
-            from selenium.webdriver.support import expected_conditions as EC
-            from webdriver_manager.chrome import ChromeDriverManager
-            from selenium.webdriver.chrome.service import Service
-        except ImportError as import_error:
-            import sys
-            logger.error(f"Import error in browser scraping: {import_error}")
-            logger.error(f"Python path: {sys.executable}")
-            raise ImportError(f"Failed to import browser dependencies: {import_error}")
-        
-        logger.info(f"Headless browser scraping from {source.url}")
-        
-        # Check for site-specific configuration
-        site_config = _get_site_specific_selectors(source.url)
-        
-        # If no predefined config, try to use auto-generated config from source
-        if not site_config and source.data_extraction_config:
-            extraction_config = source.data_extraction_config
-            if extraction_config.get('selectors'):
-                site_config = extraction_config['selectors']
-                logger.info(f"Using auto-generated selectors for {source.url}")
-        
-        # Set up headless Chrome with Docker-optimized options
-        chrome_options = Options()
-        chrome_options.add_argument("--headless")
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage")
-        chrome_options.add_argument("--disable-gpu")
-        chrome_options.add_argument("--disable-extensions")
-        chrome_options.add_argument("--disable-plugins")
-        chrome_options.add_argument("--disable-images")  # Faster loading  
-        chrome_options.add_argument("--disable-blink-features=AutomationControlled")  # Hide automation
-        # Note: JavaScript enabled for dynamic content loading
-        chrome_options.add_argument("--window-size=1920,1080")
-        chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-        
-        # Docker-specific Chrome binary detection
-        chrome_binary = os.environ.get('CHROME_BIN') or os.environ.get('CHROME_PATH')
-        if chrome_binary and os.path.exists(chrome_binary):
-            chrome_options.binary_location = chrome_binary
-            logger.info(f"Using Chrome binary: {chrome_binary}")
-        else:
-            # Try common Chrome/Chromium locations
-            for chrome_path in ['/usr/bin/chromium', '/usr/bin/google-chrome', '/usr/bin/chromium-browser']:
-                if os.path.exists(chrome_path):
-                    chrome_options.binary_location = chrome_path
-                    logger.info(f"Found Chrome binary: {chrome_path}")
-                    break
-        
-        # Create driver with better error handling
-        try:
-            # In Docker, prefer system chromedriver over ChromeDriverManager
-            if os.path.exists('/usr/bin/chromedriver'):
-                logger.info("Using system chromedriver in Docker environment")
-                service = Service('/usr/bin/chromedriver')
-                driver = webdriver.Chrome(service=service, options=chrome_options)
-            else:
-                # Try ChromeDriverManager for non-Docker environments
-                service = Service(ChromeDriverManager().install())
-                driver = webdriver.Chrome(service=service, options=chrome_options)
-        except Exception as e:
-            logger.warning(f"Chrome service setup failed: {e}, trying basic Chrome")
-            # Final fallback to basic Chrome (no explicit service)
-            try:
-                driver = webdriver.Chrome(options=chrome_options)
-            except Exception as e2:
-                logger.error(f"All Chrome driver methods failed: {e2}")
-                raise
-        
-        try:
-            # Set timeouts
-            driver.set_page_load_timeout(30)
-            driver.implicitly_wait(10)
-            
-            driver.get(source.url)
-            
-            # Wait for page to load
-            WebDriverWait(driver, 15).until(
-                EC.presence_of_element_located((By.TAG_NAME, "body"))
-            )
-            
-            # Additional wait for dynamic content to load
-            import time
-            time.sleep(5)  # Allow JavaScript to load dynamic content
-            
-            # Extract article content based on site-specific or common patterns
-            articles = []
-            
-            # Use site-specific selectors if available, otherwise try generic ones
-            if site_config:
-                logger.info(f"Using site-specific configuration for {source.url}")
-                selectors = [site_config['container']]
-            else:
-                logger.info(f"Using generic selectors for {source.url}")
-                selectors = [
-                    'article',
-                    '.article',
-                    '.news-item',
-                    '.story',
-                    '.post',
-                    '.card',           # Common card layouts
-                    '.item',           # Generic item containers
-                    '.entry',          # Blog entries
-                    '.headline',       # Headlines containers
-                    '.news',           # News containers
-                    '.content-item',   # Content items
-                    '[class*="article"]',
-                    '[class*="story"]',
-                    '[class*="news"]',
-                    '[class*="post"]',
-                    '[class*="item"]',
-                    '[class*="card"]'
-                ]
-            
-            for selector in selectors:
-                elements = driver.find_elements(By.CSS_SELECTOR, selector)
-                if elements:
-                    logger.info(f"Found {len(elements)} articles using selector: {selector}")
-                    
-                    for i, element in enumerate(elements):  # Process all found articles
-                        try:
-                            # Special-case: when selector returns anchor elements as containers
-                            element_tag = element.tag_name.lower()
-                            if element_tag == 'a':
-                                link = element.get_attribute('href')
-                                title = (element.text or '').strip()
-                                if not title:
-                                    # Fallback to aria-label or title attribute
-                                    title = (element.get_attribute('aria-label') or element.get_attribute('title') or '').strip()
-                                if link and title and _looks_like_article_url(link):
-                                    # Create content from title only in this case
-                                    full_content = title
-                                    url_exists = Post.objects.filter(url=link).exists()
-                                    content_duplicate = _is_duplicate_content(full_content, source)
-                                    if url_exists or content_duplicate:
-                                        continue
-                                    post = Post.objects.create(source=source, content=full_content, url=link)
-                                    logger.info(f"New browser post from {source.name}: {title[:50]}...")
-                                    send_dashboard_update(
-                                        "new_post",
-                                        {
-                                            "source": source.name,
-                                            "content_preview": full_content[:100] + "...",
-                                            "url": link,
-                                            "post_id": post.id,
-                                        },
-                                    )
-                                    analyze_post.delay(post.id)
-                                    continue  # Move to next element
+    """Headless scraping using Playwright to collect headlines with limited infinite scroll."""
+    playwright_enabled = os.getenv("ENABLE_PLAYWRIGHT_SCRAPING", "true").lower() in ("1", "true", "yes", "on")
+    if not playwright_enabled:
+        raise RuntimeError("Playwright scraping disabled. Set ENABLE_PLAYWRIGHT_SCRAPING=true to enable.")
 
-                            # Use site-specific selectors if available
-                            if site_config:
-                                title_selectors = site_config['title']
-                                content_selectors = site_config['content']
-                            else:
-                                title_selectors = ['h3', 'h2', 'h1', '.title', '[class*="title"]']
-                                content_selectors = ['p', '.content', '.summary', '[class*="content"]']
-                            
-                            # Try to find title
-                            title = ""
-                            for title_sel in title_selectors:
-                                try:
-                                    title_elem = element.find_element(By.CSS_SELECTOR, title_sel)
-                                    title = title_elem.text.strip()
-                                    if title:
-                                        break
-                                except:
-                                    continue
-                            
-                            # For content, try various selectors or use the full element text
-                            content = ""
-                            for content_sel in content_selectors:
-                                try:
-                                    content_elem = element.find_element(By.CSS_SELECTOR, content_sel)
-                                    content = content_elem.text.strip()
-                                    if content and content != title:  # Don't duplicate title as content
-                                        break
-                                except:
-                                    continue
-                            
-                            # If no separate content found, use element text but clean it up
-                            if not content:
-                                full_text = element.text.strip()
-                                # Remove title from full text to get description
-                                if title and title in full_text:
-                                    content = full_text.replace(title, "").strip()
-                                else:
-                                    content = full_text
-                            
-                            # Get link using site-specific or generic selector
-                            link_selector = site_config['link'] if site_config else 'a'
+    try:
+        from playwright.sync_api import sync_playwright
+        from urllib.parse import urljoin
+
+        logger.info(f"Playwright scraping from {source.url}")
+
+        site_config = _get_site_specific_selectors(source.url) or {}
+        headline_selectors = [
+            "h1 a", "h2 a", "h3 a",
+            "h1", "h2", "h3",
+            "a[aria-label]", "a[role='link'][href]",
+            "[class*='headline'] a", "[class*='headline']",
+            "[data-testid*='headline'] a", "[data-testid*='headline']",
+        ]
+
+        max_scrolls = 5
+        min_title_len = 5
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"])  
+            context = browser.new_context(
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122 Safari/537.36"
+                ),
+                viewport={"width": 1280, "height": 2000},
+            )
+            page = context.new_page()
+            page.goto(source.url, wait_until="domcontentloaded", timeout=30000)
+
+            try:
+                page.wait_for_selector("body", timeout=10000)
+            except Exception:
+                pass
+
+            last_height = 0
+            for _ in range(max_scrolls):
+                page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
+                page.wait_for_timeout(1500)
+                new_height = page.evaluate("document.body.scrollHeight")
+                if new_height <= last_height:
+                    break
+                last_height = new_height
+
+            elements = []
+            container_selector = site_config.get("container")
+            if container_selector:
+                elements = page.query_selector_all(container_selector)
+            if not elements:
+                for sel in headline_selectors:
+                    found = page.query_selector_all(sel)
+                    if found:
+                        elements.extend(found)
+
+            # Collect candidate articles in Playwright context (no DB operations)
+            candidate_articles = []
+            seen_links = set()
+
+            for el in elements:
+                try:
+                    title = (el.inner_text() or "").strip()
+                    href = el.get_attribute("href")
+                    anchor = None
+                    if not href:
+                        anchor = el.query_selector("a[href]")
+                        href = anchor.get_attribute("href") if anchor else None
+                    if not title and anchor:
+                        title = (anchor.inner_text() or "").strip()
+
+                    if not title or len(title) < min_title_len or not href:
+                        continue
+
+                    if href.startswith("/"):
+                        href = urljoin(source.url, href)
+                    if not _looks_like_article_url(href):
+                        continue
+                    if href in seen_links:
+                        continue
+                    seen_links.add(href)
+
+                    # Store candidate without DB operations
+                    candidate_articles.append({"title": title, "url": href})
+
+                except Exception:
+                    continue
+
+            context.close()
+            browser.close()
+
+            logger.info(f"Playwright found {len(candidate_articles)} candidate articles for {source.name}")
+
+            # Process candidates outside Playwright context using threading for async compatibility
+            created_count = 0
+            logger.info(f"Processing {len(candidate_articles)} candidates for {source.name}")
+            
+            def process_candidates_sync():
+                """Process candidates in synchronous context to avoid async issues."""
+                sync_created_count = 0
+                for i, candidate in enumerate(candidate_articles):
+                    try:
+                        title = candidate["title"]
+                        href = candidate["url"]
+
+                        if Post.objects.filter(url=href).exists():
+                            continue
+                        if _is_duplicate_content(title, source):
+                            continue
+
+                        try:
+                            post = Post.objects.create(source=source, content=title, url=href)
+                        except Exception as db_err:
                             try:
-                                link_elem = element.find_element(By.CSS_SELECTOR, link_selector)
-                                link = link_elem.get_attribute('href')
-                                if not link:
-                                    # Check parent anchor
-                                    try:
-                                        parent_a = link_elem.find_element(By.XPATH, './ancestor::a[1]')
-                                        link = parent_a.get_attribute('href')
-                                    except Exception:
-                                        pass
-                            except Exception:
-                                # Fallback: try to extract href from the element itself
-                                link = element.get_attribute('href')
-                            # Validate link shape
-                            if link and not _looks_like_article_url(link):
-                                continue
-                            
-                            # Ensure URL is absolute
-                            if link and link.startswith('/'):
-                                from urllib.parse import urljoin
-                                link = urljoin(source.url, link)
-                            
-                            # Require at least title and link
-                            if title and link:
-                                # Create content from title and any additional content found
-                                if content and content != title:
-                                    full_content = f"{title}\n\n{content}"
-                                else:
-                                    full_content = title
-                                
-                                url_exists = Post.objects.filter(url=link).exists()
-                                content_duplicate = _is_duplicate_content(full_content, source)
-                                
-                                if url_exists:
-                                    logger.debug(f"Skipping browser post - URL already exists: {link}")
-                                    continue
-                                elif content_duplicate:
-                                    logger.debug(f"Skipping browser post - similar content: {title[:50]}...")
-                                    continue
-                                else:
-                                    post = Post.objects.create(
-                                        source=source,
-                                        content=full_content,
-                                        url=link
-                                    )
-                                    
-                                    logger.info(f"New browser post from {source.name}: {title[:50]}...")
-                                    send_dashboard_update(
-                                        "new_post",
-                                        {
-                                            "source": source.name,
-                                            "content_preview": full_content[:100] + "...",
-                                            "url": link,
-                                            "post_id": post.id,
+                                # Refresh or recreate the Source if missing to survive FK races
+                                try:
+                                    source_refreshed = Source.objects.get(pk=source.pk)
+                                except Source.DoesNotExist:
+                                    source_refreshed, _ = Source.objects.get_or_create(
+                                        url=source.url,
+                                        defaults={
+                                            "name": source.name,
+                                            "scraping_enabled": True,
                                         },
                                     )
-                                    analyze_post.delay(post.id)
-                            else:
-                                logger.info(f"Skipping article {i}: missing title ({bool(title)}) or link ({bool(link)})")
-                                    
-                        except Exception as e:
-                            logger.info(f"Error extracting article {i}: {e}")
-                            continue
-                    break  # Stop after finding articles with first working selector
-                    
-        finally:
-            driver.quit()
+                                post = Post.objects.create(source=source_refreshed, content=title, url=href)
+                            except Exception as inner_err:
+                                logger.error(
+                                    f"DB error creating post for {getattr(source,'name','<unknown>')}: {db_err}; retry failed: {inner_err}"
+                                )
+                                continue
+
+                        sync_created_count += 1
+                        send_dashboard_update(
+                            "new_post",
+                            {
+                                "source": source.name,
+                                "content_preview": title[:100] + "...",
+                                "url": href,
+                                "post_id": post.id,
+                            },
+                        )
+                        # Store post ID for analysis queuing outside threading context
+                        candidate["post_id"] = post.id
+                    except Exception as e:
+                        logger.error(f"Error processing candidate {i}: {e}")
+                        continue
+                return sync_created_count
             
+            # Try direct execution first, fallback to threading if async context error
+            try:
+                created_count = process_candidates_sync()
+            except Exception as e:
+                if "async context" in str(e):
+                    logger.info("Async context detected, using threading workaround")
+                    import threading
+                    import queue
+                    
+                    result_queue = queue.Queue()
+                    
+                    def thread_target():
+                        try:
+                            result = process_candidates_sync()
+                            result_queue.put(("success", result))
+                        except Exception as thread_err:
+                            result_queue.put(("error", str(thread_err)))
+                    
+                    thread = threading.Thread(target=thread_target)
+                    thread.start()
+                    thread.join(timeout=120)  # 2 minute timeout
+                    
+                    if thread.is_alive():
+                        logger.error("Threading operation timed out")
+                        created_count = 0
+                    else:
+                        try:
+                            status, result = result_queue.get_nowait()
+                            if status == "success":
+                                created_count = result
+                            else:
+                                logger.error(f"Threading operation failed: {result}")
+                                created_count = 0
+                        except queue.Empty:
+                            logger.error("No result from threading operation")
+                            created_count = 0
+                else:
+                    logger.error(f"Unexpected error in candidate processing: {e}")
+                    created_count = 0
+
+            # Queue analysis tasks for successfully created posts (outside threading context)
+            for candidate in candidate_articles:
+                if "post_id" in candidate:
+                    try:
+                        analyze_post.delay(candidate["post_id"])
+                        logger.debug(f"Queued analysis for post {candidate['post_id']}")
+                    except Exception as e:
+                        logger.error(f"Failed to queue analysis for post {candidate.get('post_id')}: {e}")
+
+            logger.info(f"Playwright scraping completed for {source.name}: {created_count} headlines")
+
+        # Outside of Playwright context: safe to use Django ORM synchronously
+        if created_count == 0:
+            try:
+                fb_created = _scrape_with_http(source)
+                logger.info(f"HTTP fallback produced {fb_created} headlines for {source.name}")
+                if fb_created == 0:
+                    send_dashboard_update(
+                        "scraper_status",
+                        {"status": f"No headlines found for {source.name}", "source": source.name},
+                    )
+            except Exception as fb_err:
+                logger.error(f"HTTP fallback failed after empty Playwright result for {source.url}: {fb_err}")
+                _create_simulated_post(source, f"browser empty + http failed: {fb_err}", "browser")
+
     except Exception as e:
-        logger.error(f"Error in headless browser scraping {source.url}: {e}")
+        logger.error(f"Error in Playwright scraping {source.url}: {e}")
         send_dashboard_update(
             "scraper_error", {"source": source.name, "error": str(e), "method": "browser"}
         )
-        # Do not create simulated posts for browser failures when disabled
-        if selenium_enabled:
-            _create_simulated_post(source, str(e), "browser")
+        # Fallback to simple HTTP parsing
+        try:
+            created = _scrape_with_http(source)
+            if created == 0:
+                _create_simulated_post(source, str(e), "browser")
+        except Exception as fb_err:
+            logger.error(f"HTTP fallback failed for {source.url}: {fb_err}")
+            _create_simulated_post(source, f"browser+http failed: {fb_err}", "browser")
+
+
+def _scrape_with_http(source) -> int:
+    """Lightweight fallback scraper using requests + BeautifulSoup for headlines.
+
+    Returns: number of posts created.
+    """
+    import requests
+    from bs4 import BeautifulSoup
+    from urllib.parse import urljoin
+
+    logger.info(f"HTTP fallback scraping from {source.url}")
+    created_count = 0
+    try:
+        resp = requests.get(source.url, timeout=20, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122 Safari/537.36"
+        })
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "html.parser")
+
+        candidates = []
+        # Prefer headings and headline-like classes
+        candidates.extend(soup.select("h1, h2, h3"))
+        candidates.extend(soup.select("[class*='headline']"))
+        # Site-specific: CNBC latest uses many anchors with year in path
+        if 'cnbc.com' in source.url.lower():
+            candidates.extend(soup.select("a[href*='/202']"))
+        # Generic anchors as last resort
+        candidates.extend(soup.select("a[href]"))
+
+        seen = set()
+        for el in candidates:
+            try:
+                title = (el.get_text() or "").strip()
+                if not title or len(title) < 5:
+                    continue
+                href = el.get("href")
+                if not href:
+                    # Find nearest link
+                    a = el.find("a")
+                    if a and a.get("href"):
+                        href = a.get("href")
+                if not href:
+                    continue
+                if href.startswith("/"):
+                    href = urljoin(source.url, href)
+                if not _looks_like_article_url(href):
+                    continue
+                if href in seen:
+                    continue
+                seen.add(href)
+
+                if Post.objects.filter(url=href).exists():
+                    continue
+                if _is_duplicate_content(title, source):
+                    continue
+
+                try:
+                    post = Post.objects.create(source=source, content=title, url=href)
+                except Exception as db_err:
+                    try:
+                        source = Source.objects.get(pk=source.pk)
+                    except Source.DoesNotExist:
+                        source, _ = Source.objects.get_or_create(
+                            url=source.url,
+                            defaults={"name": source.name, "scraping_enabled": True},
+                        )
+                    post = Post.objects.create(source=source, content=title, url=href)
+
+                created_count += 1
+                send_dashboard_update(
+                    "new_post",
+                    {
+                        "source": source.name,
+                        "content_preview": title[:100] + "...",
+                        "url": href,
+                        "post_id": post.id,
+                    },
+                )
+                # Queue analysis for the new post
+                analyze_post.delay(post.id)
+            except Exception:
+                continue
+    except Exception as e:
+        logger.error(f"HTTP fallback error for {source.url}: {e}")
+        raise
+
+    logger.info(f"HTTP fallback created {created_count} headlines for {source.name}")
+    return created_count
 
 
 def _determine_scraping_method(source):
@@ -790,11 +829,23 @@ def _scrape_api_source(source):
                     continue
                 
                 # Create new post
-                post = Post.objects.create(
-                    source=source,
-                    content=title,  # For Reddit, title is the content
-                    url=url
-                )
+                try:
+                    post = Post.objects.create(
+                        source=source,
+                        content=title,  # For Reddit, title is the content
+                        url=url
+                    )
+                except Exception as db_err:
+                    try:
+                        source = Source.objects.get(pk=source.pk)
+                        post = Post.objects.create(
+                            source=source,
+                            content=title,
+                            url=url
+                        )
+                    except Exception:
+                        logger.error(f"DB error creating API post for {source.name}: {db_err}")
+                        return
                 
                 new_posts_count += 1
                 logger.info(f"Created post: {title[:50]}... (Score: {score})")
@@ -950,21 +1001,24 @@ def scrape_posts(source_id=None, manual_test=False):
     else:
         logger.info("Manual test scraping - bypassing bot enabled check.")
 
+    # Always resolve sources fresh from DB; avoid stale IDs after deletes
     if source_id:
         try:
             sources = Source.objects.filter(id=source_id)
             if not sources.exists():
-                logger.error(f"Source with ID {source_id} not found.")
-                send_dashboard_update(
-                    "scraper_error",
-                    {"source": "N/A", "error": f"Source ID {source_id} not found"},
-                )
-                return
+                logger.warning(f"Source with ID {source_id} not found; attempting fallback by name/url")
+                sources = Source.objects.all()
+                if not sources.exists():
+                    send_dashboard_update(
+                        "scraper_error",
+                        {"source": "N/A", "error": f"No sources available to scrape (requested ID {source_id})"},
+                    )
+                    return
         except Exception as e:
-            logger.error(f"Error getting source {source_id}: {e}")
+            logger.error(f"Error resolving source {source_id}: {e}")
             send_dashboard_update(
                 "scraper_error",
-                {"source": "N/A", "error": f"Error getting source {source_id}: {e}"},
+                {"source": "N/A", "error": f"Error resolving source {source_id}: {e}"},
             )
             return
     else:
@@ -1107,7 +1161,10 @@ Direction can be 'buy', 'sell', or 'hold'. Confidence is a float between 0 and 1
             model=model,
             messages=[
                 {"role": "system", "content": prompt},
-                {"role": "user", "content": post.content},
+                {"role": "user", "content": (
+                    "You are given ONLY a news headline. Do not assume details beyond the headline.\n"
+                    "Headline:" + "\n\n" + post.content
+                )},
             ],
             response_format={"type": "json_object"},
             temperature=getattr(config, "llm_temperature", 0.1) if config else 0.1,
@@ -2146,7 +2203,7 @@ def update_trade_status():
                     t.realized_pnl = pnl
                     t.closed_at = timezone.now()
                     if not t.close_reason:
-                        t.close_reason = "manual"
+                        t.close_reason = "market_close"
                     t.save()
                     logger.info(f"Trade {t.id} ({t.symbol}) marked closed after broker position disappeared")
                     # Include percent for alert formatting

@@ -141,6 +141,22 @@ show_docker_status() {
     fi
 }
 
+# Install Playwright browsers in containers
+docker_playwright_install() {
+    print_status "🎭 Installing Playwright Chromium in containers..."
+    set +e
+    # Use a cache dir writable by non-root user inside container
+    docker-compose exec -T web bash -lc 'export PLAYWRIGHT_BROWSERS_PATH=/app/.cache/ms-playwright; mkdir -p "$PLAYWRIGHT_BROWSERS_PATH" && python -m playwright install chromium' &&
+    docker-compose exec -T celery bash -lc 'export PLAYWRIGHT_BROWSERS_PATH=/app/.cache/ms-playwright; mkdir -p "$PLAYWRIGHT_BROWSERS_PATH" && python -m playwright install chromium'
+    local rc=$?
+    set -e
+    if [ $rc -eq 0 ]; then
+        print_success "✅ Playwright Chromium installed (web, celery)"
+    else
+        print_warning "⚠️ Playwright install reported issues. You can retry with: $0 pwinstall"
+    fi
+}
+
 # Function to clean up failed setup
 cleanup_failed_setup() {
     print_warning "🧹 Cleaning up failed setup..."
@@ -255,6 +271,11 @@ docker_setup() {
         return 1
     fi
     
+    # Finalize runtime dependencies (Playwright)
+    if [ "$setup_failed" = false ]; then
+        docker_playwright_install
+    fi
+
     # Final health check
     print_status "🔍 Performing final health check..."
     sleep 5
@@ -313,6 +334,9 @@ docker_rebuild() {
     docker-compose build
     docker-compose up -d
     sleep 3
+    # Ensure DB is migrated and Playwright browsers are present
+    docker_migrate || true
+    docker_playwright_install || true
     print_success "✅ Services rebuilt and restarted"
 }
 
@@ -485,6 +509,7 @@ show_help() {
     echo "  rebuild   Build and restart all services"
     echo "  migrate   Run database migrations"
     echo "  monitor   Start Flower monitoring"
+    echo "  pwinstall Install Playwright Chromium in containers"
     echo "  shell     Open Django shell"
     echo "  logs      Show all logs"
     echo "  status    Show service status"
@@ -506,7 +531,7 @@ show_help() {
     echo "  - Uses your existing .env file"
     echo "  - PostgreSQL database with persistent data"
     echo "  - Redis for Celery task queue"
-    echo "  - Selenium with Chrome for web scraping"
+    echo "  - Playwright (Chromium) for headless scraping"
 }
 
 # Function to show interactive menu
@@ -635,6 +660,9 @@ else
             ;;
         "monitor")
             docker_monitor
+            ;;
+        "pwinstall")
+            docker_playwright_install
             ;;
         "shell")
             docker_shell
