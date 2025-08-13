@@ -31,6 +31,11 @@ class Command(BaseCommand):
             period=IntervalSchedule.MINUTES,
         )
 
+        interval_10_minutes, _ = IntervalSchedule.objects.get_or_create(
+            every=10,
+            period=IntervalSchedule.MINUTES,
+        )
+
         # Create periodic tasks
         tasks = [
             {
@@ -62,6 +67,18 @@ class Command(BaseCommand):
                 'task': 'core.tasks.send_bot_heartbeat',
                 'interval': interval_30_minutes,
                 'description': 'Send periodic heartbeat to Telegram when bot is enabled'
+            },
+            {
+                'name': 'System Health Monitor',
+                'task': 'core.tasks.monitor_system_health',
+                'interval': interval_10_minutes,
+                'description': 'Monitor system health and trigger auto-recovery'
+            },
+            {
+                'name': 'Chrome Process Cleanup',
+                'task': 'core.tasks.cleanup_orphaned_chrome',
+                'interval': interval_5_minutes,
+                'description': 'Clean up orphaned Chrome processes'
             },
         ]
 

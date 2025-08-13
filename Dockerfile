@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.11-slim-bookworm
 
 # Prevent Python from writing pyc files and buffering stdout/stderr
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -8,16 +8,14 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Set work directory
 WORKDIR /app
 
-# Install system dependencies including Chrome for Selenium
+# Install system dependencies including Chromium for headless scraping
 RUN apt-get update && apt-get install -y \
     # Basic tools
     curl \
     wget \
     gnupg2 \
-    software-properties-common \
-    apt-transport-https \
     ca-certificates \
-    # Chrome dependencies
+    # Chromium dependencies
     fonts-liberation \
     libasound2 \
     libatk-bridge2.0-0 \
@@ -29,7 +27,8 @@ RUN apt-get update && apt-get install -y \
     libdrm2 \
     libfontconfig1 \
     libgbm1 \
-    libgdk-pixbuf2.0-0 \
+    libgdk-pixbuf-2.0-0 \
+    libgdk-pixbuf-xlib-2.0-0 \
     libgtk-3-0 \
     libnspr4 \
     libnss3 \
@@ -74,9 +73,9 @@ ENV CHROME_PATH=/usr/bin/chromium
 # Switch to non-root user
 USER appuser
 
-# Health check
+# Health check (curl is available from base install)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health/ || exit 1
+    CMD curl -fsS http://localhost:8000/health/ || exit 1
 
 # Default command (will be overridden by docker-compose)
 CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]

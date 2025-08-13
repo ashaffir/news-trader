@@ -5,8 +5,11 @@ import json
 import requests
 from bs4 import BeautifulSoup
 from celery import shared_task
+import asyncio
 
 from .models import Source, ApiResponse, Post, Analysis, Trade, TradingConfig, ActivityLog, AlertSettings
+
+# Health monitoring will be defined in this file for proper Celery registration
 from django.utils import timezone
 from django.db.models import Q
 import logging
@@ -404,75 +407,102 @@ def _scrape_with_browser(source):
         min_title_len = 5
 
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"])  
-            context = browser.new_context(
-                user_agent=(
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122 Safari/537.36"
-                ),
-                viewport={"width": 1280, "height": 2000},
-            )
-            page = context.new_page()
-            page.goto(source.url, wait_until="domcontentloaded", timeout=30000)
-
+            browser = None
+            context = None
+            page = None
             try:
-                page.wait_for_selector("body", timeout=10000)
-            except Exception:
-                pass
+                browser = p.chromium.launch(
+                    headless=True, 
+                    args=[
+                        "--no-sandbox", 
+                        "--disable-dev-shm-usage",
+                        "--disable-background-timer-throttling",
+                        "--disable-backgrounding-occluded-windows",
+                        "--disable-renderer-backgrounding",
+                        "--no-first-run",
+                        "--disable-extensions"
+                    ]
+                )  
+                context = browser.new_context(
+                    user_agent=(
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122 Safari/537.36"
+                    ),
+                    viewport={"width": 1280, "height": 2000},
+                )
+                page = context.new_page()
+                
+                # Set shorter timeouts to prevent hanging
+                page.set_default_timeout(15000)
+                page.goto(source.url, wait_until="domcontentloaded", timeout=20000)
 
-            last_height = 0
-            for _ in range(max_scrolls):
-                page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
-                page.wait_for_timeout(1500)
-                new_height = page.evaluate("document.body.scrollHeight")
-                if new_height <= last_height:
-                    break
-                last_height = new_height
-
-            elements = []
-            container_selector = site_config.get("container")
-            if container_selector:
-                elements = page.query_selector_all(container_selector)
-            if not elements:
-                for sel in headline_selectors:
-                    found = page.query_selector_all(sel)
-                    if found:
-                        elements.extend(found)
-
-            # Collect candidate articles in Playwright context (no DB operations)
-            candidate_articles = []
-            seen_links = set()
-
-            for el in elements:
                 try:
-                    title = (el.inner_text() or "").strip()
-                    href = el.get_attribute("href")
-                    anchor = None
-                    if not href:
-                        anchor = el.query_selector("a[href]")
-                        href = anchor.get_attribute("href") if anchor else None
-                    if not title and anchor:
-                        title = (anchor.inner_text() or "").strip()
-
-                    if not title or len(title) < min_title_len or not href:
-                        continue
-
-                    if href.startswith("/"):
-                        href = urljoin(source.url, href)
-                    if not _looks_like_article_url(href):
-                        continue
-                    if href in seen_links:
-                        continue
-                    seen_links.add(href)
-
-                    # Store candidate without DB operations
-                    candidate_articles.append({"title": title, "url": href})
-
+                    page.wait_for_selector("body", timeout=10000)
                 except Exception:
-                    continue
+                    pass
 
-            context.close()
-            browser.close()
+                last_height = 0
+                for _ in range(max_scrolls):
+                    page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
+                    page.wait_for_timeout(1500)
+                    new_height = page.evaluate("document.body.scrollHeight")
+                    if new_height <= last_height:
+                        break
+                    last_height = new_height
+
+                elements = []
+                container_selector = site_config.get("container")
+                if container_selector:
+                    elements = page.query_selector_all(container_selector)
+                if not elements:
+                    for sel in headline_selectors:
+                        found = page.query_selector_all(sel)
+                        if found:
+                            elements.extend(found)
+
+                # Collect candidate articles in Playwright context (no DB operations)
+                candidate_articles = []
+                seen_links = set()
+
+                for el in elements:
+                    try:
+                        title = (el.inner_text() or "").strip()
+                        href = el.get_attribute("href")
+                        anchor = None
+                        if not href:
+                            anchor = el.query_selector("a[href]")
+                            href = anchor.get_attribute("href") if anchor else None
+                        if not title and anchor:
+                            title = (anchor.inner_text() or "").strip()
+
+                        if not title or len(title) < min_title_len or not href:
+                            continue
+
+                        if href.startswith("/"):
+                            href = urljoin(source.url, href)
+                        if not _looks_like_article_url(href):
+                            continue
+                        if href in seen_links:
+                            continue
+                        seen_links.add(href)
+
+                        # Store candidate without DB operations
+                        candidate_articles.append({"title": title, "url": href})
+
+                    except Exception:
+                        continue
+
+            finally:
+                # Ensure cleanup even if exceptions occur
+                try:
+                    if page:
+                        page.close()
+                    if context:
+                        context.close()
+                    if browser:
+                        browser.close()
+                except Exception as cleanup_error:
+                    logger.warning(f"Error during Playwright cleanup: {cleanup_error}")
 
             logger.info(f"Playwright found {len(candidate_articles)} candidate articles for {source.name}")
 
@@ -480,9 +510,20 @@ def _scrape_with_browser(source):
             created_count = 0
             logger.info(f"Processing {len(candidate_articles)} candidates for {source.name}")
             
+            # Always use threading to ensure synchronous database context
+            # This prevents async context issues in Celery workers
+            import threading
+            import queue
+            
             def process_candidates_sync():
-                """Process candidates in synchronous context to avoid async issues."""
+                """Process candidates in guaranteed synchronous context."""
+                # Force new database connection in thread
+                from django.db import connection
+                connection.ensure_connection()
+                
                 sync_created_count = 0
+                analysis_post_ids = []
+                
                 for i, candidate in enumerate(candidate_articles):
                     try:
                         title = candidate["title"]
@@ -516,6 +557,8 @@ def _scrape_with_browser(source):
                                 continue
 
                         sync_created_count += 1
+                        analysis_post_ids.append(post.id)
+                        
                         send_dashboard_update(
                             "new_post",
                             {
@@ -525,61 +568,53 @@ def _scrape_with_browser(source):
                                 "post_id": post.id,
                             },
                         )
-                        # Store post ID for analysis queuing outside threading context
-                        candidate["post_id"] = post.id
+                        logger.debug(f"Created post {post.id}: {title[:50]}...")
+                        
                     except Exception as e:
                         logger.error(f"Error processing candidate {i}: {e}")
                         continue
-                return sync_created_count
+                        
+                return sync_created_count, analysis_post_ids
             
-            # Try direct execution first, fallback to threading if async context error
-            try:
-                created_count = process_candidates_sync()
-            except Exception as e:
-                if "async context" in str(e):
-                    logger.info("Async context detected, using threading workaround")
-                    import threading
-                    import queue
-                    
-                    result_queue = queue.Queue()
-                    
-                    def thread_target():
-                        try:
-                            result = process_candidates_sync()
-                            result_queue.put(("success", result))
-                        except Exception as thread_err:
-                            result_queue.put(("error", str(thread_err)))
-                    
-                    thread = threading.Thread(target=thread_target)
-                    thread.start()
-                    thread.join(timeout=120)  # 2 minute timeout
-                    
-                    if thread.is_alive():
-                        logger.error("Threading operation timed out")
+            # Always use threading to guarantee sync context
+            logger.info("Using threading for database operations to ensure sync context")
+            result_queue = queue.Queue()
+            
+            def thread_target():
+                try:
+                    created_count, post_ids = process_candidates_sync()
+                    result_queue.put(("success", created_count, post_ids))
+                except Exception as thread_err:
+                    logger.error(f"Threading error: {thread_err}")
+                    result_queue.put(("error", str(thread_err), []))
+            
+            thread = threading.Thread(target=thread_target)
+            thread.start()
+            thread.join(timeout=120)  # 2 minute timeout
+            
+            if thread.is_alive():
+                logger.error("Threading operation timed out")
+                created_count = 0
+                analysis_post_ids = []
+            else:
+                try:
+                    status, created_count, analysis_post_ids = result_queue.get_nowait()
+                    if status != "success":
+                        logger.error(f"Threading operation failed: {created_count}")
                         created_count = 0
-                    else:
-                        try:
-                            status, result = result_queue.get_nowait()
-                            if status == "success":
-                                created_count = result
-                            else:
-                                logger.error(f"Threading operation failed: {result}")
-                                created_count = 0
-                        except queue.Empty:
-                            logger.error("No result from threading operation")
-                            created_count = 0
-                else:
-                    logger.error(f"Unexpected error in candidate processing: {e}")
+                        analysis_post_ids = []
+                except queue.Empty:
+                    logger.error("No result from threading operation")
                     created_count = 0
+                    analysis_post_ids = []
 
-            # Queue analysis tasks for successfully created posts (outside threading context)
-            for candidate in candidate_articles:
-                if "post_id" in candidate:
-                    try:
-                        analyze_post.delay(candidate["post_id"])
-                        logger.debug(f"Queued analysis for post {candidate['post_id']}")
-                    except Exception as e:
-                        logger.error(f"Failed to queue analysis for post {candidate.get('post_id')}: {e}")
+            # Queue analysis tasks for successfully created posts
+            for post_id in analysis_post_ids:
+                try:
+                    analyze_post.delay(post_id)
+                    logger.debug(f"Queued analysis for post {post_id}")
+                except Exception as e:
+                    logger.error(f"Failed to queue analysis for post {post_id}: {e}")
 
             logger.info(f"Playwright scraping completed for {source.name}: {created_count} headlines")
 
@@ -2361,3 +2396,273 @@ def close_all_trades_manually():
         logger.error(error_msg)
         send_dashboard_update("trades_error", {"error": error_msg})
         return {"status": "error", "message": error_msg, "closed_count": 0}
+
+
+# =============================================================================
+# HEALTH MONITORING TASKS
+# =============================================================================
+
+import subprocess
+import time
+
+@shared_task
+def monitor_system_health():
+    """Monitor system health and trigger recovery if needed."""
+    logger.info("Running system health check")
+    
+    issues_found = []
+    
+    # Check for stuck Chrome processes
+    chrome_issues = _check_chrome_processes()
+    if chrome_issues:
+        issues_found.extend(chrome_issues)
+    
+    # Check worker responsiveness 
+    worker_issues = _check_worker_health()
+    if worker_issues:
+        issues_found.extend(worker_issues)
+    
+    # Check scraping frequency
+    scraping_issues = _check_scraping_frequency()
+    if scraping_issues:
+        issues_found.extend(scraping_issues)
+    
+    if issues_found:
+        logger.warning(f"Health issues detected: {issues_found}")
+        _trigger_recovery(issues_found)
+    else:
+        logger.info("System health check passed")
+    
+    return {"status": "completed", "issues": issues_found}
+
+
+def _check_chrome_processes():
+    """Check for stuck or excessive Chrome processes INSIDE the container only."""
+    try:
+        # This function runs INSIDE the Docker container, so ps only sees container processes
+        result = subprocess.run(['ps', 'aux'], capture_output=True, text=True)
+        chrome_lines = [line for line in result.stdout.split('\n') if 'chrome' in line.lower()]
+        
+        issues = []
+        high_cpu_processes = 0
+        playwright_chrome_processes = 0
+        
+        for line in chrome_lines:
+            parts = line.split()
+            if len(parts) >= 3:
+                try:
+                    cpu_usage = float(parts[2])
+                    # Only count Playwright Chrome processes (they have specific paths)
+                    if 'playwright' in line or '/app/.cache/ms-playwright' in line:
+                        playwright_chrome_processes += 1
+                        if cpu_usage > 90.0:  # High CPU usage threshold
+                            high_cpu_processes += 1
+                except ValueError:
+                    continue
+        
+        if playwright_chrome_processes > 10:  # Too many Playwright Chrome processes
+            issues.append(f"Excessive Playwright Chrome processes: {playwright_chrome_processes}")
+        
+        if high_cpu_processes > 2:  # Too many high-CPU Playwright processes
+            issues.append(f"High-CPU Playwright Chrome processes: {high_cpu_processes}")
+        
+        return issues
+    
+    except Exception as e:
+        logger.error(f"Error checking Chrome processes: {e}")
+        return []
+
+
+def _check_worker_health():
+    """Check if Celery worker is responsive."""
+    try:
+        from celery import current_app
+        
+        # Try to get worker stats
+        inspect = current_app.control.inspect()
+        stats = inspect.stats()
+        
+        if not stats:
+            return ["No worker stats available - worker may be unresponsive"]
+        
+        # Check for any workers
+        active_workers = len(stats.keys()) if stats else 0
+        if active_workers == 0:
+            return ["No active Celery workers found"]
+        
+        return []
+    
+    except Exception as e:
+        logger.error(f"Error checking worker health: {e}")
+        return ["Error checking worker health"]
+
+
+def _check_scraping_frequency():
+    """Check if scraping is happening at expected frequency."""
+    try:
+        # Check for posts in the last 15 minutes
+        cutoff = timezone.now() - timedelta(minutes=15)
+        recent_posts = Post.objects.filter(created_at__gte=cutoff).count()
+        
+        if recent_posts == 0:
+            return ["No posts created in last 15 minutes - scraping may be stuck"]
+        
+        return []
+    
+    except Exception as e:
+        logger.error(f"Error checking scraping frequency: {e}")
+        return []
+
+
+def _trigger_recovery(issues):
+    """Trigger recovery actions based on detected issues."""
+    logger.warning(f"Triggering recovery for issues: {issues}")
+    
+    # Log the recovery action
+    ActivityLog.objects.create(
+        activity_type="system_recovery",
+        details={
+            "issues": issues,
+            "action": "auto_recovery_triggered",
+            "timestamp": timezone.now().isoformat()
+        }
+    )
+    
+    # For now, just restart the worker for any serious issues
+    chrome_restart_triggers = [
+        "Excessive Playwright Chrome processes",
+        "High-CPU Playwright Chrome processes",
+        "No posts created"
+    ]
+    
+    should_restart = any(
+        any(trigger in issue for trigger in chrome_restart_triggers)
+        for issue in issues
+    )
+    
+    if should_restart:
+        restart_celery_worker.delay()
+
+
+@shared_task
+def restart_celery_worker():
+    """Restart the Celery worker to clear stuck processes."""
+    logger.warning("Restarting Celery worker due to health issues")
+    
+    try:
+        ActivityLog.objects.create(
+            activity_type="worker_restart",
+            details={
+                "reason": "health_monitor_triggered",
+                "timestamp": timezone.now().isoformat()
+            }
+        )
+        
+        # Signal for external restart (could be monitored by a watchdog)
+        with open('/tmp/restart_worker_signal', 'w') as f:
+            f.write(f"restart_requested_at_{int(time.time())}")
+        
+        logger.info("Worker restart signal created")
+        
+    except Exception as e:
+        logger.error(f"Error creating restart signal: {e}")
+
+
+@shared_task
+def cleanup_orphaned_chrome():
+    """Kill orphaned Playwright Chrome processes INSIDE container only."""
+    try:
+        # This runs INSIDE the Docker container, so only sees container processes
+        result = subprocess.run(['ps', 'aux'], capture_output=True, text=True)
+        chrome_lines = [line for line in result.stdout.split('\n') if 'chrome' in line.lower()]
+        
+        killed_processes = 0
+        for line in chrome_lines:
+            parts = line.split()
+            if len(parts) >= 3:
+                try:
+                    pid = int(parts[1])
+                    cpu_usage = float(parts[2])
+                    
+                    # ONLY kill Playwright Chrome processes using >95% CPU
+                    # Double-check it's a Playwright process before killing
+                    if (cpu_usage > 95.0 and 
+                        ('playwright' in line or '/app/.cache/ms-playwright' in line)):
+                        subprocess.run(['kill', '-9', str(pid)], capture_output=True)
+                        killed_processes += 1
+                        logger.warning(f"Killed high-CPU Playwright Chrome process PID {pid}")
+                
+                except (ValueError, subprocess.SubprocessError):
+                    continue
+        
+        if killed_processes > 0:
+            ActivityLog.objects.create(
+                activity_type="process_cleanup",
+                details={
+                    "killed_processes": killed_processes,
+                    "timestamp": timezone.now().isoformat(),
+                    "target": "playwright_chrome_only"
+                }
+            )
+        
+        return {"killed_processes": killed_processes}
+    
+    except Exception as e:
+        logger.error(f"Error cleaning up Playwright Chrome processes: {e}")
+        return {"error": str(e)}
+
+
+@shared_task(bind=True)
+def run_telegram_bot_task(self):
+    """
+    Celery task to run the Telegram bot.
+    
+    This runs the bot with polling in a separate async context.
+    The task will run indefinitely until stopped.
+    """
+    try:
+        logger.info("Starting Telegram bot task...")
+        
+        # Import here to avoid circular imports
+        from .telegram_bot import start_telegram_bot, stop_telegram_bot
+        
+        async def run_bot():
+            """Run the bot in async context."""
+            application = None
+            try:
+                application = await start_telegram_bot()
+                if application:
+                    logger.info("Telegram bot started successfully in Celery task")
+                    
+                    # Keep the bot running
+                    while not self.request.called_directly:
+                        await asyncio.sleep(1)
+                        
+                        # Check if task should be terminated
+                        if hasattr(self, '_should_stop') and self._should_stop:
+                            break
+                else:
+                    logger.error("Failed to start Telegram bot in Celery task")
+                    
+            except Exception as e:
+                logger.error(f"Error in Telegram bot task: {e}")
+                raise
+            finally:
+                if application:
+                    await stop_telegram_bot()
+                    logger.info("Telegram bot stopped")
+        
+        # Run the async function
+        try:
+            asyncio.run(run_bot())
+        except KeyboardInterrupt:
+            logger.info("Telegram bot task interrupted")
+        except Exception as e:
+            logger.error(f"Telegram bot task failed: {e}")
+            raise
+            
+        return {"status": "completed"}
+        
+    except Exception as e:
+        logger.error(f"Error in Telegram bot task: {e}")
+        return {"status": "error", "error": str(e)}

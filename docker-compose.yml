@@ -105,6 +105,19 @@ services:
     profiles:
       - monitoring
 
+  telegram-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile.bot
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    depends_on:
+      - db
+      - redis
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   static_volume:

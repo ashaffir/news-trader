@@ -66,8 +66,8 @@ show_docker_status() {
     echo "=========================="
     
     # Check if services are running
-    local services=("web" "db" "redis" "celery" "celery-beat")
-    local service_names=("Web App" "PostgreSQL" "Redis" "Celery Worker" "Celery Beat")
+	local services=("web" "db" "redis" "celery" "celery-beat" "telegram-bot")
+	local service_names=("Web App" "PostgreSQL" "Redis" "Celery Worker" "Celery Beat" "Telegram Bot")
     local running_count=0
     local i=0
     
@@ -397,8 +397,8 @@ logs_menu() {
         echo "====================="
         echo
         
-        local services=("web" "db" "redis" "celery" "celery-beat" "flower")
-        local service_names=("Web App" "PostgreSQL" "Redis" "Celery Worker" "Celery Beat" "Flower Monitor")
+		local services=("web" "db" "redis" "celery" "celery-beat" "flower" "telegram-bot")
+		local service_names=("Web App" "PostgreSQL" "Redis" "Celery Worker" "Celery Beat" "Flower Monitor" "Telegram Bot")
         local available_services=()
         local available_names=()
         local count=1
@@ -475,6 +475,41 @@ logs_menu() {
     done
 }
 
+# Telegram bot helpers
+docker_bot_start() {
+	print_status "🤖 Starting Telegram bot service..."
+	check_env_file
+	check_docker
+	docker-compose up -d telegram-bot
+	print_success "✅ Telegram bot started"
+}
+
+docker_bot_stop() {
+	print_status "🛑 Stopping Telegram bot service..."
+	docker-compose stop telegram-bot || true
+	print_success "✅ Telegram bot stopped"
+}
+
+docker_bot_restart() {
+	print_status "🔄 Restarting Telegram bot service..."
+	docker-compose restart telegram-bot
+	print_success "✅ Telegram bot restarted"
+}
+
+docker_bot_rebuild() {
+	print_status "🏗️ Rebuilding Telegram bot image and restarting..."
+	check_env_file
+	check_docker
+	docker-compose build telegram-bot
+	docker-compose up -d telegram-bot
+	print_success "✅ Telegram bot rebuilt and running"
+}
+
+docker_bot_logs() {
+	print_status "📋 Showing Telegram bot logs (Ctrl+C to exit)..."
+	docker-compose logs -f telegram-bot
+}
+
 # Function to clear screen and show header
 show_header() {
     clear
@@ -509,6 +544,11 @@ show_help() {
     echo "  rebuild   Build and restart all services"
     echo "  migrate   Run database migrations"
     echo "  monitor   Start Flower monitoring"
+	echo "  bot-start Start Telegram bot service"
+	echo "  bot-stop  Stop Telegram bot service"
+	echo "  bot-restart Restart Telegram bot service"
+	echo "  bot-rebuild Rebuild and start Telegram bot service"
+	echo "  bot-logs  Tail Telegram bot logs"
     echo "  pwinstall Install Playwright Chromium in containers"
     echo "  shell     Open Django shell"
     echo "  logs      Show all logs"
@@ -669,6 +709,21 @@ else
             ;;
         "logs")
             docker-compose logs -f
+            ;;
+        "bot-start")
+            docker_bot_start
+            ;;
+        "bot-stop")
+            docker_bot_stop
+            ;;
+        "bot-restart")
+            docker_bot_restart
+            ;;
+        "bot-rebuild")
+            docker_bot_rebuild
+            ;;
+        "bot-logs")
+            docker_bot_logs
             ;;
         "status")
             show_docker_status
