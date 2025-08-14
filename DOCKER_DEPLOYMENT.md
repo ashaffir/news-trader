@@ -30,9 +30,10 @@ This News Trader application is well-configured for Docker deployment on any mac
 - Environment variable isolation
 
 ### 5. **Cross-Platform Compatibility**
-- Uses Chromium for web scraping (works on ARM64 and AMD64)
+- Uses Playwright-managed Chromium for web scraping (ARM64 and AMD64)
 - Python 3.11 base image
 - No architecture-specific dependencies
+- Browser binaries are downloaded at runtime by Playwright; no system Chrome install required
 
 ## 🔧 Required Setup for New Machine
 
@@ -64,6 +65,15 @@ OPENAI_API_KEY=your-openai-api-key
 NEWSAPI_KEY=your-newsapi-key
 ALPHAVANTAGE_API_KEY=your-alphavantage-key
 REDDIT_USER_AGENT=YourApp/1.0
+
+# Telegram Bot (required to use the interactive Telegram features)
+TELEGRAM_BOT_TOKEN=your-telegram-bot-token
+# One or more chat IDs allowed to interact with the bot (comma-separated)
+TELEGRAM_AUTHORIZED_CHATS=123456789
+
+# Note: When overriding ALLOWED_HOSTS for Docker, include 'web' as an internal host
+# to allow container-to-container health checks, e.g.:
+# ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0,web,your-domain.com
 ```
 
 ### 2. **Prerequisites**
@@ -90,6 +100,9 @@ chmod +x docker_dev.sh
 
 # If setup fails, clean and retry:
 ./docker_dev.sh clean && ./docker_dev.sh setup
+
+# Optional: Ensure Playwright Chromium is installed in containers (first run only)
+./docker_dev.sh pwinstall
 ```
 
 ### Manual Deployment
@@ -118,6 +131,11 @@ docker-compose exec web python manage.py collectstatic --noinput
 | Django Admin | http://localhost:8800/admin/ | Configuration |
 | Health Check | http://localhost:8800/health/ | Service status |
 | Flower Monitor | http://localhost:5555 | Celery monitoring (optional) |
+
+### Telegram Bot
+- The `telegram-bot` service starts automatically and polls for updates
+- Ensure your `.env` has `TELEGRAM_BOT_TOKEN` and `TELEGRAM_AUTHORIZED_CHATS`
+- Test by sending `/status`, `/pnl`, and `/trades` to the bot
 
 ## 📊 Management Scripts
 
@@ -247,6 +265,17 @@ The setup script now:
    # If still failing, clean restart:
    ./docker_dev.sh clean && ./docker_dev.sh setup
    ```
+
+6. **Telegram bot issues**
+   - 409 Conflict ("terminated by other getUpdates request")
+     ```bash
+     # Make sure only one bot instance is polling
+     docker-compose restart telegram-bot
+     # Also ensure you are not running `python manage.py run_telegram_bot` on your host
+     ```
+   - Messages fail to send due to Markdown entity errors
+     - Bot replies are formatted as plain text by default to avoid parse errors
+     - If you customize formatting, either escape Markdown or avoid `parse_mode`
 
 ## 📈 Monitoring
 

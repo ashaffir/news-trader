@@ -30,6 +30,17 @@ from telegram.ext import (
     MessageHandler,
     filters
 )
+try:
+    # Use explicit HTTPX request configuration to improve resilience
+    from telegram.request import HTTPXRequest
+    try:
+        # HTTPVersion is available in newer PTB; fall back gracefully if missing
+        from telegram.request import HTTPVersion  # type: ignore
+    except Exception:  # pragma: no cover - optional import
+        HTTPVersion = None  # type: ignore
+except Exception:  # pragma: no cover - if request backend changes, continue with defaults
+    HTTPXRequest = None  # type: ignore
+    HTTPVersion = None  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -156,23 +167,20 @@ Use the commands to control your trading bot remotely!
             bot_status = "🟢 ENABLED" if (config and config.bot_enabled) else "🔴 DISABLED"
             alerts_status = "🔔 ON" if (alerts and alerts.enabled) else "🔕 OFF"
             
-            status_text = f"""
-📊 **Trading Bot Status**
-
-🤖 **Bot**: {bot_status}
-🔔 **Alerts**: {alerts_status}
-
-📈 **Trading Summary**
-• Open positions: {len(open_trades)}
-• Today's trades: {len(today_trades)}
-• Total realized P&L: ${total_realized_pnl:,.2f}
-• Unrealized P&L: ${total_unrealized_pnl:,.2f}
-
-⚙️ **Configuration**
-• Max daily trades: {config.max_daily_trades if config else 'N/A'}
-• Max concurrent: {config.max_concurrent_open_trades if config else 'N/A'}
-• Position size: ${config.default_position_size if config else 'N/A'}
-            """
+            status_text = (
+                "📊 Trading Bot Status\n\n"
+                f"🤖 Bot: {bot_status}\n"
+                f"🔔 Alerts: {alerts_status}\n\n"
+                "📈 Trading Summary\n"
+                f"• Open positions: {len(open_trades)}\n"
+                f"• Today's trades: {len(today_trades)}\n"
+                f"• Total realized P&L: ${total_realized_pnl:,.2f}\n"
+                f"• Unrealized P&L: ${total_unrealized_pnl:,.2f}\n\n"
+                "⚙️ Configuration\n"
+                f"• Max daily trades: {config.max_daily_trades if config else 'N/A'}\n"
+                f"• Max concurrent: {config.max_concurrent_open_trades if config else 'N/A'}\n"
+                f"• Position size: ${config.default_position_size if config else 'N/A'}"
+            )
             
             # Add quick action buttons
             keyboard = [
@@ -189,7 +197,7 @@ Use the commands to control your trading bot remotely!
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            await update.message.reply_text(status_text, parse_mode='Markdown', reply_markup=reply_markup)
+            await update.message.reply_text(status_text, reply_markup=reply_markup)
             
         except Exception as e:
             logger.error(f"Error in status command: {e}")
@@ -328,27 +336,24 @@ Use the commands to control your trading bot remotely!
                 else:
                     return f"⚪ ${amount:,.2f}"
             
-            pnl_text = f"""
-💰 **P&L Summary**
-
-📅 **Today**: {format_pnl(today_realized)}
-📆 **This Week**: {format_pnl(week_realized)}
-🗓️ **This Month**: {format_pnl(month_realized)}
-🏆 **Total (All Time)**: {format_pnl(total_realized)}
-
-🔄 **Current Unrealized**: {format_pnl(total_unrealized)}
-💵 **Net Position**: {format_pnl(total_realized + total_unrealized)}
-
-📊 **Open Positions**: {len(open_trades)}
-            """
+            pnl_text = (
+                "💰 P&L Summary\n\n"
+                f"📅 Today: {format_pnl(today_realized)}\n"
+                f"📆 This Week: {format_pnl(week_realized)}\n"
+                f"🗓️ This Month: {format_pnl(month_realized)}\n"
+                f"🏆 Total (All Time): {format_pnl(total_realized)}\n\n"
+                f"🔄 Current Unrealized: {format_pnl(total_unrealized)}\n"
+                f"💵 Net Position: {format_pnl(total_realized + total_unrealized)}\n\n"
+                f"📊 Open Positions: {len(open_trades)}"
+            )
             
             # Reply to either a direct message or a callback message
             message_obj = update.message or (update.callback_query.message if update.callback_query else None)
             if message_obj:
-                await message_obj.reply_text(pnl_text, parse_mode='Markdown')
+                await message_obj.reply_text(pnl_text)
             else:
                 # Fallback: send via bot directly
-                await context.bot.send_message(chat_id=update.effective_chat.id, text=pnl_text, parse_mode='Markdown')
+                await context.bot.send_message(chat_id=update.effective_chat.id, text=pnl_text)
             
         except Exception as e:
             logger.error(f"Error in P&L command: {e}")
@@ -380,7 +385,7 @@ Use the commands to control your trading bot remotely!
                     await context.bot.send_message(chat_id=update.effective_chat.id, text="📭 No trades found.")
                 return
             
-            trades_text = "📋 **Recent Trades** (Last 10)\n\n"
+            trades_text = "📋 Recent Trades (Last 10)\n\n"
             
             for trade in recent_trades:
                 # Format trade info
@@ -406,14 +411,14 @@ Use the commands to control your trading bot remotely!
                 # Timestamp
                 time_str = trade.created_at.strftime("%m/%d %H:%M")
                 
-                trades_text += f"{status_emoji} {direction_emoji} **{trade.symbol}** - {trade.quantity} @ ${trade.entry_price:.2f}\n"
+                trades_text += f"{status_emoji} {direction_emoji} {trade.symbol} - {trade.quantity} @ ${trade.entry_price:.2f}\n"
                 trades_text += f"   P&L: {pnl_text} | {time_str} | {trade.status.title()}\n\n"
             
             message_obj = update.message or (update.callback_query.message if update.callback_query else None)
             if message_obj:
-                await message_obj.reply_text(trades_text, parse_mode='Markdown')
+                await message_obj.reply_text(trades_text)
             else:
-                await context.bot.send_message(chat_id=update.effective_chat.id, text=trades_text, parse_mode='Markdown')
+                await context.bot.send_message(chat_id=update.effective_chat.id, text=trades_text)
             
         except Exception as e:
             logger.error(f"Error in trades command: {e}")
@@ -561,7 +566,30 @@ Use the commands to control your trading bot remotely!
         if not self.authorized_chat_ids:
             logger.warning("No authorized chat IDs configured")
         
-        self.application = Application.builder().token(self.token).build()
+        # Build application with hardened HTTP settings to avoid httpx RemoteProtocolError
+        builder = Application.builder().token(self.token)
+        try:
+            if HTTPXRequest:
+                request_kwargs = {
+                    "connect_timeout": 10.0,
+                    "read_timeout": 70.0,
+                    "write_timeout": 70.0,
+                    "pool_timeout": 10.0,
+                }
+                # Prefer HTTP/1.1 to avoid intermittent HTTP/2 disconnects
+                if HTTPVersion is not None:
+                    request_kwargs["http_version"] = HTTPVersion.HTTP_1_1  # type: ignore
+                else:
+                    # Some PTB versions accept a string
+                    request_kwargs["http_version"] = "1.1"
+                builder = builder.request(HTTPXRequest(**request_kwargs))
+            # Increase long-polling timeout for getUpdates
+            if hasattr(builder, "get_updates_request_timeout"):
+                builder = builder.get_updates_request_timeout(60)
+        except Exception as e:
+            logger.warning("Building HTTPXRequest failed, falling back to defaults: %s", e)
+        
+        self.application = builder.build()
         self.setup_handlers()
         
         logger.info("Starting Telegram bot...")

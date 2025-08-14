@@ -26,7 +26,7 @@ class TradingConfig(models.Model):
 
     # Risk management
     stop_loss_percentage = models.FloatField(
-        default=5.0,
+        default=2.0,
         validators=[MinValueValidator(0.1), MaxValueValidator(50.0)],
         help_text="Stop loss percentage (1.0 = 1%)",
     )
@@ -99,7 +99,7 @@ Direction can be 'buy', 'sell', or 'hold'. Confidence is a float between 0 and 1
 
     # Bot control
     bot_enabled = models.BooleanField(
-        default=True,
+        default=False,
         help_text="Master switch to enable/disable all bot activities (scraping, analysis, trading)",
     )
 
@@ -332,6 +332,50 @@ class Trade(models.Model):
         if self.status == "closed" and self.realized_pnl is not None:
             return self.realized_pnl
         return self.unrealized_pnl or 0.0
+
+    def save(self, *args, **kwargs):
+        """Ensure default TP/SL percentages and prices are set on creation.
+
+        Defaults: take profit 10%, stop loss 2%.
+        Prices are computed only when an entry price is available and the
+        corresponding price field is not already set.
+        """
+        is_new = self.pk is None
+
+        # Apply default percentages on create if missing
+        if is_new:
+            if self.take_profit_price_percentage is None:
+                self.take_profit_price_percentage = 10.0
+            if self.stop_loss_price_percentage is None:
+                self.stop_loss_price_percentage = 2.0
+
+        # Compute price levels from percentages if we have an entry price
+        try:
+            has_entry = self.entry_price is not None and float(self.entry_price) > 0
+            if has_entry and self.direction in ("buy", "sell"):
+                tp_pct = self.take_profit_price_percentage
+                sl_pct = self.stop_loss_price_percentage
+                if tp_pct is not None and self.take_profit_price in (None, 0):
+                    if self.direction == "buy":
+                        self.take_profit_price = float(self.entry_price) * (1 + float(tp_pct) / 100.0)
+                    else:
+                        self.take_profit_price = float(self.entry_price) * (1 - float(tp_pct) / 100.0)
+                if sl_pct is not None and self.stop_loss_price in (None, 0):
+                    if self.direction == "buy":
+                        self.stop_loss_price = float(self.entry_price) * (1 - float(sl_pct) / 100.0)
+                    else:
+                        self.stop_loss_price = float(self.entry_price) * (1 + float(sl_pct) / 100.0)
+
+                # Initialize original levels if not set
+                if self.original_take_profit_price is None and self.take_profit_price is not None:
+                    self.original_take_profit_price = self.take_profit_price
+                if self.original_stop_loss_price is None and self.stop_loss_price is not None:
+                    self.original_stop_loss_price = self.stop_loss_price
+        except Exception:
+            # Do not block save on computation errors
+            pass
+
+        super().save(*args, **kwargs)
 
 
 class ActivityLog(models.Model):

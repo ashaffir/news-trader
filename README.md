@@ -41,7 +41,7 @@ This Django-based system monitors multiple news sources, analyzes financial rele
 | Service      | URL                              | Username | Password |
 | ------------ | -------------------------------- | -------- | -------- |
 | Dashboard    | http://localhost:8800/dashboard/ | -        | -        |
-| Django Admin | http://localhost:8800/admin/     | `admin`  | `admin`  |
+| Django Admin | http://localhost:8800/admin/     | `alfreds`  | `!Q2w3e4r%T`  |
 | API          | http://localhost:8800/api/       | -        | -        |
 
 ### 1. Environment Setup
@@ -61,17 +61,8 @@ nano .env
 ### 2. Docker Deployment
 
 ```bash
-# Build and start all services
+# Build and start all services (auto-migrates, bootstraps superuser, tasks, and CNBC Latest)
 docker-compose up -d
-
-# Run migrations
-docker-compose exec web python manage.py migrate
-
-# Create superuser
-docker-compose exec web python manage.py createsuperuser
-
-# Set up example sources
-docker-compose exec web python manage.py setup_example_sources
 ```
 
 ### 3. Access the System

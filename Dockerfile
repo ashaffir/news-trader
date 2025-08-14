@@ -47,10 +47,11 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Chromium (works on both ARM64 and AMD64)
-RUN apt-get update \
-    && apt-get install -y chromium chromium-driver \
-    && rm -rf /var/lib/apt/lists/*
+# Optional system Chromium install (disabled to improve build reliability and rely on Playwright-managed browser)
+# If needed later, re-enable and add network retries
+# RUN apt-get update \
+#     && apt-get install -y chromium chromium-driver \
+#     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
 COPY requirements.txt /app/
@@ -61,6 +62,9 @@ RUN groupadd -r appuser && useradd -r -g appuser appuser
 
 # Copy project files
 COPY . /app/
+
+# Ensure entrypoint is executable
+RUN chmod 755 /app/entrypoint.sh
 
 # Create directories for logs and media with proper permissions
 RUN mkdir -p /app/logs /app/staticfiles /app/media \
@@ -78,4 +82,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -fsS http://localhost:8000/health/ || exit 1
 
 # Default command (will be overridden by docker-compose)
-CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+CMD ["/app/entrypoint.sh"]

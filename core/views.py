@@ -262,7 +262,7 @@ def toggle_bot_status(request):
             trading_config = TradingConfig.objects.create(
                 name="Default Trading Configuration",
                 is_active=True,
-                bot_enabled=True,
+                bot_enabled=False,
                 trading_enabled=True,
                 default_position_size=100.0,
                 max_position_size=1000.0,
@@ -769,6 +769,9 @@ def sync_alpaca_positions_to_database(alpaca_positions):
                 alpaca_order_id=f"sync_{symbol}_{int(timezone.now().timestamp())}",
                 opened_at=timezone.now(),
                 unrealized_pnl=unrealized_pnl,
+                # Ensure defaults in case model-level save() is bypassed
+                take_profit_price_percentage=10.0,
+                stop_loss_price_percentage=2.0,
             )
             logger.debug(f"Created new trade record for {symbol}")
         else:
@@ -1097,7 +1100,9 @@ def manual_close_trade_view(request):
                             entry_price=float(position.avg_entry_price),
                             status="open",
                             alpaca_order_id=f"position_{symbol}",
-                            opened_at=timezone.now()
+                            opened_at=timezone.now(),
+                            take_profit_price_percentage=10.0,
+                            stop_loss_price_percentage=2.0,
                         )
                         logger.info(f"Created new trade record for Alpaca position {symbol}")
 
@@ -1257,6 +1262,8 @@ def manual_close_trade_view(request):
                                 direction="buy" if float(position["qty"]) > 0 else "sell",
                                 quantity=abs(float(position["qty"])),
                                 entry_price=entry_price,
+                                take_profit_price_percentage=10.0,
+                                stop_loss_price_percentage=2.0,
                             )
 
                         # Update the take profit and stop loss prices

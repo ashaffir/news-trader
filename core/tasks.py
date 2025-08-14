@@ -1467,6 +1467,9 @@ def create_new_trade(analysis_id):
             take_profit_price=take_profit_price,
             original_stop_loss_price=stop_loss_price,  # Store original values
             original_take_profit_price=take_profit_price,
+            # Ensure percentages are stored for recomputation and monitoring logic
+            take_profit_price_percentage=10.0 if config is None else (config.take_profit_percentage or 10.0),
+            stop_loss_price_percentage=2.0 if config is None else (config.stop_loss_percentage or 2.0),
         )
 
         logger.info(
@@ -2114,6 +2117,8 @@ def create_manual_test_trade(symbol, direction, quantity=None, position_size=Non
             alpaca_order_id=order.id,
             opened_at=timezone.now(),
             # Note: Manual test trade - Order ID stored in alpaca_order_id
+            take_profit_price_percentage=10.0,
+            stop_loss_price_percentage=2.0,
         )
 
         logger.info(f"Manual test trade created successfully: Trade #{trade.id}, Alpaca Order #{order.id}")
@@ -2224,6 +2229,12 @@ def update_trade_status():
             try:
                 if t.symbol not in live_symbols and t.status != "closed":
                     # Position no longer exists at broker → close locally
+                    # Detect whether another workflow already initiated the close
+                    # (e.g. stop_loss / take_profit). If so, we will still
+                    # finalize the local record but avoid emitting a duplicate
+                    # "trade_closed" activity; the originating workflow will
+                    # publish the event.
+                    had_close_reason = bool(t.close_reason)
                     try:
                         ticker = api.get_latest_trade(t.symbol)
                         exit_price = float(getattr(ticker, "price", 0) or 0)
@@ -2241,22 +2252,27 @@ def update_trade_status():
                         t.close_reason = "market_close"
                     t.save()
                     logger.info(f"Trade {t.id} ({t.symbol}) marked closed after broker position disappeared")
-                    # Include percent for alert formatting
-                    try:
-                        cost_basis = float(t.entry_price or 0) * float(abs(t.quantity or 0))
-                        pnl_percent = (float(t.realized_pnl or 0) / cost_basis) * 100.0 if cost_basis > 0 else None
-                    except Exception:
-                        pnl_percent = None
-                    send_dashboard_update(
-                        "trade_closed",
-                        {
-                            "trade_id": t.id,
-                            "symbol": t.symbol,
-                            "exit_price": t.exit_price,
-                            "realized_pnl": t.realized_pnl,
-                            "pnl_percent": pnl_percent,
-                        },
-                    )
+                    # Only emit the activity if THIS function is the source of the
+                    # closure (i.e., broker position vanished without a prior
+                    # close_reason). If another workflow already set a reason,
+                    # skip to avoid duplicate "Trade closed" messages.
+                    if not had_close_reason:
+                        # Include percent for alert formatting
+                        try:
+                            cost_basis = float(t.entry_price or 0) * float(abs(t.quantity or 0))
+                            pnl_percent = (float(t.realized_pnl or 0) / cost_basis) * 100.0 if cost_basis > 0 else None
+                        except Exception:
+                            pnl_percent = None
+                        send_dashboard_update(
+                            "trade_closed",
+                            {
+                                "trade_id": t.id,
+                                "symbol": t.symbol,
+                                "exit_price": t.exit_price,
+                                "realized_pnl": t.realized_pnl,
+                                "pnl_percent": pnl_percent,
+                            },
+                        )
             except Exception as e:
                 logger.error(f"Error syncing closure for trade {t.id}: {e}")
 
@@ -2520,8 +2536,9 @@ def _trigger_recovery(issues):
     
     # Log the recovery action
     ActivityLog.objects.create(
-        activity_type="system_recovery",
-        details={
+        activity_type="system_event",
+        message="Auto-recovery triggered by health monitor",
+        data={
             "issues": issues,
             "action": "auto_recovery_triggered",
             "timestamp": timezone.now().isoformat()
@@ -2551,8 +2568,9 @@ def restart_celery_worker():
     
     try:
         ActivityLog.objects.create(
-            activity_type="worker_restart",
-            details={
+            activity_type="system_event",
+            message="Celery worker restart requested by health monitor",
+            data={
                 "reason": "health_monitor_triggered",
                 "timestamp": timezone.now().isoformat()
             }
@@ -2597,8 +2615,9 @@ def cleanup_orphaned_chrome():
         
         if killed_processes > 0:
             ActivityLog.objects.create(
-                activity_type="process_cleanup",
-                details={
+                activity_type="system_event",
+                message=f"Cleaned up {killed_processes} high-CPU Playwright Chrome processes",
+                data={
                     "killed_processes": killed_processes,
                     "timestamp": timezone.now().isoformat(),
                     "target": "playwright_chrome_only"

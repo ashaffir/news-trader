@@ -101,6 +101,8 @@ class ModelTests(TestCase):
             realized_pnl=100.0,
             opened_at=timezone.now(),
             closed_at=timezone.now(),
+            take_profit_price_percentage=10.0,
+            stop_loss_price_percentage=2.0,
         )
 
         self.assertEqual(
@@ -115,7 +117,7 @@ class TaskTests(TestCase):
 
     def setUp(self):
         self.trading_config = TradingConfig.objects.create(
-            name="Test Config", is_active=True, min_confidence_threshold=0.7
+            name="Test Config", is_active=True, min_confidence_threshold=0.7, bot_enabled=True
         )
 
         self.source = Source.objects.create(
@@ -152,10 +154,10 @@ class TaskTests(TestCase):
         
         # Test that simulated post analysis is skipped
         with patch('core.tasks.logger') as mock_logger:
-            analyze_post.apply(args=[simulated_post.id])
-            mock_logger.info.assert_called_with(
-                f"Skipping LLM analysis for simulated post {simulated_post.id}: {simulated_post.url}"
-            )
+            analyze_post.apply(args=[simulated_post.id, True])
+            # Allow any info call that includes the expected phrase, since other info logs may occur before/after
+            info_calls = [str(call) for call in mock_logger.info.call_args_list]
+            self.assertTrue(any('Skipping LLM analysis for simulated post' in c for c in info_calls))
         
         # Verify no Analysis object was created for simulated post
         self.assertFalse(Analysis.objects.filter(post=simulated_post).exists())
@@ -193,8 +195,8 @@ class TaskTests(TestCase):
         mock_client.chat.completions.create.return_value = mock_response
         mock_openai.return_value = mock_client
 
-        # Run the task
-        analyze_post(self.post.id)
+        # Run the task with manual_test=True to bypass bot enabled gate
+        analyze_post(self.post.id, manual_test=True)
 
         # Check that analysis was created
         analysis = Analysis.objects.get(post=self.post)
@@ -385,7 +387,7 @@ class IntegrationTests(TestCase):
 
     def setUp(self):
         self.trading_config = TradingConfig.objects.create(
-            name="Test Config", is_active=True, min_confidence_threshold=0.8
+            name="Test Config", is_active=True, min_confidence_threshold=0.8, bot_enabled=True
         )
 
         self.source = Source.objects.create(
@@ -439,8 +441,8 @@ class IntegrationTests(TestCase):
             url="https://example.com/tesla-news",
         )
 
-        # Trigger analysis
-        analyze_post(post.id)
+        # Trigger analysis with manual_test=True to bypass bot enabled gate
+        analyze_post(post.id, manual_test=True)
 
         # Check that analysis was created
         analysis = Analysis.objects.get(post=post)

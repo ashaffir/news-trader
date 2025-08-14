@@ -1,7 +1,7 @@
 services:
   web:
     build: .
-    command: python manage.py runserver 0.0.0.0:8000
+    command: ["/bin/bash", "-lc", "/app/entrypoint.sh"]
     volumes:
       - .:/app
       - static_volume:/app/staticfiles
@@ -21,6 +21,7 @@ services:
       retries: 3
     environment:
       - PLAYWRIGHT_BROWSERS_PATH=/app/.cache/ms-playwright
+      - SERVICE_ROLE=web
 
   db:
     image: postgres:15-alpine
@@ -48,23 +49,22 @@ services:
 
   celery:
     build: .
-    command: celery -A news_trader worker -l info --concurrency=2
+    command: ["/bin/bash", "-lc", "/app/entrypoint.sh"]
     volumes:
       - .:/app
       - static_volume:/app/staticfiles
       - media_volume:/app/media
     environment:
       - PLAYWRIGHT_BROWSERS_PATH=/app/.cache/ms-playwright
-      - PLAYWRIGHT_BROWSERS_PATH=/app/.cache/ms-playwright
-      # Chrome/Selenium configuration for Docker
-      - CHROME_BIN=/usr/bin/chromium
-      - CHROME_PATH=/usr/bin/chromium
+      # CHROME_BIN/CHROME_PATH not required when using Playwright-managed Chromium
       - DISPLAY=:99
+      - SERVICE_ROLE=worker
     env_file:
       - .env
     depends_on:
       - db
       - redis
+      - web
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "celery", "-A", "news_trader", "inspect", "ping"]
@@ -74,16 +74,19 @@ services:
 
   celery-beat:
     build: .
-    command: celery -A news_trader beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    command: ["/bin/bash", "-lc", "/app/entrypoint.sh"]
     volumes:
       - .:/app
       - static_volume:/app/staticfiles
       - media_volume:/app/media
     env_file:
       - .env
+    environment:
+      - SERVICE_ROLE=beat
     depends_on:
       - db
       - redis
+      - web
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "ps aux | grep '[c]elery.*beat' || exit 1"]
