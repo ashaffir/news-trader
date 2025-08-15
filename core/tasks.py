@@ -5,7 +5,7 @@ import json
 import requests
 from bs4 import BeautifulSoup
 from celery import shared_task
-from core.playwright_utils import get_browser
+from core.playwright_utils import get_browser_page
 import asyncio
 
 from .models import Source, ApiResponse, Post, Analysis, Trade, TradingConfig, ActivityLog, AlertSettings
@@ -446,19 +446,8 @@ def _scrape_with_browser(source):
         max_scrolls = 5
         min_title_len = 5
 
-        browser = get_browser()
-        context = None
-        page = None
-        try:
-            context = browser.new_context(
-                user_agent=(
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122 Safari/537.36"
-                ),
-                viewport={"width": 1280, "height": 2000},
-            )
-            page = context.new_page()
-            
+        # Use thread-safe context manager for browser operations
+        with get_browser_page() as page:
             # Set shorter timeouts to prevent hanging
             page.set_default_timeout(15000)
             page.goto(source.url, wait_until="domcontentloaded", timeout=20000)
@@ -518,132 +507,118 @@ def _scrape_with_browser(source):
                 except Exception:
                     continue
 
-        finally:
-            # Ensure cleanup even if exceptions occur
-            try:
-                if page:
-                    page.close()
-            except Exception:
-                pass
-            try:
-                if context:
-                    context.close()
-            except Exception:
-                pass
-
-            logger.info(f"Playwright found {len(candidate_articles)} candidate articles for {source.name}")
-
-            # Process candidates outside Playwright context using threading for async compatibility
-            created_count = 0
-            logger.info(f"Processing {len(candidate_articles)} candidates for {source.name}")
+        # Process candidates outside Playwright context using threading for async compatibility
+        logger.info(f"Playwright found {len(candidate_articles)} candidate articles for {source.name}")
+        created_count = 0
+        logger.info(f"Processing {len(candidate_articles)} candidates for {source.name}")
+        
+        # Always use threading to ensure synchronous database context
+        # This prevents async context issues in Celery workers
+        import threading
+        import queue
+        
+        def process_candidates_sync():
+            """Process candidates in guaranteed synchronous context."""
+            # Force new database connection in thread
+            from django.db import connection
+            connection.ensure_connection()
             
-            # Always use threading to ensure synchronous database context
-            # This prevents async context issues in Celery workers
-            import threading
-            import queue
+            sync_created_count = 0
+            analysis_post_ids = []
             
-            def process_candidates_sync():
-                """Process candidates in guaranteed synchronous context."""
-                # Force new database connection in thread
-                from django.db import connection
-                connection.ensure_connection()
-                
-                sync_created_count = 0
-                analysis_post_ids = []
-                
-                for i, candidate in enumerate(candidate_articles):
-                    try:
-                        title = candidate["title"]
-                        href = candidate["url"]
+            for i, candidate in enumerate(candidate_articles):
+                try:
+                    title = candidate["title"]
+                    href = candidate["url"]
 
-                        if Post.objects.filter(url=href).exists():
-                            continue
-                        if _is_duplicate_content(title, source):
-                            continue
-
-                        try:
-                            post = Post.objects.create(source=source, content=title, url=href)
-                        except Exception as db_err:
-                            try:
-                                # Refresh or recreate the Source if missing to survive FK races
-                                try:
-                                    source_refreshed = Source.objects.get(pk=source.pk)
-                                except Source.DoesNotExist:
-                                    source_refreshed, _ = Source.objects.get_or_create(
-                                        url=source.url,
-                                        defaults={
-                                            "name": source.name,
-                                            "scraping_enabled": True,
-                                        },
-                                    )
-                                post = Post.objects.create(source=source_refreshed, content=title, url=href)
-                            except Exception as inner_err:
-                                logger.error(
-                                    f"DB error creating post for {getattr(source,'name','<unknown>')}: {db_err}; retry failed: {inner_err}"
-                                )
-                                continue
-
-                        sync_created_count += 1
-                        analysis_post_ids.append(post.id)
-                        
-                        send_dashboard_update(
-                            "new_post",
-                            {
-                                "source": source.name,
-                                "content_preview": title[:100] + "...",
-                                "url": href,
-                                "post_id": post.id,
-                            },
-                        )
-                        logger.debug(f"Created post {post.id}: {title[:50]}...")
-                        
-                    except Exception as e:
-                        logger.error(f"Error processing candidate {i}: {e}")
+                    if Post.objects.filter(url=href).exists():
                         continue
-                        
-                return sync_created_count, analysis_post_ids
-            
-            # Always use threading to guarantee sync context
-            logger.info("Using threading for database operations to ensure sync context")
-            result_queue = queue.Queue()
-            
-            def thread_target():
-                try:
-                    created_count, post_ids = process_candidates_sync()
-                    result_queue.put(("success", created_count, post_ids))
-                except Exception as thread_err:
-                    logger.error(f"Threading error: {thread_err}")
-                    result_queue.put(("error", str(thread_err), []))
-            
-            thread = threading.Thread(target=thread_target)
-            thread.start()
-            thread.join(timeout=120)  # 2 minute timeout
-            
-            if thread.is_alive():
-                logger.error("Threading operation timed out")
-                created_count = 0
-                analysis_post_ids = []
-            else:
-                try:
-                    status, created_count, analysis_post_ids = result_queue.get_nowait()
-                    if status != "success":
-                        logger.error(f"Threading operation failed: {created_count}")
-                        created_count = 0
-                        analysis_post_ids = []
-                except queue.Empty:
-                    logger.error("No result from threading operation")
+                    if _is_duplicate_content(title, source):
+                        continue
+
+                    try:
+                        post = Post.objects.create(source=source, content=title, url=href)
+                    except Exception as db_err:
+                        try:
+                            # Refresh or recreate the Source if missing to survive FK races
+                            try:
+                                source_refreshed = Source.objects.get(pk=source.pk)
+                            except Source.DoesNotExist:
+                                source_refreshed, _ = Source.objects.get_or_create(
+                                    url=source.url,
+                                    defaults={
+                                        "name": source.name,
+                                        "scraping_enabled": True,
+                                    },
+                                )
+                            post = Post.objects.create(source=source_refreshed, content=title, url=href)
+                        except Exception as inner_err:
+                            logger.error(
+                                f"DB error creating post for {getattr(source,'name','<unknown>')}: {db_err}; retry failed: {inner_err}"
+                            )
+                            continue
+
+                    sync_created_count += 1
+                    analysis_post_ids.append(post.id)
+                    
+                    send_dashboard_update(
+                        "new_post",
+                        {
+                            "source": source.name,
+                            "content_preview": title[:100] + "...",
+                            "url": href,
+                            "post_id": post.id,
+                        },
+                    )
+                    logger.debug(f"Created post {post.id}: {title[:50]}...")
+                    
+                except Exception as e:
+                    logger.error(f"Error processing candidate {i}: {e}")
+                    continue
+                    
+            return sync_created_count, analysis_post_ids
+        
+        # Always use threading to guarantee sync context
+        logger.info("Using threading for database operations to ensure sync context")
+        result_queue = queue.Queue()
+        
+        def thread_target():
+            try:
+                created_count, post_ids = process_candidates_sync()
+                result_queue.put(("success", created_count, post_ids))
+            except Exception as thread_err:
+                logger.error(f"Threading error: {thread_err}")
+                result_queue.put(("error", str(thread_err), []))
+        
+        thread = threading.Thread(target=thread_target)
+        thread.start()
+        thread.join(timeout=120)  # 2 minute timeout
+        
+        if thread.is_alive():
+            logger.error("Threading operation timed out")
+            created_count = 0
+            analysis_post_ids = []
+        else:
+            try:
+                status, created_count, analysis_post_ids = result_queue.get_nowait()
+                if status != "success":
+                    logger.error(f"Threading operation failed: {created_count}")
                     created_count = 0
                     analysis_post_ids = []
+            except queue.Empty:
+                logger.error("No result from threading operation")
+                created_count = 0
+                analysis_post_ids = []
 
-            # Queue analysis tasks for successfully created posts
-            for post_id in analysis_post_ids:
-                try:
-                    analyze_post.delay(post_id)
-                    logger.debug(f"Queued analysis for post {post_id}")
-                except Exception as e:
-                    logger.error(f"Failed to queue analysis for post {post_id}: {e}")
+        # Queue analysis tasks for successfully created posts
+        for post_id in analysis_post_ids:
+            try:
+                analyze_post.delay(post_id)
+                logger.debug(f"Queued analysis for post {post_id}")
+            except Exception as e:
+                logger.error(f"Failed to queue analysis for post {post_id}: {e}")
 
-            logger.info(f"Playwright scraping completed for {source.name}: {created_count} headlines")
+        logger.info(f"Playwright scraping completed for {source.name}: {created_count} headlines")
 
         if created_count == 0:
             send_dashboard_update(
