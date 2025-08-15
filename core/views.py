@@ -311,6 +311,8 @@ def toggle_bot_status(request):
 def system_status_api(request):
     """API endpoint to provide comprehensive system status for the dashboard."""
     try:
+        from datetime import timedelta
+        
         # Get current time
         now = timezone.now()
         last_24h = now - timedelta(hours=24)
@@ -365,7 +367,25 @@ def system_status_api(request):
 
         # Source Status
         sources_status = []
-        for source in Source.objects.all():
+        all_sources = Source.objects.all()
+        
+        # Calculate overall last scrape and next scrape times
+        last_scrape_time = None
+        next_scrape_time = None
+        
+        # Find the most recent scrape across all sources
+        recent_scrapes = all_sources.filter(
+            last_scraped_at__isnull=False
+        ).order_by('-last_scraped_at')
+        
+        if recent_scrapes.exists():
+            last_scrape_time = recent_scrapes.first().last_scraped_at
+            
+            # Calculate next scrape time based on periodic task (default 5 minutes)
+            # We'll use the global 5-minute interval from the periodic task
+            next_scrape_time = last_scrape_time + timedelta(minutes=5)
+        
+        for source in all_sources:
             sources_status.append(
                 {
                     "id": source.id,
@@ -437,6 +457,10 @@ def system_status_api(request):
                 "sources": sources_status,
                 "recent_activity": recent_activity,
                 "trading_config": config_info,
+                "scraping_times": {
+                    "last_scrape": last_scrape_time.isoformat() if last_scrape_time else None,
+                    "next_scrape": next_scrape_time.isoformat() if next_scrape_time else None,
+                },
             }
         )
 

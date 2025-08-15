@@ -334,6 +334,45 @@ docker_restart() {
     print_success "✅ Services restarted"
 }
 
+# Function to restart individual service
+docker_restart_service() {
+    local service="$1"
+    local service_name="$2"
+    
+    if [ -z "$service" ]; then
+        print_error "Service name required"
+        return 1
+    fi
+    
+    print_status "🔄 Restarting $service_name..."
+    
+    # Check if service exists
+    if ! docker-compose ps "$service" >/dev/null 2>&1; then
+        print_error "Service '$service' not found"
+        return 1
+    fi
+    
+    # Restart the service
+    if docker-compose restart "$service"; then
+        sleep 2
+        print_success "✅ $service_name restarted"
+        
+        # Show basic health check for web service
+        if [ "$service" = "web" ]; then
+            sleep 3
+            if check_service_health "Web App" "http://localhost:8800/health/" 5; then
+                print_success "✅ Web service is responding"
+            else
+                print_warning "⚠️ Web service may not be fully ready yet"
+            fi
+        fi
+        return 0
+    else
+        print_error "❌ Failed to restart $service_name"
+        return 1
+    fi
+}
+
 # Function to rebuild and restart
 docker_rebuild() {
     print_status "🏗️ Rebuilding and restarting all services..."
@@ -349,6 +388,92 @@ docker_rebuild() {
     docker_migrate || true
     docker_playwright_install || true
     print_success "✅ Services rebuilt and restarted"
+}
+
+# Function to rebuild individual service
+docker_rebuild_service() {
+    local service="$1"
+    local service_name="$2"
+    
+    if [ -z "$service" ]; then
+        print_error "Service name required"
+        return 1
+    fi
+    
+    print_status "🏗️ Rebuilding $service_name..."
+    check_env_file
+    check_docker
+    
+    # Build the service
+    if docker-compose build "$service"; then
+        print_status "🚀 Starting rebuilt $service_name..."
+        
+        # Handle special cases for service startup
+        case "$service" in
+            "db"|"redis")
+                # Infrastructure services
+                docker-compose up -d "$service"
+                if [ "$service" = "db" ]; then
+                    wait_for_database || true
+                fi
+                ;;
+            "telegram-bot")
+                # Ensure single instance
+                docker-compose up -d --scale telegram-bot=1 "$service"
+                ;;
+            "web")
+                # Web service needs infrastructure
+                docker-compose up -d db redis
+                wait_for_database || true
+                docker-compose up -d "$service" --no-deps
+                ;;
+            "celery"|"celery-beat")
+                # Workers need infrastructure
+                docker-compose up -d db redis
+                wait_for_database || true
+                docker-compose up -d "$service" --no-deps
+                ;;
+            "flower")
+                # Monitoring service
+                docker-compose up -d "$service"
+                ;;
+            *)
+                # Default case
+                docker-compose up -d "$service"
+                ;;
+        esac
+        
+        sleep 3
+        print_success "✅ $service_name rebuilt and restarted"
+        
+        # Special post-rebuild actions
+        case "$service" in
+            "web")
+                # Run migrations and install Playwright for web service
+                print_status "🔧 Running post-rebuild setup for web service..."
+                docker_migrate || true
+                docker_playwright_install || true
+                
+                # Health check
+                sleep 3
+                if check_service_health "Web App" "http://localhost:8800/health/" 5; then
+                    print_success "✅ Web service is responding"
+                else
+                    print_warning "⚠️ Web service may not be fully ready yet"
+                fi
+                ;;
+            "celery")
+                # Install Playwright for celery worker
+                print_status "🎭 Installing Playwright for Celery worker..."
+                docker_playwright_install || true
+                ;;
+        esac
+        
+        return 0
+    else
+        print_error "❌ Failed to rebuild $service_name"
+        return 1
+    fi
 }
 
 # Function to run migrations
@@ -534,6 +659,438 @@ logs_menu() {
     done
 }
 
+# Function to show restart individual services menu
+restart_individual_menu() {
+    while true; do
+        show_header
+        print_status "🔄 Restart Individual Services"
+        echo "=============================="
+        echo
+        
+        local services=("web" "db" "redis" "celery" "celery-beat" "flower" "telegram-bot")
+        local service_names=("Web App" "PostgreSQL" "Redis" "Celery Worker" "Celery Beat" "Flower Monitor" "Telegram Bot")
+        local available_services=()
+        local available_names=()
+        local count=1
+        
+        # Check which services are running
+        for i in "${!services[@]}"; do
+            if docker-compose ps "${services[$i]}" 2>/dev/null | grep -q "Up"; then
+                available_services+=("${services[$i]}")
+                available_names+=("${service_names[$i]}")
+                echo "  $count) ${service_names[$i]} (Running)"
+                count=$((count + 1))
+            else
+                # Show stopped services too, as we might want to restart them
+                available_services+=("${services[$i]}")
+                available_names+=("${service_names[$i]}")
+                echo "  $count) ${service_names[$i]} (Stopped)"
+                count=$((count + 1))
+            fi
+        done
+        
+        echo
+        echo "  a) 🔄 Restart all services"
+        echo "  m) 📦 Multi-select services"
+        echo "  r) 🔄 Refresh"
+        echo "  b) ⬅️  Back to main menu"
+        echo
+        
+        read -p "Select service to restart (1-${#available_services[@]}, a, m, r, b): " choice
+        
+        case "$choice" in
+            [1-9]*)
+                if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le ${#available_services[@]} ]; then
+                    local selected_service="${available_services[$((choice-1))]}"
+                    local selected_name="${available_names[$((choice-1))]}"
+                    show_header
+                    docker_restart_service "$selected_service" "$selected_name"
+                    pause
+                else
+                    print_error "Invalid choice. Please select a number between 1 and ${#available_services[@]}."
+                    sleep 2
+                fi
+                ;;
+            "a"|"A")
+                show_header
+                docker_restart
+                pause
+                ;;
+            "m"|"M")
+                # Multi-select menu
+                multiselect_restart_menu "${available_services[@]}" "${available_names[@]}"
+                ;;
+            "r"|"R")
+                # Refresh - just continue the loop
+                ;;
+            "b"|"B")
+                return
+                ;;
+            *)
+                print_error "Invalid choice. Please try again."
+                sleep 2
+                ;;
+        esac
+    done
+}
+
+# Function to show rebuild individual services menu
+rebuild_individual_menu() {
+    while true; do
+        show_header
+        print_status "🏗️ Rebuild Individual Services"
+        echo "==============================="
+        echo
+        
+        local services=("web" "db" "redis" "celery" "celery-beat" "flower" "telegram-bot")
+        local service_names=("Web App" "PostgreSQL" "Redis" "Celery Worker" "Celery Beat" "Flower Monitor" "Telegram Bot")
+        local count=1
+        
+        # Show all services (whether running or not)
+        for i in "${!services[@]}"; do
+            if docker-compose ps "${services[$i]}" 2>/dev/null | grep -q "Up"; then
+                echo "  $count) ${service_names[$i]} (Running)"
+            else
+                echo "  $count) ${service_names[$i]} (Stopped)"
+            fi
+            count=$((count + 1))
+        done
+        
+        echo
+        echo "  a) 🏗️ Rebuild all services"
+        echo "  m) 📦 Multi-select services"
+        echo "  r) 🔄 Refresh"
+        echo "  b) ⬅️  Back to main menu"
+        echo
+        
+        read -p "Select service to rebuild (1-${#services[@]}, a, m, r, b): " choice
+        
+        case "$choice" in
+            [1-9]*)
+                if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le ${#services[@]} ]; then
+                    local selected_service="${services[$((choice-1))]}"
+                    local selected_name="${service_names[$((choice-1))]}"
+                    show_header
+                    docker_rebuild_service "$selected_service" "$selected_name"
+                    pause
+                else
+                    print_error "Invalid choice. Please select a number between 1 and ${#services[@]}."
+                    sleep 2
+                fi
+                ;;
+            "a"|"A")
+                show_header
+                docker_rebuild
+                pause
+                ;;
+            "m"|"M")
+                # Multi-select menu
+                multiselect_rebuild_menu "${services[@]}" "${service_names[@]}"
+                ;;
+            "r"|"R")
+                # Refresh - just continue the loop
+                ;;
+            "b"|"B")
+                return
+                ;;
+            *)
+                print_error "Invalid choice. Please try again."
+                sleep 2
+                ;;
+        esac
+    done
+}
+
+# Function for multi-select restart menu
+multiselect_restart_menu() {
+    # Accept arrays directly as arguments (bash 3.x compatible)
+    local services_array=()
+    local names_array=()
+    local selected_services=()
+    local selected_names=()
+    
+    # Parse arguments: first half are services, second half are names
+    local total_args=$#
+    local half=$((total_args / 2))
+    
+    # Fill services array
+    local i=1
+    while [ $i -le $half ]; do
+        services_array+=("${!i}")
+        i=$((i + 1))
+    done
+    
+    # Fill names array
+    i=$((half + 1))
+    while [ $i -le $total_args ]; do
+        names_array+=("${!i}")
+        i=$((i + 1))
+    done
+    
+    while true; do
+        show_header
+        print_status "🔄 Multi-Select Services to Restart"
+        echo "===================================="
+        echo
+        echo "Selected services:"
+        if [ ${#selected_services[@]} -eq 0 ]; then
+            echo "  (none selected)"
+        else
+            for name in "${selected_names[@]}"; do
+                echo "  ✓ $name"
+            done
+        fi
+        echo
+        echo "Available services:"
+        
+        for i in "${!services_array[@]}"; do
+            local service="${services_array[$i]}"
+            local name="${names_array[$i]}"
+            local is_selected=false
+            
+            # Check if service is already selected
+            for selected in "${selected_services[@]}"; do
+                if [ "$selected" = "$service" ]; then
+                    is_selected=true
+                    break
+                fi
+            done
+            
+            if [ "$is_selected" = true ]; then
+                echo "  $((i+1))) ✓ $name"
+            else
+                echo "  $((i+1))) ○ $name"
+            fi
+        done
+        
+        echo
+        echo "  a) 🚀 Restart selected services"
+        echo "  c) 🧹 Clear selection"
+        echo "  b) ⬅️  Back"
+        echo
+        
+        read -p "Toggle service (1-${#services_array[@]}) or action (a, c, b): " choice
+        
+        case "$choice" in
+            [1-9]*)
+                if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le ${#services_array[@]} ]; then
+                    local idx=$((choice-1))
+                    local service="${services_array[$idx]}"
+                    local name="${names_array[$idx]}"
+                    local is_selected=false
+                    local selected_idx=-1
+                    
+                    # Check if already selected
+                    for i in "${!selected_services[@]}"; do
+                        if [ "${selected_services[$i]}" = "$service" ]; then
+                            is_selected=true
+                            selected_idx=$i
+                            break
+                        fi
+                    done
+                    
+                    if [ "$is_selected" = true ]; then
+                        # Remove from selection
+                        unset selected_services[$selected_idx]
+                        unset selected_names[$selected_idx]
+                        selected_services=("${selected_services[@]}")
+                        selected_names=("${selected_names[@]}")
+                    else
+                        # Add to selection
+                        selected_services+=("$service")
+                        selected_names+=("$name")
+                    fi
+                else
+                    print_error "Invalid choice. Please select a number between 1 and ${#services_array[@]}."
+                    sleep 2
+                fi
+                ;;
+            "a"|"A")
+                if [ ${#selected_services[@]} -eq 0 ]; then
+                    print_error "No services selected."
+                    sleep 2
+                else
+                    show_header
+                    print_status "🔄 Restarting selected services..."
+                    local failed_services=()
+                    
+                    for i in "${!selected_services[@]}"; do
+                        local service="${selected_services[$i]}"
+                        local name="${selected_names[$i]}"
+                        if ! docker_restart_service "$service" "$name"; then
+                            failed_services+=("$name")
+                        fi
+                    done
+                    
+                    if [ ${#failed_services[@]} -eq 0 ]; then
+                        print_success "✅ All selected services restarted successfully!"
+                    else
+                        print_warning "⚠️ Some services failed to restart: ${failed_services[*]}"
+                    fi
+                    pause
+                    return
+                fi
+                ;;
+            "c"|"C")
+                selected_services=()
+                selected_names=()
+                ;;
+            "b"|"B")
+                return
+                ;;
+            *)
+                print_error "Invalid choice. Please try again."
+                sleep 2
+                ;;
+        esac
+    done
+}
+
+# Function for multi-select rebuild menu
+multiselect_rebuild_menu() {
+    # Accept arrays directly as arguments (bash 3.x compatible)
+    local services_array=()
+    local names_array=()
+    local selected_services=()
+    local selected_names=()
+    
+    # Parse arguments: first half are services, second half are names
+    local total_args=$#
+    local half=$((total_args / 2))
+    
+    # Fill services array
+    local i=1
+    while [ $i -le $half ]; do
+        services_array+=("${!i}")
+        i=$((i + 1))
+    done
+    
+    # Fill names array
+    i=$((half + 1))
+    while [ $i -le $total_args ]; do
+        names_array+=("${!i}")
+        i=$((i + 1))
+    done
+    
+    while true; do
+        show_header
+        print_status "🏗️ Multi-Select Services to Rebuild"
+        echo "===================================="
+        echo
+        echo "Selected services:"
+        if [ ${#selected_services[@]} -eq 0 ]; then
+            echo "  (none selected)"
+        else
+            for name in "${selected_names[@]}"; do
+                echo "  ✓ $name"
+            done
+        fi
+        echo
+        echo "Available services:"
+        
+        for i in "${!services_array[@]}"; do
+            local service="${services_array[$i]}"
+            local name="${names_array[$i]}"
+            local is_selected=false
+            
+            # Check if service is already selected
+            for selected in "${selected_services[@]}"; do
+                if [ "$selected" = "$service" ]; then
+                    is_selected=true
+                    break
+                fi
+            done
+            
+            if [ "$is_selected" = true ]; then
+                echo "  $((i+1))) ✓ $name"
+            else
+                echo "  $((i+1))) ○ $name"
+            fi
+        done
+        
+        echo
+        echo "  a) 🚀 Rebuild selected services"
+        echo "  c) 🧹 Clear selection"
+        echo "  b) ⬅️  Back"
+        echo
+        
+        read -p "Toggle service (1-${#services_array[@]}) or action (a, c, b): " choice
+        
+        case "$choice" in
+            [1-9]*)
+                if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le ${#services_array[@]} ]; then
+                    local idx=$((choice-1))
+                    local service="${services_array[$idx]}"
+                    local name="${names_array[$idx]}"
+                    local is_selected=false
+                    local selected_idx=-1
+                    
+                    # Check if already selected
+                    for i in "${!selected_services[@]}"; do
+                        if [ "${selected_services[$i]}" = "$service" ]; then
+                            is_selected=true
+                            selected_idx=$i
+                            break
+                        fi
+                    done
+                    
+                    if [ "$is_selected" = true ]; then
+                        # Remove from selection
+                        unset selected_services[$selected_idx]
+                        unset selected_names[$selected_idx]
+                        selected_services=("${selected_services[@]}")
+                        selected_names=("${selected_names[@]}")
+                    else
+                        # Add to selection
+                        selected_services+=("$service")
+                        selected_names+=("$name")
+                    fi
+                else
+                    print_error "Invalid choice. Please select a number between 1 and ${#services_array[@]}."
+                    sleep 2
+                fi
+                ;;
+            "a"|"A")
+                if [ ${#selected_services[@]} -eq 0 ]; then
+                    print_error "No services selected."
+                    sleep 2
+                else
+                    show_header
+                    print_status "🏗️ Rebuilding selected services..."
+                    local failed_services=()
+                    
+                    for i in "${!selected_services[@]}"; do
+                        local service="${selected_services[$i]}"
+                        local name="${selected_names[$i]}"
+                        if ! docker_rebuild_service "$service" "$name"; then
+                            failed_services+=("$name")
+                        fi
+                    done
+                    
+                    if [ ${#failed_services[@]} -eq 0 ]; then
+                        print_success "✅ All selected services rebuilt successfully!"
+                    else
+                        print_warning "⚠️ Some services failed to rebuild: ${failed_services[*]}"
+                    fi
+                    pause
+                    return
+                fi
+                ;;
+            "c"|"C")
+                selected_services=()
+                selected_names=()
+                ;;
+            "b"|"B")
+                return
+                ;;
+            *)
+                print_error "Invalid choice. Please try again."
+                sleep 2
+                ;;
+        esac
+    done
+}
+
 # Telegram bot helpers
 docker_bot_start() {
 	print_status "🤖 Starting Telegram bot service..."
@@ -599,8 +1156,10 @@ show_help() {
     echo "  start     Start all services"
     echo "  stop      Stop all services"
     echo "  restart   Restart all services"
+    echo "  restart-menu   Interactive menu to restart individual services"
     echo "  build     Rebuild all images"
     echo "  rebuild   Build and restart all services"
+    echo "  rebuild-menu   Interactive menu to rebuild individual services"
     echo "  migrate   Run database migrations"
     echo "  monitor   Start Flower monitoring"
 	echo "  bot-start Start Telegram bot service"
@@ -621,6 +1180,8 @@ show_help() {
     echo "  $0 setup              # Robust setup (can retry if failed)"
     echo "  $0 clean              # Reset after failed setup"
     echo "  $0 start              # Start services"
+    echo "  $0 restart-menu       # Interactive menu to restart individual services"
+    echo "  $0 rebuild-menu       # Interactive menu to rebuild individual services"
     echo "  $0 logs               # View all logs"
     echo "  $0 error-logs         # View error logs only"
     echo ""
@@ -650,19 +1211,21 @@ interactive_menu() {
         echo "  2) ▶️  Start all services"
         echo "  3) ⏹️  Stop all services" 
         echo "  4) 🔄 Restart all services"
-        echo "  5) 🏗️  Rebuild images"
-        echo "  6) 🔧 Rebuild & restart"
-        echo "  7) 📊 Run migrations"
-        echo "  8) 🌸 Start Flower monitor"
-        echo "  9) 🐚 Django shell"
-        echo " 10) 📋 View logs"
-        echo " 11) 🔍 Refresh status"
-        echo " 12) 🧹 Clean up Docker (reset)"
-        echo " 13) ❓ Show help"
+        echo "  5) 🔄 Restart individual services"
+        echo "  6) 🏗️  Rebuild images"
+        echo "  7) 🔧 Rebuild & restart"
+        echo "  8) 🏗️  Rebuild individual services"
+        echo "  9) 📊 Run migrations"
+        echo " 10) 🌸 Start Flower monitor"
+        echo " 11) 🐚 Django shell"
+        echo " 12) 📋 View logs"
+        echo " 13) 🔍 Refresh status"
+        echo " 14) 🧹 Clean up Docker (reset)"
+        echo " 15) ❓ Show help"
         echo "  q) 🚪 Quit"
         echo
         
-        read -p "Select an option (1-13, q): " choice
+        read -p "Select an option (1-15, q): " choice
         echo
         
         case "$choice" in
@@ -683,38 +1246,44 @@ interactive_menu() {
                 pause
                 ;;
             5)
+                restart_individual_menu
+                ;;
+            6)
                 print_status "🏗️ Building Docker images..."
                 check_env_file && check_docker && docker-compose build
                 print_success "✅ Images rebuilt"
                 pause
                 ;;
-            6)
+            7)
                 docker_rebuild
                 pause
                 ;;
-            7)
+            8)
+                rebuild_individual_menu
+                ;;
+            9)
                 docker_migrate
                 pause
                 ;;
-            8)
+            10)
                 docker_monitor
                 pause
                 ;;
-            9)
+            11)
                 docker_shell
                 pause
                 ;;
-            10)
+            12)
                 logs_menu
                 ;;
-            11)
+            13)
                 # Just refresh - the loop will show status again
                 ;;
-            12)
+            14)
                 docker_clean
                 pause
                 ;;
-            13)
+            15)
                 show_help
                 pause
                 ;;
@@ -749,12 +1318,18 @@ else
         "restart")
             docker_restart
             ;;
+        "restart-menu")
+            restart_individual_menu
+            ;;
         "build")
             check_env_file && check_docker && docker-compose build
             print_success "✅ Images rebuilt"
             ;;
         "rebuild")
             docker_rebuild
+            ;;
+        "rebuild-menu")
+            rebuild_individual_menu
             ;;
         "migrate")
             docker_migrate

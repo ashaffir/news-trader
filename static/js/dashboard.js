@@ -134,8 +134,28 @@
         byId('trades-count').textContent = data.statistics.trades_24h || 0;
         byId('win-rate').textContent = (data.performance.win_rate || 0) + '%';
         byId('sources-active').textContent = data.statistics.active_sources || 0;
-        byId('last-scrape').textContent = 'Recently';
-        byId('next-scrape').textContent = 'Scheduled';
+        
+        // Display actual scraping times
+        if (data.scraping_times && data.scraping_times.last_scrape) {
+          const lastScrapeTime = new Date(data.scraping_times.last_scrape);
+          byId('last-scrape').textContent = lastScrapeTime.toLocaleTimeString();
+        } else {
+          byId('last-scrape').textContent = 'Never';
+        }
+        
+        if (data.scraping_times && data.scraping_times.next_scrape) {
+          const nextScrapeTime = new Date(data.scraping_times.next_scrape);
+          const now = new Date();
+          
+          // Show time if it's in the future, otherwise show "Due now"
+          if (nextScrapeTime > now) {
+            byId('next-scrape').textContent = nextScrapeTime.toLocaleTimeString();
+          } else {
+            byId('next-scrape').textContent = 'Due now';
+          }
+        } else {
+          byId('next-scrape').textContent = 'Not scheduled';
+        }
         byId('pending-analysis').textContent = (data.statistics.total_posts - data.statistics.total_analyses) || 0;
         byId('avg-confidence').textContent = (data.performance.avg_confidence || 0) + '%';
         byId('last-analysis').textContent = 'Recently';
