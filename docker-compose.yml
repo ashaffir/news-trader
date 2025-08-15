@@ -58,6 +58,7 @@ services:
       - PLAYWRIGHT_BROWSERS_PATH=/app/.cache/ms-playwright
       # CHROME_BIN/CHROME_PATH not required when using Playwright-managed Chromium
       - DISPLAY=:99
+      - DJANGO_ALLOW_ASYNC_UNSAFE=1
       - SERVICE_ROLE=worker
     env_file:
       - .env

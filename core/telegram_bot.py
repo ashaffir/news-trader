@@ -11,6 +11,10 @@ This module provides two-way Telegram integration allowing users to:
 import os
 import logging
 import asyncio
+import time
+import threading
+import socket
+import uuid
 from typing import Optional, Dict, Any
 from datetime import datetime, timedelta
 
@@ -19,9 +23,11 @@ from django.conf import settings
 from django.utils import timezone
 from django.db.models import Sum, Q
 from asgiref.sync import sync_to_async
+import redis
 
 # Telegram bot imports
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.error import Conflict, NetworkError, TimedOut, RetryAfter
 from telegram.ext import (
     Application, 
     CommandHandler, 
@@ -30,6 +36,7 @@ from telegram.ext import (
     MessageHandler,
     filters
 )
+import httpx
 try:
     # Use explicit HTTPX request configuration to improve resilience
     from telegram.request import HTTPXRequest
@@ -52,6 +59,85 @@ class TelegramBotService:
         self.token = os.getenv("TELEGRAM_BOT_TOKEN")
         self.authorized_chat_ids = self._get_authorized_chat_ids()
         self.application = None
+        self._lock = None
+        self._lock_thread = None
+        self._lock_stop = threading.Event()
+
+    # --- Distributed single-instance lock (Redis) ---
+    def _redis_client(self):
+        url = os.getenv("REDIS_URL") or os.getenv("CELERY_BROKER_URL")
+        if not url or not url.startswith("redis"):
+            return None
+        try:
+            return redis.Redis.from_url(url)
+        except Exception:
+            return None
+
+    def _acquire_singleton_lock(self) -> bool:
+        if not self.token:
+            return False
+        client = self._redis_client()
+        if client is None:
+            # No Redis available; assume single-instance per container
+            return True
+        key = f"telegram_bot_lock:{self.token}"
+        value = f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex}"
+        try:
+            ok = client.set(key, value, nx=True, ex=120)
+            if ok:
+                self._lock = (client, key, value)
+                # Start background refresher
+                self._lock_stop.clear()
+                self._lock_thread = threading.Thread(target=self._refresh_lock_loop, daemon=True)
+                self._lock_thread.start()
+                return True
+            return False
+        except Exception as e:
+            logger.warning(f"Failed to acquire Redis lock for Telegram bot: {e}")
+            return True  # Fail-open to not block in dev
+
+    def _refresh_lock_loop(self):
+        if not self._lock:
+            return
+        client, key, value = self._lock
+        while not self._lock_stop.is_set():
+            try:
+                # Refresh only if we still own it
+                current = client.get(key)
+                if current and current.decode() == value:
+                    client.expire(key, 120)
+                else:
+                    # Lost lock; request stop
+                    logger.warning("Telegram bot lost singleton lock; stopping bot polling")
+                    try:
+                        # Trigger stop; application will be stopped in stop_bot
+                        self._lock_stop.set()
+                    except Exception:
+                        pass
+                    break
+            except Exception:
+                pass
+            time.sleep(30)
+
+    def _release_singleton_lock(self):
+        try:
+            self._lock_stop.set()
+            if self._lock_thread:
+                self._lock_thread.join(timeout=5)
+        except Exception:
+            pass
+        if not self._lock:
+            return
+        client, key, value = self._lock
+        try:
+            # Delete only if owned
+            current = client.get(key)
+            if current and current.decode() == value:
+                client.delete(key)
+        except Exception:
+            pass
+        finally:
+            self._lock = None
     
     async def _check_database_connection(self, update: Update) -> bool:
         """Check database connection and send error message if failed."""
@@ -556,6 +642,37 @@ Use the commands to control your trading bot remotely!
             filters.TEXT & ~filters.COMMAND, 
             self.handle_unauthorized_message
         ))
+        
+        # Enhanced error handler for network connectivity issues
+        async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE):
+            err = getattr(context, 'error', None)
+            
+            if isinstance(err, Conflict):
+                logger.error("Conflict detected during polling; stopping bot instance to avoid duplicate pollers.")
+                try:
+                    await self.stop_bot()
+                except Exception:
+                    pass
+                    
+            elif isinstance(err, (NetworkError, httpx.RemoteProtocolError, httpx.ConnectError)):
+                logger.warning(f"Network error in Telegram bot: {type(err).__name__}: {err}")
+                # Don't stop the bot for network errors - let it retry automatically
+                # The polling mechanism will handle retries with exponential backoff
+                
+            elif isinstance(err, TimedOut):
+                logger.info(f"Telegram request timed out: {err}")
+                # Timeout is normal for long polling, don't log as error
+                
+            elif isinstance(err, RetryAfter):
+                retry_after = err.retry_after
+                logger.warning(f"Rate limited by Telegram API, retry after {retry_after} seconds")
+                # The bot will automatically wait and retry
+                
+            else:
+                # Log other unexpected errors
+                logger.error(f"Unexpected error in Telegram bot: {type(err).__name__}: {err}")
+                
+        self.application.add_error_handler(on_error)
     
     async def start_bot(self):
         """Start the Telegram bot."""
@@ -566,15 +683,22 @@ Use the commands to control your trading bot remotely!
         if not self.authorized_chat_ids:
             logger.warning("No authorized chat IDs configured")
         
-        # Build application with hardened HTTP settings to avoid httpx RemoteProtocolError
+        # Enforce single instance across containers/processes
+        if not self._acquire_singleton_lock():
+            logger.error("Another Telegram bot instance is already polling (singleton lock not acquired). Skipping start.")
+            return None
+        
+        # Build application with hardened HTTP settings and retry logic
         builder = Application.builder().token(self.token)
         try:
             if HTTPXRequest:
                 request_kwargs = {
-                    "connect_timeout": 10.0,
-                    "read_timeout": 70.0,
-                    "write_timeout": 70.0,
-                    "pool_timeout": 10.0,
+                    "connect_timeout": 20.0,  # Increased from 10.0
+                    "read_timeout": 80.0,     # Increased from 70.0  
+                    "write_timeout": 80.0,    # Increased from 70.0
+                    "pool_timeout": 15.0,     # Increased from 10.0
+                    # Add retry configuration for better resilience
+                    "pool_limits": httpx.Limits(max_keepalive_connections=1, max_connections=2)
                 }
                 # Prefer HTTP/1.1 to avoid intermittent HTTP/2 disconnects
                 if HTTPVersion is not None:
@@ -583,29 +707,126 @@ Use the commands to control your trading bot remotely!
                     # Some PTB versions accept a string
                     request_kwargs["http_version"] = "1.1"
                 builder = builder.request(HTTPXRequest(**request_kwargs))
+            
+            # Configure polling with retry settings for better resilience
+            builder = builder.get_updates_connect_timeout(20)
+            builder = builder.get_updates_read_timeout(80)
+            builder = builder.get_updates_write_timeout(80)
+            builder = builder.get_updates_pool_timeout(15)
+            
             # Increase long-polling timeout for getUpdates
             if hasattr(builder, "get_updates_request_timeout"):
                 builder = builder.get_updates_request_timeout(60)
+                
         except Exception as e:
             logger.warning("Building HTTPXRequest failed, falling back to defaults: %s", e)
         
         self.application = builder.build()
         self.setup_handlers()
         
+        # Preflight: check if another poller is active to avoid conflict loops
+        try:
+            # Short timeout; we only need to detect Conflict
+            await self.application.bot.get_updates(timeout=1)
+        except Conflict:
+            logger.error("Another Telegram poller is already running for this token (Conflict). Skipping start.")
+            self._release_singleton_lock()
+            return None
+        except Exception:
+            # Non-conflict errors will be handled by polling
+            pass
+
         logger.info("Starting Telegram bot...")
         await self.application.initialize()
         await self.application.start()
-        await self.application.updater.start_polling()
+        
+        # Start polling with automatic recovery
+        await self._start_resilient_polling()
         
         return self.application
+    
+    async def _start_resilient_polling(self):
+        """Start polling with automatic recovery from network errors."""
+        max_retries = 5
+        base_delay = 5.0
+        max_delay = 300.0  # 5 minutes max delay
+        
+        retry_count = 0
+        
+        while retry_count < max_retries:
+            try:
+                logger.info(f"Starting Telegram polling (attempt {retry_count + 1}/{max_retries})")
+                await self.application.updater.start_polling()
+                
+                # If we get here, polling started successfully
+                retry_count = 0  # Reset retry count on success
+                break
+                
+            except (NetworkError, httpx.RemoteProtocolError, httpx.ConnectError) as e:
+                retry_count += 1
+                if retry_count >= max_retries:
+                    logger.error(f"Failed to start Telegram polling after {max_retries} attempts: {e}")
+                    raise
+                
+                # Calculate exponential backoff delay
+                delay = min(base_delay * (2 ** (retry_count - 1)), max_delay)
+                logger.warning(f"Network error starting Telegram polling: {e}. Retrying in {delay:.1f}s (attempt {retry_count}/{max_retries})")
+                await asyncio.sleep(delay)
+                
+            except Exception as e:
+                logger.error(f"Unexpected error starting Telegram polling: {e}")
+                raise
+    
+    async def monitor_bot_health(self):
+        """Monitor bot health and restart if necessary."""
+        health_check_interval = 300  # Check every 5 minutes
+        max_consecutive_failures = 3
+        consecutive_failures = 0
+        
+        while True:
+            try:
+                await asyncio.sleep(health_check_interval)
+                
+                # Check if the updater is still running
+                if self.application and self.application.updater:
+                    if not self.application.updater.running:
+                        logger.warning("Telegram bot updater stopped unexpectedly, attempting restart...")
+                        consecutive_failures += 1
+                        
+                        if consecutive_failures >= max_consecutive_failures:
+                            logger.error(f"Bot failed health check {consecutive_failures} times, stopping monitoring")
+                            break
+                            
+                        # Try to restart polling
+                        try:
+                            await self._start_resilient_polling()
+                            consecutive_failures = 0  # Reset on successful restart
+                            logger.info("Telegram bot polling restarted successfully")
+                        except Exception as e:
+                            logger.error(f"Failed to restart Telegram bot polling: {e}")
+                    else:
+                        consecutive_failures = 0  # Reset counter on healthy check
+                        
+            except asyncio.CancelledError:
+                logger.info("Bot health monitoring cancelled")
+                break
+            except Exception as e:
+                logger.error(f"Error in bot health monitoring: {e}")
+                consecutive_failures += 1
     
     async def stop_bot(self):
         """Stop the Telegram bot."""
         if self.application:
             logger.info("Stopping Telegram bot...")
-            await self.application.updater.stop()
-            await self.application.stop()
-            await self.application.shutdown()
+            try:
+                if self.application.updater and self.application.updater.running:
+                    await self.application.updater.stop()
+                await self.application.stop()
+                await self.application.shutdown()
+            except Exception as e:
+                logger.warning(f"Error during bot shutdown: {e}")
+        # Always release the singleton lock
+        self._release_singleton_lock()
 
 
 # Global bot instance

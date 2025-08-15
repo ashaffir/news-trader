@@ -67,7 +67,7 @@ case "$ROLE" in
     until curl -sf http://web:8000/health/ >/dev/null 2>&1; do
       sleep 2
     done
-    exec celery -A news_trader worker -l info --concurrency=2
+    exec celery -A news_trader worker -l info --concurrency=4 -P threads
     ;;
   beat)
     # Wait for web health endpoint before starting

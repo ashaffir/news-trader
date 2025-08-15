@@ -70,9 +70,7 @@ RUN chmod 755 /app/entrypoint.sh
 RUN mkdir -p /app/logs /app/staticfiles /app/media \
     && chown -R appuser:appuser /app
 
-# Set Chrome binary path for Selenium
-ENV CHROME_BIN=/usr/bin/chromium
-ENV CHROME_PATH=/usr/bin/chromium
+# Selenium not used; Playwright manages Chromium
 
 # Switch to non-root user
 USER appuser

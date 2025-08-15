@@ -5,6 +5,7 @@ import json
 import requests
 from bs4 import BeautifulSoup
 from celery import shared_task
+from core.playwright_utils import get_browser
 import asyncio
 
 from .models import Source, ApiResponse, Post, Analysis, Trade, TradingConfig, ActivityLog, AlertSettings
@@ -17,6 +18,32 @@ import hashlib
 from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
+
+def _is_async_context() -> bool:
+    try:
+        asyncio.get_running_loop()
+        return True
+    except RuntimeError:
+        return False
+
+def _run_db_call_in_thread(fn):
+    import threading
+    import queue
+    result_q = queue.Queue()
+    def _runner():
+        try:
+            from django.db import connection
+            connection.ensure_connection()
+            result_q.put((True, fn()))
+        except Exception as e:
+            result_q.put((False, e))
+    t = threading.Thread(target=_runner, daemon=True)
+    t.start()
+    t.join()
+    ok, payload = result_q.get()
+    if ok:
+        return payload
+    raise payload
 def _get_recent_hours_default() -> int:
     try:
         return int(os.getenv("SCRAPE_RECENT_HOURS", "24"))
@@ -177,33 +204,44 @@ def format_activity_message(message_type, data):
 
 def send_dashboard_update(message_type, data):
     """Save activity update to database for polling-based UI updates."""
-    try:
-        # Format the message for display
-        message = format_activity_message(message_type, data)
-        
-        # Save to database - this is now the primary method
-        ActivityLog.objects.create(
-            activity_type=message_type,
-            message=message,
-            data=data
-        )
-        logger.debug(f"Activity logged to database: {message_type}")
-        # Also notify Telegram if enabled
+    def _write_update():
+        # Wrap all DB/alert work in a function that can run in a clean thread
         try:
-            from .utils.telegram import send_telegram_message, is_alert_enabled
-            logger.debug("Alert dispatch gate check for type=%s", message_type)
-            if is_alert_enabled(message_type):
-                logger.info("Dispatching Telegram alert for type=%s", message_type)
-                sent = send_telegram_message(message)
-                logger.info("Telegram alert sent=%s type=%s", sent, message_type)
-            else:
-                logger.info("Telegram alert disabled by settings for type=%s", message_type)
-        except Exception as notify_error:
-            logger.warning(f"Alert dispatch failed for {message_type}: {notify_error}")
-        
-    except Exception as e:
-        logger.error(f"Failed to save activity update ({message_type}): {e}")
-        # Continue execution even if database save fails
+            message = format_activity_message(message_type, data)
+            ActivityLog.objects.create(
+                activity_type=message_type,
+                message=message,
+                data=data
+            )
+            logger.debug(f"Activity logged to database: {message_type}")
+            try:
+                from .utils.telegram import send_telegram_message, is_alert_enabled
+                logger.debug("Alert dispatch gate check for type=%s", message_type)
+                if is_alert_enabled(message_type):
+                    logger.info("Dispatching Telegram alert for type=%s", message_type)
+                    sent = send_telegram_message(message)
+                    logger.info("Telegram alert sent=%s type=%s", sent, message_type)
+                else:
+                    logger.info("Telegram alert disabled by settings for type=%s", message_type)
+            except Exception as notify_error:
+                logger.warning(f"Alert dispatch failed for {message_type}: {notify_error}")
+        except Exception as e:
+            logger.error(f"Failed to save activity update ({message_type}): {e}")
+
+    # If running within an asyncio event loop thread, offload to a separate thread
+    try:
+        asyncio.get_running_loop()
+        loop_running = True
+    except RuntimeError:
+        loop_running = False
+
+    if loop_running:
+        import threading
+        t = threading.Thread(target=_write_update, daemon=True)
+        t.start()
+        t.join()
+    else:
+        _write_update()
 
 
 def _is_simulated_post(post):
@@ -384,12 +422,14 @@ def _get_site_specific_selectors(url):
 
 def _scrape_with_browser(source):
     """Headless scraping using Playwright to collect headlines with limited infinite scroll."""
-    playwright_enabled = os.getenv("ENABLE_PLAYWRIGHT_SCRAPING", "true").lower() in ("1", "true", "yes", "on")
-    if not playwright_enabled:
-        raise RuntimeError("Playwright scraping disabled. Set ENABLE_PLAYWRIGHT_SCRAPING=true to enable.")
+    # Playwright is mandatory; no env-based disable
+
+    # Ensure variables exist even if early errors occur
+    candidate_articles = []
+    created_count = 0
+    analysis_post_ids = []
 
     try:
-        from playwright.sync_api import sync_playwright
         from urllib.parse import urljoin
 
         logger.info(f"Playwright scraping from {source.url}")
@@ -406,103 +446,90 @@ def _scrape_with_browser(source):
         max_scrolls = 5
         min_title_len = 5
 
-        with sync_playwright() as p:
-            browser = None
-            context = None
-            page = None
+        browser = get_browser()
+        context = None
+        page = None
+        try:
+            context = browser.new_context(
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122 Safari/537.36"
+                ),
+                viewport={"width": 1280, "height": 2000},
+            )
+            page = context.new_page()
+            
+            # Set shorter timeouts to prevent hanging
+            page.set_default_timeout(15000)
+            page.goto(source.url, wait_until="domcontentloaded", timeout=20000)
+
             try:
-                browser = p.chromium.launch(
-                    headless=True, 
-                    args=[
-                        "--no-sandbox", 
-                        "--disable-dev-shm-usage",
-                        "--disable-background-timer-throttling",
-                        "--disable-backgrounding-occluded-windows",
-                        "--disable-renderer-backgrounding",
-                        "--no-first-run",
-                        "--disable-extensions"
-                    ]
-                )  
-                context = browser.new_context(
-                    user_agent=(
-                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122 Safari/537.36"
-                    ),
-                    viewport={"width": 1280, "height": 2000},
-                )
-                page = context.new_page()
-                
-                # Set shorter timeouts to prevent hanging
-                page.set_default_timeout(15000)
-                page.goto(source.url, wait_until="domcontentloaded", timeout=20000)
+                page.wait_for_selector("body", timeout=10000)
+            except Exception:
+                pass
 
+            last_height = 0
+            for _ in range(max_scrolls):
+                page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
+                page.wait_for_timeout(1500)
+                new_height = page.evaluate("document.body.scrollHeight")
+                if new_height <= last_height:
+                    break
+                last_height = new_height
+
+            elements = []
+            container_selector = site_config.get("container")
+            if container_selector:
+                elements = page.query_selector_all(container_selector)
+            if not elements:
+                for sel in headline_selectors:
+                    found = page.query_selector_all(sel)
+                    if found:
+                        elements.extend(found)
+
+            # Collect candidate articles in Playwright context (no DB operations)
+            seen_links = set()
+
+            for el in elements:
                 try:
-                    page.wait_for_selector("body", timeout=10000)
-                except Exception:
-                    pass
+                    title = (el.inner_text() or "").strip()
+                    href = el.get_attribute("href")
+                    anchor = None
+                    if not href:
+                        anchor = el.query_selector("a[href]")
+                        href = anchor.get_attribute("href") if anchor else None
+                    if not title and anchor:
+                        title = (anchor.inner_text() or "").strip()
 
-                last_height = 0
-                for _ in range(max_scrolls):
-                    page.evaluate("window.scrollTo(0, document.body.scrollHeight);")
-                    page.wait_for_timeout(1500)
-                    new_height = page.evaluate("document.body.scrollHeight")
-                    if new_height <= last_height:
-                        break
-                    last_height = new_height
-
-                elements = []
-                container_selector = site_config.get("container")
-                if container_selector:
-                    elements = page.query_selector_all(container_selector)
-                if not elements:
-                    for sel in headline_selectors:
-                        found = page.query_selector_all(sel)
-                        if found:
-                            elements.extend(found)
-
-                # Collect candidate articles in Playwright context (no DB operations)
-                candidate_articles = []
-                seen_links = set()
-
-                for el in elements:
-                    try:
-                        title = (el.inner_text() or "").strip()
-                        href = el.get_attribute("href")
-                        anchor = None
-                        if not href:
-                            anchor = el.query_selector("a[href]")
-                            href = anchor.get_attribute("href") if anchor else None
-                        if not title and anchor:
-                            title = (anchor.inner_text() or "").strip()
-
-                        if not title or len(title) < min_title_len or not href:
-                            continue
-
-                        if href.startswith("/"):
-                            href = urljoin(source.url, href)
-                        if not _looks_like_article_url(href):
-                            continue
-                        if href in seen_links:
-                            continue
-                        seen_links.add(href)
-
-                        # Store candidate without DB operations
-                        candidate_articles.append({"title": title, "url": href})
-
-                    except Exception:
+                    if not title or len(title) < min_title_len or not href:
                         continue
 
-            finally:
-                # Ensure cleanup even if exceptions occur
-                try:
-                    if page:
-                        page.close()
-                    if context:
-                        context.close()
-                    if browser:
-                        browser.close()
-                except Exception as cleanup_error:
-                    logger.warning(f"Error during Playwright cleanup: {cleanup_error}")
+                    if href.startswith("/"):
+                        href = urljoin(source.url, href)
+                    if not _looks_like_article_url(href):
+                        continue
+                    if href in seen_links:
+                        continue
+                    seen_links.add(href)
+
+                    # Store candidate without DB operations
+                    candidate_articles.append({"title": title, "url": href})
+
+                except Exception:
+                    continue
+
+        finally:
+            # Ensure cleanup even if exceptions occur
+            try:
+                if page:
+                    page.close()
+            except Exception:
+                pass
+            try:
+                if context:
+                    context.close()
+            except Exception:
+                pass
 
             logger.info(f"Playwright found {len(candidate_articles)} candidate articles for {source.name}")
 
@@ -618,122 +645,23 @@ def _scrape_with_browser(source):
 
             logger.info(f"Playwright scraping completed for {source.name}: {created_count} headlines")
 
-        # Outside of Playwright context: safe to use Django ORM synchronously
         if created_count == 0:
-            try:
-                fb_created = _scrape_with_http(source)
-                logger.info(f"HTTP fallback produced {fb_created} headlines for {source.name}")
-                if fb_created == 0:
-                    send_dashboard_update(
-                        "scraper_status",
-                        {"status": f"No headlines found for {source.name}", "source": source.name},
-                    )
-            except Exception as fb_err:
-                logger.error(f"HTTP fallback failed after empty Playwright result for {source.url}: {fb_err}")
-                _create_simulated_post(source, f"browser empty + http failed: {fb_err}", "browser")
+            send_dashboard_update(
+                "scraper_status",
+                {"status": f"No headlines found for {source.name}", "source": source.name},
+            )
 
     except Exception as e:
         logger.error(f"Error in Playwright scraping {source.url}: {e}")
         send_dashboard_update(
             "scraper_error", {"source": source.name, "error": str(e), "method": "browser"}
         )
-        # Fallback to simple HTTP parsing
-        try:
-            created = _scrape_with_http(source)
-            if created == 0:
-                _create_simulated_post(source, str(e), "browser")
-        except Exception as fb_err:
-            logger.error(f"HTTP fallback failed for {source.url}: {fb_err}")
-            _create_simulated_post(source, f"browser+http failed: {fb_err}", "browser")
 
 
 def _scrape_with_http(source) -> int:
-    """Lightweight fallback scraper using requests + BeautifulSoup for headlines.
-
-    Returns: number of posts created.
-    """
-    import requests
-    from bs4 import BeautifulSoup
-    from urllib.parse import urljoin
-
-    logger.info(f"HTTP fallback scraping from {source.url}")
-    created_count = 0
-    try:
-        resp = requests.get(source.url, timeout=20, headers={
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122 Safari/537.36"
-        })
-        resp.raise_for_status()
-        soup = BeautifulSoup(resp.text, "html.parser")
-
-        candidates = []
-        # Prefer headings and headline-like classes
-        candidates.extend(soup.select("h1, h2, h3"))
-        candidates.extend(soup.select("[class*='headline']"))
-        # Site-specific: CNBC latest uses many anchors with year in path
-        if 'cnbc.com' in source.url.lower():
-            candidates.extend(soup.select("a[href*='/202']"))
-        # Generic anchors as last resort
-        candidates.extend(soup.select("a[href]"))
-
-        seen = set()
-        for el in candidates:
-            try:
-                title = (el.get_text() or "").strip()
-                if not title or len(title) < 5:
-                    continue
-                href = el.get("href")
-                if not href:
-                    # Find nearest link
-                    a = el.find("a")
-                    if a and a.get("href"):
-                        href = a.get("href")
-                if not href:
-                    continue
-                if href.startswith("/"):
-                    href = urljoin(source.url, href)
-                if not _looks_like_article_url(href):
-                    continue
-                if href in seen:
-                    continue
-                seen.add(href)
-
-                if Post.objects.filter(url=href).exists():
-                    continue
-                if _is_duplicate_content(title, source):
-                    continue
-
-                try:
-                    post = Post.objects.create(source=source, content=title, url=href)
-                except Exception as db_err:
-                    try:
-                        source = Source.objects.get(pk=source.pk)
-                    except Source.DoesNotExist:
-                        source, _ = Source.objects.get_or_create(
-                            url=source.url,
-                            defaults={"name": source.name, "scraping_enabled": True},
-                        )
-                    post = Post.objects.create(source=source, content=title, url=href)
-
-                created_count += 1
-                send_dashboard_update(
-                    "new_post",
-                    {
-                        "source": source.name,
-                        "content_preview": title[:100] + "...",
-                        "url": href,
-                        "post_id": post.id,
-                    },
-                )
-                # Queue analysis for the new post
-                analyze_post.delay(post.id)
-            except Exception:
-                continue
-    except Exception as e:
-        logger.error(f"HTTP fallback error for {source.url}: {e}")
-        raise
-
-    logger.info(f"HTTP fallback created {created_count} headlines for {source.name}")
-    return created_count
+    """Deprecated: HTTP fallback is disabled to enforce Playwright-only scraping."""
+    logger.info("HTTP fallback disabled; Playwright-only mode")
+    return 0
 
 
 def _determine_scraping_method(source):
@@ -982,13 +910,21 @@ def _scrape_source(source):
 
 def get_active_trading_config():
     """Get the active trading configuration or create a default one."""
-    try:
-        return TradingConfig.objects.filter(is_active=True).first()
-    except TradingConfig.DoesNotExist:
+    def _query():
+        try:
+            cfg = TradingConfig.objects.filter(is_active=True).first()
+            if cfg:
+                return cfg
+        except TradingConfig.DoesNotExist:
+            pass
         # Create default config if none exists
         return TradingConfig.objects.create(
             name="Default Configuration", is_active=True
         )
+
+    if _is_async_context():
+        return _run_db_call_in_thread(_query)
+    return _query()
 
 
 def is_trading_allowed():
@@ -1037,33 +973,40 @@ def scrape_posts(source_id=None, manual_test=False):
         logger.info("Manual test scraping - bypassing bot enabled check.")
 
     # Always resolve sources fresh from DB; avoid stale IDs after deletes
-    if source_id:
-        try:
-            sources = Source.objects.filter(id=source_id)
-            if not sources.exists():
-                logger.warning(f"Source with ID {source_id} not found; attempting fallback by name/url")
-                sources = Source.objects.all()
-                if not sources.exists():
-                    send_dashboard_update(
-                        "scraper_error",
-                        {"source": "N/A", "error": f"No sources available to scrape (requested ID {source_id})"},
-                    )
-                    return
-        except Exception as e:
-            logger.error(f"Error resolving source {source_id}: {e}")
-            send_dashboard_update(
-                "scraper_error",
-                {"source": "N/A", "error": f"Error resolving source {source_id}: {e}"},
-            )
-            return
-    else:
-        sources = Source.objects.all()
+    def _resolve_sources():
+        if source_id:
+            try:
+                qs = Source.objects.filter(id=source_id)
+                if not qs.exists():
+                    logger.warning(f"Source with ID {source_id} not found; attempting fallback by name/url")
+                    qs = Source.objects.all()
+                    if not qs.exists():
+                        send_dashboard_update(
+                            "scraper_error",
+                            {"source": "N/A", "error": f"No sources available to scrape (requested ID {source_id})"},
+                        )
+                        return None
+                return qs
+            except Exception as e:
+                logger.error(f"Error resolving source {source_id}: {e}")
+                send_dashboard_update(
+                    "scraper_error",
+                    {"source": "N/A", "error": f"Error resolving source {source_id}: {e}"},
+                )
+                return None
+        else:
+            return Source.objects.all()
+
+    sources = _run_db_call_in_thread(_resolve_sources) if _is_async_context() else _resolve_sources()
+    if sources is None:
+        return
 
     # Only process enabled sources (RSS feeds, browser scraping, and API)
-    active_sources = sources.filter(scraping_enabled=True)
+    active_sources = (_run_db_call_in_thread(lambda: sources.filter(scraping_enabled=True))
+                      if _is_async_context() else sources.filter(scraping_enabled=True))
     
     # Send start message with source names
-    if active_sources.exists():
+    if (_run_db_call_in_thread(active_sources.exists) if _is_async_context() else active_sources.exists()):
         source_names = [source.name for source in active_sources]
         if len(source_names) == 1:
             send_dashboard_update(
@@ -1093,9 +1036,12 @@ def scrape_posts(source_id=None, manual_test=False):
                 {"source": source.name, "error": str(e), "method": "scraping"},
             )
     
-    # Log disabled sources being skipped
-    disabled_sources = sources.filter(scraping_enabled=False)
-    
+    # Log disabled sources being skipped (make DB-safe in async contexts)
+    if _is_async_context():
+        disabled_sources = _run_db_call_in_thread(lambda: list(sources.filter(scraping_enabled=False)))
+    else:
+        disabled_sources = list(sources.filter(scraping_enabled=False))
+
     for source in disabled_sources:
         logger.info(f"Skipping disabled source: {source.name}")
 
@@ -1313,17 +1259,19 @@ def execute_trade(analysis_id):
         logger.info("Bot is disabled. Skipping trade execution.")
         return
 
-    analysis = Analysis.objects.get(id=analysis_id)
+    if _is_async_context():
+        analysis = _run_db_call_in_thread(lambda: Analysis.objects.get(id=analysis_id))
+    else:
+        analysis = Analysis.objects.get(id=analysis_id)
     send_dashboard_update(
         "trade_status",
         {"analysis_id": analysis.id, "status": "Analyzing position management"},
     )
 
     # Check for existing open position in the same symbol
-    existing_trade = Trade.objects.filter(
-        symbol=analysis.symbol,
-        status="open"
-    ).first()
+    def _find_existing():
+        return Trade.objects.filter(symbol=analysis.symbol, status="open").first()
+    existing_trade = _run_db_call_in_thread(_find_existing) if _is_async_context() else _find_existing()
 
     if existing_trade:
         logger.info(f"Found existing open position for {analysis.symbol}: {existing_trade.direction}")
@@ -1345,7 +1293,7 @@ def execute_trade(analysis_id):
 @shared_task
 def create_new_trade(analysis_id):
     """Create a new trade for the given analysis."""
-    analysis = Analysis.objects.get(id=analysis_id)
+    analysis = _run_db_call_in_thread(lambda: Analysis.objects.get(id=analysis_id)) if _is_async_context() else Analysis.objects.get(id=analysis_id)
     config = get_active_trading_config()
 
     logger.info(f"Creating new trade for analysis {analysis_id}: {analysis.symbol} {analysis.direction}")
@@ -1368,7 +1316,10 @@ def create_new_trade(analysis_id):
         # Enforce configurable limits (concurrent trades and total exposure)
         if config:
             # Count currently open or pending trades
-            concurrent_count = Trade.objects.filter(status__in=["open", "pending", "pending_close"]).count()
+            if _is_async_context():
+                concurrent_count = _run_db_call_in_thread(lambda: Trade.objects.filter(status__in=["open", "pending", "pending_close"]).count())
+            else:
+                concurrent_count = Trade.objects.filter(status__in=["open", "pending", "pending_close"]).count()
             if config.max_concurrent_open_trades and concurrent_count >= config.max_concurrent_open_trades:
                 logger.warning(
                     f"Rejected new trade due to concurrent open trades limit: {concurrent_count}/{config.max_concurrent_open_trades}"
@@ -1407,9 +1358,11 @@ def create_new_trade(analysis_id):
             # Current exposure approximated as sum(quantity * entry_price) of open trades
             current_exposure = 0.0
             try:
-                open_trades = Trade.objects.filter(status__in=["open", "pending", "pending_close"])
-                for t in open_trades:
-                    # Fallback to entry_price; if missing, treat as zero
+                if _is_async_context():
+                    open_list = _run_db_call_in_thread(lambda: list(Trade.objects.filter(status__in=["open", "pending", "pending_close"])) )
+                else:
+                    open_list = list(Trade.objects.filter(status__in=["open", "pending", "pending_close"]))
+                for t in open_list:
                     if t.entry_price and t.quantity:
                         current_exposure += abs(float(t.entry_price) * float(t.quantity))
             except Exception:
@@ -1455,22 +1408,23 @@ def create_new_trade(analysis_id):
                 take_profit_price = current_price * (1 - config.take_profit_percentage / 100)
 
         # Create trade record
-        trade = Trade.objects.create(
-            analysis=analysis,
-            symbol=analysis.symbol,
-            direction=analysis.direction,
-            quantity=quantity,
-            entry_price=current_price,
-            status="pending",
-            alpaca_order_id=order.id,
-            stop_loss_price=stop_loss_price,
-            take_profit_price=take_profit_price,
-            original_stop_loss_price=stop_loss_price,  # Store original values
-            original_take_profit_price=take_profit_price,
-            # Ensure percentages are stored for recomputation and monitoring logic
-            take_profit_price_percentage=10.0 if config is None else (config.take_profit_percentage or 10.0),
-            stop_loss_price_percentage=2.0 if config is None else (config.stop_loss_percentage or 2.0),
-        )
+        def _create_trade():
+            return Trade.objects.create(
+                analysis=analysis,
+                symbol=analysis.symbol,
+                direction=analysis.direction,
+                quantity=quantity,
+                entry_price=current_price,
+                status="pending",
+                alpaca_order_id=order.id,
+                stop_loss_price=stop_loss_price,
+                take_profit_price=take_profit_price,
+                original_stop_loss_price=stop_loss_price,
+                original_take_profit_price=take_profit_price,
+                take_profit_price_percentage=10.0 if config is None else (config.take_profit_percentage or 10.0),
+                stop_loss_price_percentage=2.0 if config is None else (config.stop_loss_percentage or 2.0),
+            )
+        trade = _run_db_call_in_thread(_create_trade) if _is_async_context() else _create_trade()
 
         logger.info(
             f"Submitted {analysis.direction.upper()} order for {analysis.symbol}. Trade ID: {trade.id}, Order ID: {order.id}"
@@ -1628,21 +1582,19 @@ def close_trade_due_to_conflict(trade_id, conflicting_analysis_id):
 @shared_task
 def close_expired_positions():
     """Close positions that have exceeded the maximum hold time."""
+    # Wrap DB access to avoid async context errors
     config = get_active_trading_config()
     if not config:
         logger.warning("No active trading config found. Skipping expired position cleanup.")
         return
 
-    # Calculate cutoff time
-    cutoff_time = timezone.now() - timedelta(hours=config.max_position_hold_time_hours)
-    
-    # Find expired trades
-    expired_trades = Trade.objects.filter(
-        status__in=["open", "pending_close"],
-        opened_at__lt=cutoff_time
-    )
+    def _fetch_expired():
+        cutoff_time = timezone.now() - timedelta(hours=config.max_position_hold_time_hours)
+        qs = Trade.objects.filter(status__in=["open", "pending_close"], opened_at__lt=cutoff_time)
+        return list(qs)
 
-    expired_count = expired_trades.count()
+    expired_trades = _run_db_call_in_thread(_fetch_expired) if _is_async_context() else _fetch_expired()
+    expired_count = len(expired_trades)
     if expired_count == 0:
         logger.info("No expired positions found.")
         return
@@ -1657,7 +1609,11 @@ def close_expired_positions():
             # Set close reason and status, then initiate close
             trade.status = "pending_close"
             trade.close_reason = "time_limit"
-            trade.save()
+            # Persist in a DB-safe way if needed
+            if _is_async_context():
+                _run_db_call_in_thread(lambda: trade.save())
+            else:
+                trade.save()
 
             close_trade_manually.delay(trade.id)
             closed_count += 1
@@ -1684,124 +1640,142 @@ def close_expired_positions():
 
 @shared_task
 def monitor_local_stop_take_levels():
-    """Monitor open positions for local TP/SL triggers without sending to Alpaca."""
-    config = get_active_trading_config()
-    if not config:
-        logger.warning("No active trading config found. Skipping TP/SL monitoring.")
-        return
+    """Monitor open positions for local TP/SL triggers without sending to Alpaca.
 
-    # Get all open trades (including those pending close)
-    open_trades = Trade.objects.filter(status__in=["open", "pending_close"])
-    
-    if not open_trades.exists():
-        logger.debug("No open trades to monitor.")
-        return
+    If running in an async event loop thread, offload the DB work to a plain thread
+    to avoid Django SynchronousOnlyOperation errors.
+    """
+    def _impl():
+        config = get_active_trading_config()
+        if not config:
+            logger.warning("No active trading config found. Skipping TP/SL monitoring.")
+            return
 
-    logger.info(f"Monitoring {open_trades.count()} open positions for TP/SL triggers")
+        # Get all open trades (including those pending close)
+        open_trades = Trade.objects.filter(status__in=["open", "pending_close"])
+        
+        if not open_trades.exists():
+            logger.debug("No open trades to monitor.")
+            return
 
-    ALPACA_API_KEY = os.getenv("ALPACA_API_KEY")
-    ALPACA_SECRET_KEY = os.getenv("ALPACA_SECRET_KEY")
-    ALPACA_BASE_URL = os.getenv("ALPACA_BASE_URL", "https://paper-api.alpaca.markets")
+        logger.info(f"Monitoring {open_trades.count()} open positions for TP/SL triggers")
 
-    if not ALPACA_API_KEY or not ALPACA_SECRET_KEY:
-        logger.warning("Alpaca API keys not configured. Skipping TP/SL monitoring.")
-        return
+        ALPACA_API_KEY = os.getenv("ALPACA_API_KEY")
+        ALPACA_SECRET_KEY = os.getenv("ALPACA_SECRET_KEY")
+        ALPACA_BASE_URL = os.getenv("ALPACA_BASE_URL", "https://paper-api.alpaca.markets")
+        
+        if not ALPACA_API_KEY or not ALPACA_SECRET_KEY:
+            logger.warning("Alpaca API keys not configured. Skipping TP/SL monitoring.")
+            return
 
-    api = tradeapi.REST(ALPACA_API_KEY, ALPACA_SECRET_KEY, base_url=ALPACA_BASE_URL)
+        api = tradeapi.REST(ALPACA_API_KEY, ALPACA_SECRET_KEY, base_url=ALPACA_BASE_URL)
 
-    triggered_count = 0
+        triggered_count = 0
 
-    for trade in open_trades:
-        try:
-            # Prefer Alpaca position's current_price (matches UI/P&L),
-            # fall back to market data latest trade if not available
-            current_price = None
+        for trade in open_trades:
             try:
-                position = api.get_position(trade.symbol)
-                current_price = float(position.current_price)
-            except Exception:
+                current_price = None
                 try:
-                    ticker = api.get_latest_trade(trade.symbol)
-                    current_price = float(ticker.price)
+                    position = api.get_position(trade.symbol)
+                    current_price = float(position.current_price)
                 except Exception:
-                    # As a last resort, use entry price to avoid crashes
-                    current_price = float(trade.entry_price or 0)
+                    try:
+                        ticker = api.get_latest_trade(trade.symbol)
+                        current_price = float(ticker.price)
+                    except Exception:
+                        current_price = float(trade.entry_price or 0)
 
-            # Diagnostic logging of thresholds
-            try:
-                logger.info(
-                    f"TP/SL check trade #{trade.id} {trade.symbol} dir={trade.direction} "
-                    f"price={current_price:.4f} tp={trade.take_profit_price} sl={trade.stop_loss_price}"
-                )
-            except Exception:
-                # Do not fail monitoring for logging issues
-                pass
-
-            # Prefer percentage-based triggers when percentages are set on the trade
-            use_percent_based_tp = trade.take_profit_price_percentage is not None
-            use_percent_based_sl = trade.stop_loss_price_percentage is not None
-
-            pnl_percent = None
-            if use_percent_based_tp or use_percent_based_sl:
                 try:
-                    if trade.direction == "buy":
-                        pnl_percent = (
-                            (current_price - float(trade.entry_price)) / float(trade.entry_price)
-                        ) * 100.0 if trade.entry_price else None
-                    else:
-                        pnl_percent = (
-                            (float(trade.entry_price) - current_price) / float(trade.entry_price)
-                        ) * 100.0 if trade.entry_price else None
-                except Exception:
-                    pnl_percent = None
-
-            # Check stop loss trigger
-            stop_triggered = False
-            if use_percent_based_sl and pnl_percent is not None:
-                try:
-                    sl_pct = float(trade.stop_loss_price_percentage)
-                    if pnl_percent <= -sl_pct:
-                        logger.info(
-                            f"Stop loss % triggered for trade {trade.id} ({trade.symbol}): pnl%={pnl_percent:.2f} vs SL% {sl_pct}"
-                        )
-                        stop_triggered = True
-                except Exception:
-                    stop_triggered = False
-            elif should_trigger_stop_loss(trade, current_price):
-                stop_triggered = True
-
-            if stop_triggered:
-                logger.info(f"Stop loss triggered for trade {trade.id} ({trade.symbol}): {current_price} vs SL {trade.stop_loss_price}")
-                trade.status = "pending_close"
-                trade.close_reason = "stop_loss"
-                trade.save()
-                close_trade_manually.delay(trade.id)
-                triggered_count += 1
-
-            # Check take profit trigger
-            elif (
-                (use_percent_based_tp and pnl_percent is not None and 
-                 pnl_percent >= float(trade.take_profit_price_percentage))
-                or should_trigger_take_profit(trade, current_price)
-            ):
-                logger.info(f"Take profit triggered for trade {trade.id} ({trade.symbol}): {current_price} vs TP {trade.take_profit_price}")
-                trade.status = "pending_close"
-                trade.close_reason = "take_profit"
-                trade.save()
-                close_trade_manually.delay(trade.id)
-                triggered_count += 1
-            else:
-                # Log when TP/SL are missing to aid debugging
-                if not trade.take_profit_price and not trade.stop_loss_price:
                     logger.info(
-                        f"No TP/SL set for trade #{trade.id} {trade.symbol}; skipping trigger checks"
+                        f"TP/SL check trade #{trade.id} {trade.symbol} dir={trade.direction} "
+                        f"price={current_price:.4f} tp={trade.take_profit_price} sl={trade.stop_loss_price}"
                     )
+                except Exception:
+                    pass
 
-        except Exception as e:
-            logger.error(f"Error monitoring trade {trade.id} ({trade.symbol}): {e}")
+                use_percent_based_tp = trade.take_profit_price_percentage is not None
+                use_percent_based_sl = trade.stop_loss_price_percentage is not None
 
-    if triggered_count > 0:
-        logger.info(f"TP/SL monitoring completed: {triggered_count} positions triggered")
+                pnl_percent = None
+                if use_percent_based_tp or use_percent_based_sl:
+                    try:
+                        if trade.direction == "buy":
+                            pnl_percent = (
+                                (current_price - float(trade.entry_price)) / float(trade.entry_price)
+                            ) * 100.0 if trade.entry_price else None
+                        else:
+                            pnl_percent = (
+                                (float(trade.entry_price) - current_price) / float(trade.entry_price)
+                            ) * 100.0 if trade.entry_price else None
+                    except Exception:
+                        pnl_percent = None
+
+                stop_triggered = False
+                if use_percent_based_sl and pnl_percent is not None:
+                    try:
+                        sl_pct = float(trade.stop_loss_price_percentage)
+                        if pnl_percent <= -sl_pct:
+                            logger.info(
+                                f"Stop loss % triggered for trade {trade.id} ({trade.symbol}): pnl%={pnl_percent:.2f} vs SL% {sl_pct}"
+                            )
+                            stop_triggered = True
+                    except Exception:
+                        stop_triggered = False
+                elif should_trigger_stop_loss(trade, current_price):
+                    stop_triggered = True
+
+                if stop_triggered:
+                    logger.info(f"Stop loss triggered for trade {trade.id} ({trade.symbol}): {current_price} vs SL {trade.stop_loss_price}")
+                    trade.status = "pending_close"
+                    trade.close_reason = "stop_loss"
+                    trade.save()
+                    close_trade_manually.delay(trade.id)
+                    triggered_count += 1
+                elif (
+                    (use_percent_based_tp and pnl_percent is not None and 
+                     pnl_percent >= float(trade.take_profit_price_percentage))
+                    or should_trigger_take_profit(trade, current_price)
+                ):
+                    logger.info(f"Take profit triggered for trade {trade.id} ({trade.symbol}): {current_price} vs TP {trade.take_profit_price}")
+                    trade.status = "pending_close"
+                    trade.close_reason = "take_profit"
+                    trade.save()
+                    close_trade_manually.delay(trade.id)
+                    triggered_count += 1
+                else:
+                    if not trade.take_profit_price and not trade.stop_loss_price:
+                        logger.info(
+                            f"No TP/SL set for trade #{trade.id} {trade.symbol}; skipping trigger checks"
+                        )
+            except Exception as e:
+                logger.error(f"Error monitoring trade {trade.id} ({trade.symbol}): {e}")
+
+        if triggered_count > 0:
+            logger.info(f"TP/SL monitoring completed: {triggered_count} positions triggered")
+
+    # If an asyncio event loop is running in this thread, offload to a clean thread
+    try:
+        asyncio.get_running_loop()
+        loop_running = True
+    except RuntimeError:
+        loop_running = False
+
+    if loop_running:
+        import threading
+        error_holder = {}
+        def _runner():
+            try:
+                _impl()
+            except Exception as e:
+                error_holder['e'] = e
+        t = threading.Thread(target=_runner, daemon=True)
+        t.start()
+        t.join()
+        if 'e' in error_holder:
+            raise error_holder['e']
+        return
+    else:
+        return _impl()
 
 
 def should_trigger_stop_loss(trade, current_price):
@@ -2646,20 +2620,41 @@ def run_telegram_bot_task(self):
         from .telegram_bot import start_telegram_bot, stop_telegram_bot
         
         async def run_bot():
-            """Run the bot in async context."""
+            """Run the bot in async context with health monitoring."""
             application = None
+            health_monitor_task = None
             try:
+                # Import bot service to access health monitoring
+                from .telegram_bot import get_bot_service
+                
                 application = await start_telegram_bot()
                 if application:
                     logger.info("Telegram bot started successfully in Celery task")
                     
+                    # Start health monitoring in background
+                    bot_service = get_bot_service()
+                    if bot_service:
+                        health_monitor_task = asyncio.create_task(bot_service.monitor_bot_health())
+                        logger.info("Telegram bot health monitoring started")
+                    
                     # Keep the bot running
                     while not self.request.called_directly:
-                        await asyncio.sleep(1)
+                        await asyncio.sleep(5)  # Increased from 1s to reduce CPU usage
                         
                         # Check if task should be terminated
                         if hasattr(self, '_should_stop') and self._should_stop:
                             break
+                            
+                        # Check if health monitor failed
+                        if health_monitor_task and health_monitor_task.done():
+                            try:
+                                # Re-raise any exception from health monitor
+                                await health_monitor_task
+                            except Exception as e:
+                                logger.error(f"Health monitor failed: {e}")
+                                # Restart health monitor
+                                if bot_service:
+                                    health_monitor_task = asyncio.create_task(bot_service.monitor_bot_health())
                 else:
                     logger.error("Failed to start Telegram bot in Celery task")
                     
@@ -2667,6 +2662,14 @@ def run_telegram_bot_task(self):
                 logger.error(f"Error in Telegram bot task: {e}")
                 raise
             finally:
+                # Cancel health monitor
+                if health_monitor_task and not health_monitor_task.done():
+                    health_monitor_task.cancel()
+                    try:
+                        await health_monitor_task
+                    except asyncio.CancelledError:
+                        pass
+                
                 if application:
                     await stop_telegram_bot()
                     logger.info("Telegram bot stopped")

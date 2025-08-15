@@ -7,11 +7,7 @@ import re
 import requests
 from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
+from playwright.sync_api import sync_playwright
 import json
 import logging
 from datetime import datetime
@@ -246,58 +242,48 @@ class NewsSourceAutoDetector:
         }
         
         try:
-            # Set up headless browser
-            chrome_options = Options()
-            chrome_options.add_argument("--headless")
-            chrome_options.add_argument("--no-sandbox")
-            chrome_options.add_argument("--disable-dev-shm-usage")
-            chrome_options.add_argument("--disable-gpu")
-            chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-            
-            self.driver = webdriver.Chrome(options=chrome_options)
-            self.driver.get(self.url)
-            
-            # Wait for page load
-            WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.TAG_NAME, "body"))
-            )
-            time.sleep(3)  # Allow dynamic content to load
-            
-            # Test various article selectors
-            article_selectors = [
-                'article', '.article', '[class*="article"]',
-                '.post', '[class*="post"]', '.story', '[class*="story"]',
-                '.news-item', '[class*="news"]', '.card', '[class*="card"]',
-                '.item', '[class*="item"]', '.entry', '[class*="entry"]',
-                'a[href*="/202"]', 'a[href*="/news/"]', 'a[href*="/article/"]'
-            ]
-            
-            for selector in article_selectors:
-                try:
-                    elements = self.driver.find_elements(By.CSS_SELECTOR, selector)
-                    if elements:
-                        # Filter for elements that look like articles
-                        valid_elements = []
-                        for elem in elements[:10]:  # Test first 10
-                            try:
-                                text = elem.text.strip()
-                                href = elem.get_attribute('href')
-                                
-                                # Check if it looks like an article
-                                if ((text and len(text) > 20) or 
-                                    (href and self._looks_like_article_url(href))):
-                                    valid_elements.append(elem)
-                            except:
-                                continue
-                        
-                        if valid_elements:
-                            patterns['selectors_found'].append({
-                                'selector': selector,
-                                'count': len(valid_elements),
-                                'total_found': len(elements)
-                            })
-                except:
-                    continue
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"])    
+                context = browser.new_context(
+                    user_agent=(
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122 Safari/537.36"
+                    ),
+                    viewport={"width": 1280, "height": 2000},
+                )
+                page = context.new_page()
+                page.goto(self.url, wait_until="domcontentloaded", timeout=20000)
+                page.wait_for_selector("body", timeout=10000)
+
+                article_selectors = [
+                    'article', '.article', '[class*="article"]',
+                    '.post', '[class*="post"]', '.story', '[class*="story"]',
+                    '.news-item', '[class*="news"]', '.card', '[class*="card"]',
+                    '.item', '[class*="item"]', '.entry', '[class*="entry"]',
+                    'a[href*="/202"]', 'a[href*="/news/"]', 'a[href*="/article/"]'
+                ]
+
+                for selector in article_selectors:
+                    try:
+                        elements = page.query_selector_all(selector)
+                        if elements:
+                            valid_elements = []
+                            for elem in elements[:10]:
+                                try:
+                                    text = (elem.inner_text() or '').strip()
+                                    href = elem.get_attribute('href')
+                                    if ((text and len(text) > 20) or (href and self._looks_like_article_url(href))):
+                                        valid_elements.append(elem)
+                                except Exception:
+                                    continue
+                            if valid_elements:
+                                patterns['selectors_found'].append({
+                                    'selector': selector,
+                                    'count': len(valid_elements),
+                                    'total_found': len(elements)
+                                })
+                    except Exception:
+                        continue
             
             # Analyze successful selectors for patterns
             patterns['common_patterns'] = self._analyze_selector_patterns(patterns['selectors_found'])
@@ -311,8 +297,7 @@ class NewsSourceAutoDetector:
         except Exception as e:
             logger.warning(f"Error detecting article patterns: {e}")
         finally:
-            if self.driver:
-                self.driver.quit()
+            pass
         
         return patterns
     

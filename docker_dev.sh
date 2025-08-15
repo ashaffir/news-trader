@@ -306,7 +306,15 @@ docker_start() {
     print_status "🚀 Starting all Docker services..."
     check_env_file
     check_docker
-    docker-compose up -d
+    # Start core dependencies first
+    docker-compose up -d db redis
+    wait_for_database || true
+    # Start web and workers
+    docker-compose up -d web celery celery-beat
+    # Ensure Telegram bot is a single instance
+    docker-compose up -d --scale telegram-bot=1 telegram-bot
+    # Ensure Playwright browsers are installed
+    docker_playwright_install || true
     sleep 3
     print_success "✅ Services started"
 }
@@ -321,7 +329,7 @@ docker_stop() {
 # Function to restart services
 docker_restart() {
     print_status "🔄 Restarting all Docker services..."
-    docker-compose restart
+    docker-compose restart db redis web celery celery-beat telegram-bot
     sleep 3
     print_success "✅ Services restarted"
 }
@@ -332,7 +340,10 @@ docker_rebuild() {
     check_env_file
     check_docker
     docker-compose build
-    docker-compose up -d
+    docker-compose up -d db redis
+    wait_for_database || true
+    docker-compose up -d web celery celery-beat --no-deps
+    docker-compose up -d --scale telegram-bot=1 telegram-bot --no-deps
     sleep 3
     # Ensure DB is migrated and Playwright browsers are present
     docker_migrate || true

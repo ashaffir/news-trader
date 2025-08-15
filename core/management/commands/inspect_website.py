@@ -1,8 +1,5 @@
 from django.core.management.base import BaseCommand
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from webdriver_manager.chrome import ChromeDriverManager
-from selenium.webdriver.chrome.service import Service
+from playwright.sync_api import sync_playwright
 from urllib.parse import urlparse
 
 
@@ -17,19 +14,18 @@ class Command(BaseCommand):
         
         self.stdout.write(f"Inspecting website structure: {url}")
         
-        # Set up headless Chrome
-        chrome_options = Options()
-        chrome_options.add_argument("--headless")
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage")
-        
-        service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service, options=chrome_options)
-        
-        try:
-            driver.get(url)
-            
-            self.stdout.write(f"\nPage title: {driver.title}")
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"])
+            context = browser.new_context(
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122 Safari/537.36"
+                ),
+                viewport={"width": 1280, "height": 2000},
+            )
+            page = context.new_page()
+            page.goto(url, wait_until="domcontentloaded", timeout=20000)
+            self.stdout.write(f"\nPage title: {page.title()}")
             
             # Test common article container selectors
             selectors_to_test = [
@@ -54,7 +50,7 @@ class Command(BaseCommand):
             container_candidates = []
             
             for selector in selectors_to_test:
-                elements = driver.find_elements('css selector', selector)
+                elements = page.query_selector_all(selector)
                 if elements:
                     count = len(elements)
                     self.stdout.write(f"{selector}: {count} elements")
@@ -73,7 +69,7 @@ class Command(BaseCommand):
                 
                 self.stdout.write(f"\nAnalyzing: {best_selector}")
                 
-                elements = driver.find_elements('css selector', best_selector)
+                elements = page.query_selector_all(best_selector)
                 
                 for i, element in enumerate(elements[:3]):
                     self.stdout.write(f"\n--- Element {i+1} ---")
@@ -81,20 +77,20 @@ class Command(BaseCommand):
                     # Look for titles
                     title_selectors = ['h1', 'h2', 'h3', 'h4', '.title', '[class*="title"]']
                     for title_sel in title_selectors:
-                        title_elems = element.find_elements('css selector', title_sel)
-                        if title_elems:
-                            title_text = title_elems[0].text.strip()[:100]
+                        title_elem = element.query_selector(title_sel)
+                        if title_elem:
+                            title_text = (title_elem.inner_text() or '').strip()[:100]
                             self.stdout.write(f"Title ({title_sel}): {title_text}")
                             break
                     
                     # Look for links
-                    links = element.find_elements('css selector', 'a')
-                    if links:
-                        href = links[0].get_attribute('href')
+                    link = element.query_selector('a')
+                    if link:
+                        href = link.get_attribute('href')
                         self.stdout.write(f"Link: {href}")
                     
                     # Show element text preview
-                    text_preview = element.text.strip()[:200]
+                    text_preview = (element.inner_text() or '').strip()[:200]
                     self.stdout.write(f"Text preview: {text_preview}")
                 
                 # Generate configuration suggestion
@@ -111,8 +107,7 @@ class Command(BaseCommand):
             
             else:
                 self.stdout.write(self.style.WARNING("No clear article containers found. This website might be challenging to scrape."))
-        
-        finally:
-            driver.quit()
-            
-        self.stdout.write(self.style.SUCCESS("\nInspection complete!")) 
+            context.close()
+            browser.close()
+
+        self.stdout.write(self.style.SUCCESS("\nInspection complete!"))

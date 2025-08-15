@@ -113,6 +113,11 @@ telegram-bot:
 - Verify your chat ID is in `TELEGRAM_AUTHORIZED_CHATS`
 - Check the logs for error messages
 
+### Conflict: terminated by other getUpdates request
+- Ensure only one bot instance is polling at a time
+- This project now enforces a singleton bot using a Redis lock (uses `REDIS_URL` or `CELERY_BROKER_URL`)
+- If you run multiple environments, use separate tokens or separate Redis instances
+
 ### "Unauthorized access" message
 - Verify your chat ID is correctly added to `TELEGRAM_AUTHORIZED_CHATS`
 - Make sure there are no extra spaces in the environment variable
