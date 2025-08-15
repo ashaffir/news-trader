@@ -400,6 +400,26 @@ docker_clean() {
     print_success "✅ Cleanup completed - ready for fresh setup"
 }
 
+# Function to show error logs only
+docker_error_logs() {
+    local service="$1"
+    local service_name="$2"
+    
+    if [ -n "$service" ]; then
+        print_status "🚨 Viewing error logs for $service_name (Press Ctrl+C to return to menu)"
+        echo "=================================="
+        echo
+        # Filter for error patterns using grep
+        docker-compose logs -f "$service" 2>&1 | grep -i --line-buffered -E "(error|critical|fatal|exception|traceback|warning|fail)"
+    else
+        print_status "🚨 Viewing error logs for all services (Press Ctrl+C to return to menu)"
+        echo "=================================="
+        echo
+        # Filter for error patterns from all services
+        docker-compose logs -f 2>&1 | grep -i --line-buffered -E "(error|critical|fatal|exception|traceback|warning|fail)"
+    fi
+}
+
 # Function to show logs menu
 logs_menu() {
     while true; do
@@ -444,11 +464,12 @@ logs_menu() {
         fi
         
         echo "  a) 📊 All services"
+        echo "  e) 🚨 All services (errors only)"
         echo "  r) 🔄 Refresh"
         echo "  b) ⬅️  Back to main menu"
         echo
         
-        read -p "Select logs to view (1-${#available_services[@]}, a, r, b): " choice
+        read -p "Select logs to view (1-${#available_services[@]}, a, e, r, b): " choice
         
         case "$choice" in
             [1-9]*)
@@ -456,10 +477,33 @@ logs_menu() {
                     local selected_service="${available_services[$((choice-1))]}"
                     local selected_name="${available_names[$((choice-1))]}"
                     show_header
-                    print_status "📋 Viewing logs for $selected_name (Press Ctrl+C to return to menu)"
+                    print_status "📋 Log options for $selected_name"
                     echo "=================================="
+                    echo "  1) 📊 All logs"
+                    echo "  2) 🚨 Errors only"
+                    echo "  b) ⬅️  Back to service menu"
                     echo
-                    docker-compose logs -f "$selected_service"
+                    read -p "Select log type (1, 2, b): " log_choice
+                    case "$log_choice" in
+                        "1")
+                            show_header
+                            print_status "📋 Viewing all logs for $selected_name (Press Ctrl+C to return to menu)"
+                            echo "=================================="
+                            echo
+                            docker-compose logs -f "$selected_service"
+                            ;;
+                        "2")
+                            show_header
+                            docker_error_logs "$selected_service" "$selected_name"
+                            ;;
+                        "b"|"B")
+                            # Return to service menu
+                            ;;
+                        *)
+                            print_error "Invalid choice."
+                            sleep 2
+                            ;;
+                    esac
                 else
                     print_error "Invalid choice. Please select a number between 1 and ${#available_services[@]}."
                     sleep 2
@@ -471,6 +515,10 @@ logs_menu() {
                 echo "=================================="
                 echo
                 docker-compose logs -f
+                ;;
+            "e"|"E")
+                show_header
+                docker_error_logs
                 ;;
             "r"|"R")
                 # Refresh - just continue the loop
@@ -563,6 +611,7 @@ show_help() {
     echo "  pwinstall Install Playwright Chromium in containers"
     echo "  shell     Open Django shell"
     echo "  logs      Show all logs"
+    echo "  error-logs Show error logs only (filtered)"
     echo "  status    Show service status"
     echo "  clean     Clean up Docker resources (reset for retry)"
     echo "  help      Show this help"
@@ -573,6 +622,7 @@ show_help() {
     echo "  $0 clean              # Reset after failed setup"
     echo "  $0 start              # Start services"
     echo "  $0 logs               # View all logs"
+    echo "  $0 error-logs         # View error logs only"
     echo ""
     echo "Recovery from Failed Setup:"
     echo "  $0 clean && $0 setup  # Clean everything and retry setup"
@@ -720,6 +770,9 @@ else
             ;;
         "logs")
             docker-compose logs -f
+            ;;
+        "error-logs")
+            docker_error_logs
             ;;
         "bot-start")
             docker_bot_start
