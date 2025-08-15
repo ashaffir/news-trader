@@ -69,12 +69,8 @@ case "$ROLE" in
     echo "Collecting static files..."
     python manage.py collectstatic --noinput || true
 
-    # Install Playwright chromium if not present
+    # Playwright browsers are pre-installed during Docker build
     export PLAYWRIGHT_BROWSERS_PATH=/app/.cache/ms-playwright
-    if [[ ! -d "$PLAYWRIGHT_BROWSERS_PATH/chromium" ]]; then
-      echo "Installing Playwright Chromium..."
-      python -m playwright install --with-deps chromium || python -m playwright install chromium || true
-    fi
 
     echo "Bootstrapping full setup..."
     python manage.py bootstrap_full_setup --with-cnbc-latest || true

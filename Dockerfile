@@ -57,6 +57,12 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt /app/
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Install Playwright browsers as root before creating non-root user
+ENV PLAYWRIGHT_BROWSERS_PATH=/app/.cache/ms-playwright
+RUN mkdir -p /app/.cache/ms-playwright \
+    && python -m playwright install --with-deps chromium \
+    && echo "Playwright Chromium installed successfully"
+
 # Create a non-root user for security (using UID 1000 for consistency)
 RUN groupadd -r appuser -g 1000 && useradd -r -g appuser -u 1000 appuser
 
@@ -67,7 +73,7 @@ COPY . /app/
 RUN chmod 755 /app/entrypoint.sh
 
 # Create directories for logs, media, and caches with proper permissions
-RUN mkdir -p /app/logs /app/staticfiles /app/media /app/.cache/ms-playwright \
+RUN mkdir -p /app/logs /app/staticfiles /app/media \
     && chown -R appuser:appuser /app \
     && chmod -R 755 /app/logs /app/staticfiles /app/media /app/.cache
 

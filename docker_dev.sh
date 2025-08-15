@@ -141,19 +141,18 @@ show_docker_status() {
     fi
 }
 
-# Install Playwright browsers in containers
-docker_playwright_install() {
-    print_status "🎭 Installing Playwright Chromium in containers..."
+# Playwright browsers verification (browsers are pre-installed during Docker build)
+docker_playwright_verify() {
+    print_status "🎭 Verifying Playwright Chromium in containers..."
     set +e
-    # Use a cache dir writable by non-root user inside container
-    docker-compose exec -T web bash -lc 'export PLAYWRIGHT_BROWSERS_PATH=/app/.cache/ms-playwright; mkdir -p "$PLAYWRIGHT_BROWSERS_PATH" && python -m playwright install chromium' &&
-    docker-compose exec -T celery bash -lc 'export PLAYWRIGHT_BROWSERS_PATH=/app/.cache/ms-playwright; mkdir -p "$PLAYWRIGHT_BROWSERS_PATH" && python -m playwright install chromium'
+    docker-compose exec -T web bash -lc 'export PLAYWRIGHT_BROWSERS_PATH=/app/.cache/ms-playwright; ls -la "$PLAYWRIGHT_BROWSERS_PATH" && echo "Web container: Playwright browsers verified"' &&
+    docker-compose exec -T celery bash -lc 'export PLAYWRIGHT_BROWSERS_PATH=/app/.cache/ms-playwright; ls -la "$PLAYWRIGHT_BROWSERS_PATH" && echo "Celery container: Playwright browsers verified"'
     local rc=$?
     set -e
     if [ $rc -eq 0 ]; then
-        print_success "✅ Playwright Chromium installed (web, celery)"
+        print_success "✅ Playwright Chromium verified (web, celery)"
     else
-        print_warning "⚠️ Playwright install reported issues. You can retry with: $0 pwinstall"
+        print_warning "⚠️ Playwright verification failed. You may need to rebuild containers."
     fi
 }
 
@@ -271,9 +270,9 @@ docker_setup() {
         return 1
     fi
     
-    # Finalize runtime dependencies (Playwright)
+    # Verify Playwright browsers are available
     if [ "$setup_failed" = false ]; then
-        docker_playwright_install
+        docker_playwright_verify
     fi
 
     # Final health check
@@ -313,8 +312,8 @@ docker_start() {
     docker-compose up -d web celery celery-beat
     # Ensure Telegram bot is a single instance
     docker-compose up -d --scale telegram-bot=1 telegram-bot
-    # Ensure Playwright browsers are installed
-    docker_playwright_install || true
+    # Verify Playwright browsers are available
+    docker_playwright_verify || true
     sleep 3
     print_success "✅ Services started"
 }
@@ -386,7 +385,7 @@ docker_rebuild() {
     sleep 3
     # Ensure DB is migrated and Playwright browsers are present
     docker_migrate || true
-    docker_playwright_install || true
+    docker_playwright_verify || true
     print_success "✅ Services rebuilt and restarted"
 }
 
@@ -449,10 +448,10 @@ docker_rebuild_service() {
         # Special post-rebuild actions
         case "$service" in
             "web")
-                # Run migrations and install Playwright for web service
+                # Run migrations and verify Playwright for web service
                 print_status "🔧 Running post-rebuild setup for web service..."
                 docker_migrate || true
-                docker_playwright_install || true
+                docker_playwright_verify || true
                 
                 # Health check
                 sleep 3
@@ -463,9 +462,9 @@ docker_rebuild_service() {
                 fi
                 ;;
             "celery")
-                # Install Playwright for celery worker
-                print_status "🎭 Installing Playwright for Celery worker..."
-                docker_playwright_install || true
+                # Verify Playwright for celery worker
+                print_status "🎭 Verifying Playwright for Celery worker..."
+                docker_playwright_verify || true
                 ;;
         esac
         
@@ -1167,7 +1166,7 @@ show_help() {
 	echo "  bot-restart Restart Telegram bot service"
 	echo "  bot-rebuild Rebuild and start Telegram bot service"
 	echo "  bot-logs  Tail Telegram bot logs"
-    echo "  pwinstall Install Playwright Chromium in containers"
+    echo "  pwverify  Verify Playwright Chromium in containers"
     echo "  shell     Open Django shell"
     echo "  logs      Show all logs"
     echo "  error-logs Show error logs only (filtered)"
@@ -1337,8 +1336,8 @@ else
         "monitor")
             docker_monitor
             ;;
-        "pwinstall")
-            docker_playwright_install
+        "pwverify")
+            docker_playwright_verify
             ;;
         "shell")
             docker_shell
