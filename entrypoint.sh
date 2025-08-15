@@ -2,7 +2,27 @@
 set -euo pipefail
 
 # Ensure proper permissions for cache directories
+echo "Setting up directories and permissions..."
+
+# Create directories if they don't exist (in case volumes override them)
 mkdir -p /app/.cache/ms-playwright /app/staticfiles /app/media /app/logs
+
+# Ensure all directories are writable by current user
+# This handles both Docker volume mounts and direct execution
+if [ -w /app ]; then
+    chmod 755 /app/.cache/ms-playwright /app/staticfiles /app/media /app/logs 2>/dev/null || true
+    # Ensure Playwright cache is writable
+    [ -d /app/.cache/ms-playwright ] && chmod -R 755 /app/.cache/ms-playwright 2>/dev/null || true
+else
+    echo "Warning: Cannot write to /app directory. Some features may not work properly."
+fi
+
+# Verify logs directory is accessible
+if [ ! -w /app/logs ]; then
+    echo "Error: Cannot write to /app/logs directory. Attempting to fix..."
+    mkdir -p /app/logs 2>/dev/null || echo "Failed to create logs directory"
+    chmod 755 /app/logs 2>/dev/null || echo "Failed to set permissions on logs directory"
+fi
 
 # Wait for Postgres if DATABASE_URL is configured for postgres
 if [[ -n "${DATABASE_URL:-}" ]] && [[ "$DATABASE_URL" == postgres* ]]; then

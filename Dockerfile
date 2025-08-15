@@ -57,8 +57,8 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt /app/
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Create a non-root user for security
-RUN groupadd -r appuser && useradd -r -g appuser appuser
+# Create a non-root user for security (using UID 1000 for consistency)
+RUN groupadd -r appuser -g 1000 && useradd -r -g appuser -u 1000 appuser
 
 # Copy project files
 COPY . /app/
@@ -66,9 +66,10 @@ COPY . /app/
 # Ensure entrypoint is executable
 RUN chmod 755 /app/entrypoint.sh
 
-# Create directories for logs and media with proper permissions
-RUN mkdir -p /app/logs /app/staticfiles /app/media \
-    && chown -R appuser:appuser /app
+# Create directories for logs, media, and caches with proper permissions
+RUN mkdir -p /app/logs /app/staticfiles /app/media /app/.cache/ms-playwright \
+    && chown -R appuser:appuser /app \
+    && chmod -R 755 /app/logs /app/staticfiles /app/media /app/.cache
 
 # Selenium not used; Playwright manages Chromium
 
