@@ -80,6 +80,7 @@ class Command(BaseCommand):
                 'interval': interval_5_minutes,
                 'description': 'Clean up orphaned Chrome processes'
             },
+
         ]
 
         for task_config in tasks:

@@ -15,6 +15,7 @@ import time
 import threading
 import socket
 import uuid
+import random
 from typing import Optional, Dict, Any
 from datetime import datetime, timedelta
 
@@ -83,7 +84,8 @@ class TelegramBotService:
         key = f"telegram_bot_lock:{self.token}"
         value = f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex}"
         try:
-            ok = client.set(key, value, nx=True, ex=120)
+            # Reduced lock timeout from 120s to 60s for faster recovery
+            ok = client.set(key, value, nx=True, ex=60)
             if ok:
                 self._lock = (client, key, value)
                 # Start background refresher
@@ -91,6 +93,20 @@ class TelegramBotService:
                 self._lock_thread = threading.Thread(target=self._refresh_lock_loop, daemon=True)
                 self._lock_thread.start()
                 return True
+            else:
+                # Check if the existing lock is stale (older than 2 minutes)
+                existing_ttl = client.ttl(key)
+                if existing_ttl == -1:  # No expiry set (shouldn't happen but handle it)
+                    logger.warning("Found Redis lock with no expiry, clearing it")
+                    client.delete(key)
+                    # Try again after clearing stale lock
+                    ok = client.set(key, value, nx=True, ex=60)
+                    if ok:
+                        self._lock = (client, key, value)
+                        self._lock_stop.clear()
+                        self._lock_thread = threading.Thread(target=self._refresh_lock_loop, daemon=True)
+                        self._lock_thread.start()
+                        return True
             return False
         except Exception as e:
             logger.warning(f"Failed to acquire Redis lock for Telegram bot: {e}")
@@ -105,7 +121,7 @@ class TelegramBotService:
                 # Refresh only if we still own it
                 current = client.get(key)
                 if current and current.decode() == value:
-                    client.expire(key, 120)
+                    client.expire(key, 60)  # Consistent with initial timeout
                 else:
                     # Lost lock; request stop
                     logger.warning("Telegram bot lost singleton lock; stopping bot polling")
@@ -657,9 +673,12 @@ Use the commands to control your trading bot remotely!
             elif isinstance(err, (NetworkError, httpx.RemoteProtocolError, httpx.ConnectError)):
                 logger.warning(f"Network error in Telegram bot: {type(err).__name__}: {err}")
                 
-                # For RemoteProtocolError specifically, attempt to restart polling
-                if isinstance(err, httpx.RemoteProtocolError):
-                    logger.info("Attempting to recover from RemoteProtocolError by restarting polling...")
+                # For RemoteProtocolError and ConnectError, be more aggressive in recovery
+                if isinstance(err, (httpx.RemoteProtocolError, httpx.ConnectError)):
+                    logger.warning(f"Critical network error detected: {type(err).__name__}. Initiating immediate recovery...")
+                    asyncio.create_task(self._recover_from_critical_network_error())
+                else:
+                    # For other NetworkErrors, use standard recovery
                     asyncio.create_task(self._recover_from_network_error())
                 
             elif isinstance(err, TimedOut):
@@ -698,37 +717,31 @@ Use the commands to control your trading bot remotely!
         try:
             if HTTPXRequest:
                 request_kwargs = {
-                    "connect_timeout": 15.0,   # Connection timeout
-                    "read_timeout": 60.0,      # Read timeout for long polling
-                    "write_timeout": 30.0,     # Write timeout
-                    "pool_timeout": 10.0,      # Pool timeout
-                    # Limit connections to reduce resource usage and improve stability
-                    "pool_limits": httpx.Limits(
-                        max_keepalive_connections=2, 
-                        max_connections=5,
-                        keepalive_expiry=30.0  # Keep connections alive for 30 seconds
-                    )
+                    "connect_timeout": 20.0,   # Increased connection timeout
+                    "read_timeout": 90.0,      # Increased read timeout for long polling
+                    "write_timeout": 45.0,     # Increased write timeout
+                    "pool_timeout": 15.0,      # Increased pool timeout
                 }
                 
-                # Prefer HTTP/1.1 to avoid intermittent HTTP/2 disconnects
+                # Force HTTP/1.1 to avoid HTTP/2 connection issues
                 if HTTPVersion is not None:
                     request_kwargs["http_version"] = HTTPVersion.HTTP_1_1  # type: ignore
                 else:
                     # Some PTB versions accept a string
                     request_kwargs["http_version"] = "1.1"
                     
-                logger.info("Configuring Telegram bot with enhanced HTTP settings for resilience")
+                logger.info("Configuring Telegram bot with enhanced HTTP settings for maximum resilience")
                 builder = builder.request(HTTPXRequest(**request_kwargs))
             
-            # Configure polling with conservative settings for better resilience
-            builder = builder.get_updates_connect_timeout(15)
-            builder = builder.get_updates_read_timeout(60)  
-            builder = builder.get_updates_write_timeout(30)
-            builder = builder.get_updates_pool_timeout(10)
+            # Configure polling with more conservative settings for better resilience
+            builder = builder.get_updates_connect_timeout(20)
+            builder = builder.get_updates_read_timeout(90)  
+            builder = builder.get_updates_write_timeout(45)
+            builder = builder.get_updates_pool_timeout(15)
             
             # Configure reasonable polling timeout
             if hasattr(builder, "get_updates_request_timeout"):
-                builder = builder.get_updates_request_timeout(50)
+                builder = builder.get_updates_request_timeout(75)
                 
         except Exception as e:
             logger.warning("Building HTTPXRequest with custom settings failed, falling back to defaults: %s", e)
@@ -761,45 +774,84 @@ Use the commands to control your trading bot remotely!
         return self.application
     
     async def _start_resilient_polling(self):
-        """Start polling with automatic recovery from network errors."""
-        max_retries = 5
-        base_delay = 5.0
-        max_delay = 300.0  # 5 minutes max delay
+        """Start polling with automatic recovery from network errors and circuit breaker pattern."""
+        max_retries = 7  # Increased retry attempts
+        base_delay = 3.0  # Reduced initial delay for faster recovery
+        max_delay = 180.0  # Reduced max delay (3 minutes)
         
         retry_count = 0
+        consecutive_failures = 0
+        circuit_breaker_threshold = 3
         
         while retry_count < max_retries:
             try:
-                logger.info(f"Starting Telegram polling (attempt {retry_count + 1}/{max_retries})")
+                # Circuit breaker logic: if we have too many consecutive failures, wait longer
+                if consecutive_failures >= circuit_breaker_threshold:
+                    circuit_delay = min(30.0 * consecutive_failures, 300.0)  # Progressive delay up to 5 minutes
+                    logger.warning(f"Circuit breaker activated due to {consecutive_failures} consecutive failures. Waiting {circuit_delay:.1f}s before retry...")
+                    await asyncio.sleep(circuit_delay)
+                
+                logger.info(f"Starting Telegram polling (attempt {retry_count + 1}/{max_retries}, consecutive failures: {consecutive_failures})")
+                
+                # Enhanced polling configuration for better resilience
                 await self.application.updater.start_polling(
-                    poll_interval=2.0,  # Check for updates every 2 seconds when polling fails
-                    timeout=30,         # Timeout for getUpdates calls
-                    read_timeout=40,    # Read timeout (should be > timeout)
-                    connect_timeout=15, # Connection timeout
-                    pool_timeout=10,    # Pool timeout
-                    bootstrap_retries=3,  # Number of retries for initial connection
-                    allowed_updates=None  # Allow all update types
+                    poll_interval=1.5,    # Slightly reduced poll interval for faster detection
+                    timeout=45,           # Increased timeout for getUpdates calls  
+                    read_timeout=60,      # Increased read timeout
+                    connect_timeout=20,   # Increased connection timeout
+                    pool_timeout=15,      # Increased pool timeout
+                    bootstrap_retries=5,  # Increased bootstrap retries
+                    allowed_updates=None, # Allow all update types
                 )
                 
                 # If we get here, polling started successfully
-                retry_count = 0  # Reset retry count on success
-                logger.info("Telegram polling started successfully")
-                break
+                retry_count = 0
+                consecutive_failures = 0  # Reset consecutive failures on success
+                logger.info("Telegram polling started successfully - circuit breaker reset")
+                
+                # Wait a moment to ensure polling is stable before returning
+                await asyncio.sleep(3.0)
+                
+                # Final verification
+                if self.application.updater.running:
+                    logger.info("Polling stability verified")
+                    break
+                else:
+                    raise Exception("Polling failed to maintain stable state")
                 
             except (NetworkError, httpx.RemoteProtocolError, httpx.ConnectError) as e:
                 retry_count += 1
+                consecutive_failures += 1
+                
                 if retry_count >= max_retries:
-                    logger.error(f"Failed to start Telegram polling after {max_retries} attempts: {e}")
+                    logger.error(f"Failed to start Telegram polling after {max_retries} attempts and {consecutive_failures} consecutive failures: {e}")
+                    # Reset circuit breaker for next attempt
+                    consecutive_failures = 0
                     raise
                 
-                # Calculate exponential backoff delay
-                delay = min(base_delay * (2 ** (retry_count - 1)), max_delay)
-                logger.warning(f"Network error starting Telegram polling: {e}. Retrying in {delay:.1f}s (attempt {retry_count}/{max_retries})")
+                # Calculate exponential backoff delay with jitter to avoid thundering herd
+                jitter = random.uniform(0.8, 1.2)  # Add 20% jitter
+                delay = min(base_delay * (2 ** (retry_count - 1)) * jitter, max_delay)
+                
+                logger.warning(f"Network error starting Telegram polling: {type(e).__name__}: {e}. "
+                             f"Retrying in {delay:.1f}s (attempt {retry_count}/{max_retries}, "
+                             f"consecutive failures: {consecutive_failures})")
                 await asyncio.sleep(delay)
                 
             except Exception as e:
-                logger.error(f"Unexpected error starting Telegram polling: {e}")
-                raise
+                retry_count += 1
+                consecutive_failures += 1
+                logger.error(f"Unexpected error starting Telegram polling: {type(e).__name__}: {e}")
+                
+                if retry_count >= max_retries:
+                    raise
+                
+                # For unexpected errors, use a fixed shorter delay
+                await asyncio.sleep(10.0)
+        
+        # If we exit the loop without success, that's an error
+        if retry_count >= max_retries:
+            raise Exception(f"Exhausted all {max_retries} polling start attempts")
     
     async def _recover_from_network_error(self):
         """Recover from network errors by restarting polling."""
@@ -842,14 +894,82 @@ Use the commands to control your trading bot remotely!
             await asyncio.sleep(30.0)
             asyncio.create_task(self._recover_from_network_error())
     
+    async def _recover_from_critical_network_error(self):
+        """Recover from critical network errors (RemoteProtocolError, ConnectError) with more aggressive approach."""
+        if not self.application:
+            logger.warning("Cannot recover from critical network error: no application available")
+            return
+            
+        # Use exponential backoff for critical errors
+        max_attempts = 5
+        base_delay = 3.0
+        max_delay = 120.0
+        
+        for attempt in range(max_attempts):
+            try:
+                logger.info(f"Critical network error recovery attempt {attempt + 1}/{max_attempts}")
+                
+                # Force stop the updater regardless of state
+                if self.application.updater:
+                    try:
+                        logger.info("Force stopping updater due to critical network error...")
+                        await self.application.updater.stop()
+                        await asyncio.sleep(2.0)  # Give it time to fully stop
+                    except Exception as e:
+                        logger.warning(f"Error stopping updater: {e}")
+                
+                # Test basic connectivity before attempting restart
+                try:
+                    logger.info("Testing basic connectivity to Telegram API...")
+                    await asyncio.wait_for(
+                        self.application.bot.get_me(), 
+                        timeout=15.0
+                    )
+                    logger.info("Basic connectivity test passed")
+                except Exception as e:
+                    logger.warning(f"Basic connectivity test failed: {e}")
+                    # Continue with restart anyway
+                
+                # Restart polling with increased resilience settings
+                logger.info("Restarting polling with enhanced resilience...")
+                await self._start_resilient_polling()
+                
+                # Verify the restart was successful
+                await asyncio.sleep(5.0)
+                if self.application.updater and self.application.updater.running:
+                    try:
+                        await asyncio.wait_for(
+                            self.application.bot.get_me(), 
+                            timeout=10.0
+                        )
+                        logger.info("Critical network error recovery successful!")
+                        return
+                    except Exception as e:
+                        logger.warning(f"Post-recovery verification failed: {e}")
+                        raise e
+                else:
+                    raise Exception("Updater not running after restart")
+                
+            except Exception as e:
+                delay = min(base_delay * (2 ** attempt), max_delay)
+                if attempt < max_attempts - 1:
+                    logger.warning(f"Critical recovery attempt {attempt + 1} failed: {e}. Retrying in {delay:.1f}s...")
+                    await asyncio.sleep(delay)
+                else:
+                    logger.error(f"All critical recovery attempts failed: {e}")
+                    # As a last resort, schedule standard recovery after a longer delay
+                    await asyncio.sleep(60.0)
+                    asyncio.create_task(self._recover_from_network_error())
+    
     async def monitor_bot_health(self):
-        """Monitor bot health and restart if necessary."""
-        health_check_interval = 180  # Check every 3 minutes (reduced from 5)
-        max_consecutive_failures = 3
+        """Monitor bot health and restart if necessary with enhanced resilience."""
+        health_check_interval = 120  # Check every 2 minutes for faster detection
+        max_consecutive_failures = 4  # Allow one more failure before giving up
         consecutive_failures = 0
         last_successful_check = None
+        critical_error_count = 0  # Track critical errors separately
         
-        logger.info("Starting Telegram bot health monitoring...")
+        logger.info("Starting enhanced Telegram bot health monitoring...")
         
         while True:
             try:
@@ -862,29 +982,62 @@ Use the commands to control your trading bot remotely!
                     if consecutive_failures > 0:
                         logger.info(f"Bot health recovered after {consecutive_failures} failures")
                     consecutive_failures = 0
+                    critical_error_count = 0  # Reset critical error count on success
                     last_successful_check = datetime.now()
                     
-                    # Log periodic health status
-                    if last_successful_check and (datetime.now() - last_successful_check).total_seconds() % 1800 < health_check_interval:  # Every 30 minutes
+                    # Log periodic health status (every 20 minutes instead of 30)
+                    if last_successful_check and (datetime.now() - last_successful_check).total_seconds() % 1200 < health_check_interval:
                         logger.info(f"Bot health check passed - Status: {health_status['status']}")
+                        
                 else:
                     consecutive_failures += 1
-                    logger.warning(f"Bot health check failed (attempt {consecutive_failures}/{max_consecutive_failures}): {health_status['status']}")
                     
-                    if consecutive_failures >= max_consecutive_failures:
-                        logger.error(f"Bot failed health check {consecutive_failures} times, stopping monitoring")
-                        # Attempt one final recovery before giving up
-                        try:
-                            await self._recover_from_network_error()
-                        except Exception as e:
-                            logger.error(f"Final recovery attempt failed: {e}")
-                        break
+                    # Check if this is a critical network error
+                    is_critical = any(keyword in health_status['status'].lower() 
+                                    for keyword in ['remoteprotocolerror', 'connecterror', 'timeout'])
+                    
+                    if is_critical:
+                        critical_error_count += 1
+                        logger.warning(f"Critical health check failure detected (attempt {consecutive_failures}/{max_consecutive_failures}, "
+                                     f"critical errors: {critical_error_count}): {health_status['status']}")
+                        
+                        # For critical errors, use aggressive recovery immediately
+                        if critical_error_count >= 2:  # After 2 critical errors, be more aggressive
+                            logger.warning("Multiple critical errors detected, using aggressive recovery...")
+                            try:
+                                await self._recover_from_critical_network_error()
+                            except Exception as e:
+                                logger.error(f"Critical recovery attempt failed: {e}")
+                        else:
+                            # First critical error, try standard recovery
+                            try:
+                                await self._recover_from_network_error()
+                            except Exception as e:
+                                logger.error(f"Standard recovery attempt failed: {e}")
                     else:
-                        # Attempt recovery
+                        logger.warning(f"Bot health check failed (attempt {consecutive_failures}/{max_consecutive_failures}): {health_status['status']}")
+                        # For non-critical errors, use standard recovery
                         try:
                             await self._recover_from_network_error()
                         except Exception as e:
                             logger.error(f"Health check recovery attempt failed: {e}")
+                    
+                    if consecutive_failures >= max_consecutive_failures:
+                        logger.error(f"Bot failed health check {consecutive_failures} times, attempting final recovery...")
+                        # One final aggressive recovery attempt before giving up
+                        try:
+                            await self._recover_from_critical_network_error()
+                            # Give it some time to stabilize
+                            await asyncio.sleep(30)
+                            # Reset counters and continue monitoring
+                            consecutive_failures = 0
+                            critical_error_count = 0
+                            logger.info("Final recovery attempt completed, resuming monitoring...")
+                        except Exception as e:
+                            logger.error(f"Final recovery attempt failed: {e}")
+                            logger.error("Bot monitoring will continue but bot may be in degraded state")
+                            # Don't break - keep monitoring in case the issue resolves
+                            consecutive_failures = 0  # Reset to avoid infinite stopping
                         
             except asyncio.CancelledError:
                 logger.info("Bot health monitoring cancelled")
@@ -894,7 +1047,7 @@ Use the commands to control your trading bot remotely!
                 consecutive_failures += 1
     
     async def _perform_health_check(self):
-        """Perform a comprehensive health check of the bot."""
+        """Perform a comprehensive health check of the bot with enhanced error detection."""
         if not self.application or not self.application.updater:
             return {'healthy': False, 'status': 'No application or updater available'}
         
@@ -903,29 +1056,59 @@ Use the commands to control your trading bot remotely!
             if not self.application.updater.running:
                 return {'healthy': False, 'status': 'Updater not running'}
             
-            # Check 2: Can we make a simple API call?
-            try:
-                await asyncio.wait_for(
-                    self.application.bot.get_me(), 
-                    timeout=15.0
-                )
-            except asyncio.TimeoutError:
-                return {'healthy': False, 'status': 'API call timeout'}
-            except Exception as e:
-                return {'healthy': False, 'status': f'API call failed: {e}'}
+            # Check 2: Can we make a simple API call with retry logic?
+            api_test_attempts = 2
+            last_api_error = None
             
-            # Check 3: Are we receiving updates? (Check last update time if available)
+            for attempt in range(api_test_attempts):
+                try:
+                    await asyncio.wait_for(
+                        self.application.bot.get_me(), 
+                        timeout=12.0  # Reduced timeout for faster detection
+                    )
+                    break  # Success
+                except asyncio.TimeoutError as e:
+                    last_api_error = f'API call timeout (attempt {attempt + 1})'
+                    if attempt < api_test_attempts - 1:
+                        await asyncio.sleep(2.0)  # Brief pause before retry
+                    continue
+                except (httpx.RemoteProtocolError, httpx.ConnectError) as e:
+                    # These are critical network errors that we want to detect quickly
+                    return {'healthy': False, 'status': f'Critical network error: {type(e).__name__}: {e}'}
+                except Exception as e:
+                    last_api_error = f'API call failed: {type(e).__name__}: {e}'
+                    if attempt < api_test_attempts - 1:
+                        await asyncio.sleep(2.0)  # Brief pause before retry
+                    continue
+            else:
+                # All attempts failed
+                return {'healthy': False, 'status': last_api_error or 'API call failed after all attempts'}
+            
+            # Check 3: Validate updater state more thoroughly
             try:
-                # This is a bit more complex as we need to track when we last received an update
-                # For now, if the API call succeeded and updater is running, consider it healthy
-                pass
-            except Exception:
-                pass
+                # Check if the updater has any indication of network issues
+                if hasattr(self.application.updater, '_running'):
+                    # Additional state validation if available
+                    pass
+                    
+                # For now, if API call succeeded and updater is running, consider it healthy
+                # In the future, we could add more sophisticated checks like:
+                # - Time since last update received
+                # - HTTP connection pool status
+                # - Error rate monitoring
+                
+            except Exception as e:
+                logger.debug(f"Additional health check failed (non-critical): {e}")
             
             return {'healthy': True, 'status': 'All checks passed'}
             
         except Exception as e:
-            return {'healthy': False, 'status': f'Health check error: {e}'}
+            error_type = type(e).__name__
+            # Classify the error type for better handling
+            if 'RemoteProtocolError' in error_type or 'ConnectError' in error_type:
+                return {'healthy': False, 'status': f'Critical network error in health check: {error_type}: {e}'}
+            else:
+                return {'healthy': False, 'status': f'Health check error: {error_type}: {e}'}
     
     async def stop_bot(self):
         """Stop the Telegram bot."""

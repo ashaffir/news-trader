@@ -52,20 +52,37 @@ async def check_bot_health():
         print("❌ Bot updater not running")
         return False
     
-    # Try to make a simple API call to verify connectivity
-    try:
-        bot_info = await asyncio.wait_for(
-            bot_service.application.bot.get_me(), 
-            timeout=10.0
-        )
-        print(f"✅ Bot is healthy: @{bot_info.username}")
-        return True
-    except asyncio.TimeoutError:
-        print("❌ Bot API call timed out")
-        return False
-    except Exception as e:
-        print(f"❌ Bot API call failed: {e}")
-        return False
+    # Try to make a simple API call to verify connectivity with retries
+    max_attempts = 2
+    for attempt in range(max_attempts):
+        try:
+            bot_info = await asyncio.wait_for(
+                bot_service.application.bot.get_me(), 
+                timeout=12.0
+            )
+            print(f"✅ Bot is healthy: @{bot_info.username}")
+            return True
+        except asyncio.TimeoutError:
+            print(f"⚠️ Bot API call timed out (attempt {attempt + 1}/{max_attempts})")
+            if attempt < max_attempts - 1:
+                await asyncio.sleep(3.0)  # Brief pause before retry
+                continue
+            print("❌ Bot API call timed out after all attempts")
+            return False
+        except Exception as e:
+            error_type = type(e).__name__
+            if 'RemoteProtocolError' in error_type or 'ConnectError' in error_type:
+                print(f"❌ Critical network error detected: {error_type}: {e}")
+                return False
+            else:
+                print(f"⚠️ Bot API call failed (attempt {attempt + 1}/{max_attempts}): {error_type}: {e}")
+                if attempt < max_attempts - 1:
+                    await asyncio.sleep(3.0)  # Brief pause before retry
+                    continue
+                print("❌ Bot API call failed after all attempts")
+                return False
+    
+    return False
 
 
 async def main():

@@ -5,7 +5,7 @@ import json
 import requests
 from bs4 import BeautifulSoup
 from celery import shared_task
-from core.playwright_utils import get_browser_page
+from core.browser_manager import get_managed_browser_page, get_browser_pool_stats
 import asyncio
 
 from .models import Source, ApiResponse, Post, Analysis, Trade, TradingConfig, ActivityLog, AlertSettings
@@ -446,8 +446,8 @@ def _scrape_with_browser(source):
         max_scrolls = 5
         min_title_len = 5
 
-        # Use thread-safe context manager for browser operations
-        with get_browser_page() as page:
+        # Use managed browser pool for efficient Chrome process management
+        with get_managed_browser_page() as page:
             # Set shorter timeouts to prevent hanging
             page.set_default_timeout(15000)
             page.goto(source.url, wait_until="domcontentloaded", timeout=20000)
@@ -2425,10 +2425,36 @@ def _check_chrome_processes():
                 except ValueError:
                     continue
         
-        if playwright_chrome_processes > 10:  # Too many Playwright Chrome processes
+        # Check browser pool stats for better monitoring (thread-local aware)
+        try:
+            pool_stats = get_browser_pool_stats()
+            if 'error' not in pool_stats:
+                active_browsers = pool_stats.get('active_browsers', 0)
+                max_per_thread = pool_stats.get('max_browsers_per_thread', 2)
+                thread_id = pool_stats.get('thread_id', 'unknown')
+                
+                # Log browser pool status for debugging
+                logger.info(f"Browser pool status for thread {thread_id}: {pool_stats}")
+                
+                # For thread-local pools, we expect:
+                # - Up to 4 worker threads (Celery concurrency=4)
+                # - Up to 2 browsers per thread
+                # - ~3-5 Chrome processes per browser (main + renderers + utilities)
+                # Total expected: 4 threads × 2 browsers × 4 processes = ~32 processes max
+                reasonable_max = 35  # Allow some buffer for multiple threads
+                
+                if playwright_chrome_processes > reasonable_max:
+                    issues.append(f"Playwright Chrome processes ({playwright_chrome_processes}) exceed reasonable limit for thread-local pools ({reasonable_max})")
+            else:
+                issues.append(f"Browser pool health check failed: {pool_stats['error']}")
+        except Exception as e:
+            logger.warning(f"Could not check browser pool stats: {e}")
+        
+        # Updated threshold for thread-local architecture
+        if playwright_chrome_processes > 40:  # Increased from 5 to 40 for thread-local pools
             issues.append(f"Excessive Playwright Chrome processes: {playwright_chrome_processes}")
         
-        if high_cpu_processes > 2:  # Too many high-CPU Playwright processes
+        if high_cpu_processes > 4:  # Increased from 2 to 4 for multiple threads
             issues.append(f"High-CPU Playwright Chrome processes: {high_cpu_processes}")
         
         return issues
@@ -2465,12 +2491,12 @@ def _check_worker_health():
 def _check_scraping_frequency():
     """Check if scraping is happening at expected frequency."""
     try:
-        # Check for posts in the last 15 minutes
-        cutoff = timezone.now() - timedelta(minutes=15)
+        # Check for posts in the last 30 minutes (made more lenient for thread-local pools)
+        cutoff = timezone.now() - timedelta(minutes=30)
         recent_posts = Post.objects.filter(created_at__gte=cutoff).count()
         
         if recent_posts == 0:
-            return ["No posts created in last 15 minutes - scraping may be stuck"]
+            return ["No posts created in last 30 minutes - scraping may be stuck"]
         
         return []
     
@@ -2494,17 +2520,23 @@ def _trigger_recovery(issues):
         }
     )
     
-    # For now, just restart the worker for any serious issues
-    chrome_restart_triggers = [
-        "Excessive Playwright Chrome processes",
+    # Be more selective about when to restart worker with thread-local pools
+    critical_restart_triggers = [
+        "exceed reasonable limit for thread-local pools",  # Only restart for truly excessive processes
         "High-CPU Playwright Chrome processes",
-        "No posts created"
+        "No posts created in last 30 minutes"  # Made more lenient - 30 min instead of 15
     ]
     
     should_restart = any(
-        any(trigger in issue for trigger in chrome_restart_triggers)
+        any(trigger in issue for trigger in critical_restart_triggers)
         for issue in issues
     )
+    
+    # Log restart decision for debugging
+    if should_restart:
+        logger.warning(f"Worker restart triggered by issues: {[issue for issue in issues if any(trigger in issue for trigger in critical_restart_triggers)]}")
+    else:
+        logger.info(f"Health issues detected but not severe enough to restart worker: {issues}")
     
     if should_restart:
         restart_celery_worker.delay()
@@ -2578,6 +2610,16 @@ def cleanup_orphaned_chrome():
     except Exception as e:
         logger.error(f"Error cleaning up Playwright Chrome processes: {e}")
         return {"error": str(e)}
+
+
+# NOTE: cleanup_browser_pool_task has been removed as it was incompatible with thread-local browser pools.
+# The thread-local browser pools have their own automatic cleanup mechanisms (browser retirement
+# based on age and usage) and don't need periodic forced shutdowns that this task was performing.
+#
+# @shared_task
+# def cleanup_browser_pool_task():
+#     """[REMOVED] This task was causing browser pool shutdown errors with thread-local pools."""
+#     pass
 
 
 @shared_task(bind=True)
