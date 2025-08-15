@@ -1243,9 +1243,9 @@ def execute_trade(analysis_id):
         {"analysis_id": analysis.id, "status": "Analyzing position management"},
     )
 
-    # Check for existing open position in the same symbol
+    # Check for existing open or pending position in the same symbol
     def _find_existing():
-        return Trade.objects.filter(symbol=analysis.symbol, status="open").first()
+        return Trade.objects.filter(symbol=analysis.symbol, status__in=["open", "pending"]).first()
     existing_trade = _run_db_call_in_thread(_find_existing) if _is_async_context() else _find_existing()
 
     if existing_trade:

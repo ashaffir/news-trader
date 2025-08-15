@@ -315,6 +315,15 @@ class Trade(models.Model):
     opened_at = models.DateTimeField(null=True, blank=True)
     closed_at = models.DateTimeField(null=True, blank=True)
 
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['symbol'],
+                condition=models.Q(status__in=['open', 'pending', 'pending_close']),
+                name='unique_active_trade_per_symbol'
+            )
+        ]
+
     def __str__(self):
         entry_price = self.entry_price if self.entry_price is not None else "N/A"
         return f"Trade {self.id}: {self.direction} {self.quantity} {self.symbol} @ {entry_price}"

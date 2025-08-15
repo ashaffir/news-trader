@@ -227,15 +227,25 @@ class TradeInline(admin.TabularInline):
     )
 
     def current_pnl(self, obj):
-        pnl = obj.current_pnl
+        """Display P&L - realized P&L for closed trades, unrealized for open trades."""
+        pnl = None
+        
+        if obj.status == "closed":
+            # For closed trades, use realized_pnl from Alpaca
+            pnl = obj.realized_pnl
+        else:
+            # For open trades, use unrealized_pnl
+            pnl = obj.unrealized_pnl
+        
         if pnl is None:
             return "-"
+        
         try:
             pnl = float(pnl)
             if pnl > 0:
-                return format_html('<span style="color: green;">+${:.2f}</span>', pnl)
+                return format_html('<span style="color: green;">+${}</span>', f'{pnl:.2f}')
             elif pnl < 0:
-                return format_html('<span style="color: red;">${:.2f}</span>', pnl)
+                return format_html('<span style="color: red;">${}</span>', f'{pnl:.2f}')
             return f"${pnl:.2f}"
         except (ValueError, TypeError):
             return "-"
@@ -432,18 +442,28 @@ class TradeAdmin(admin.ModelAdmin):
     actions = ["close_trades_manually", "cancel_pending_trades"]
 
     def pnl_display(self, obj):
-        pnl = obj.current_pnl
+        """Display P&L - realized P&L for closed trades, unrealized for open trades."""
+        pnl = None
+        
+        if obj.status == "closed":
+            # For closed trades, use realized_pnl from Alpaca
+            pnl = obj.realized_pnl
+        else:
+            # For open trades, use unrealized_pnl
+            pnl = obj.unrealized_pnl
+        
         if pnl is None:
             return "-"
+        
         try:
             pnl = float(pnl)
             if pnl > 0:
                 return format_html(
-                    '<span style="color: green; font-weight: bold;">+${:.2f}</span>', pnl
+                    '<span style="color: green; font-weight: bold;">+${}</span>', f'{pnl:.2f}'
                 )
             elif pnl < 0:
                 return format_html(
-                    '<span style="color: red; font-weight: bold;">${:.2f}</span>', pnl
+                    '<span style="color: red; font-weight: bold;">${}</span>', f'{pnl:.2f}'
                 )
             return f"${pnl:.2f}"
         except (ValueError, TypeError):
