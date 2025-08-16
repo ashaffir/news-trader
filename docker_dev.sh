@@ -502,6 +502,30 @@ docker_shell() {
     docker-compose exec web python manage.py shell
 }
 
+# Function to run regression tests
+docker_run_tests() {
+    print_status "🧪 Running regression tests..."
+    check_env_file
+    check_docker
+    
+    # Ensure services are running
+    if ! docker-compose ps web | grep -q "Up"; then
+        print_status "🚀 Starting required services for testing..."
+        docker-compose up -d db redis web
+        wait_for_database || true
+        sleep 5
+    fi
+    
+    print_status "📋 Running Django test suite..."
+    if docker-compose exec web python manage.py test --settings=news_trader.test_settings; then
+        print_success "✅ All tests passed!"
+        return 0
+    else
+        print_error "❌ Some tests failed!"
+        return 1
+    fi
+}
+
 # Function to clean up Docker resources (enhanced)
 docker_clean() {
     print_status "🧹 Cleaning up Docker resources..."
@@ -1168,6 +1192,7 @@ show_help() {
 	echo "  bot-logs  Tail Telegram bot logs"
     echo "  pwverify  Verify Playwright Chromium in containers"
     echo "  shell     Open Django shell"
+    echo "  test      Run regression tests (all test suite)"
     echo "  logs      Show all logs"
     echo "  error-logs Show error logs only (filtered)"
     echo "  status    Show service status"
@@ -1177,6 +1202,7 @@ show_help() {
     echo "Examples:"
     echo "  $0                    # Interactive mode"
     echo "  $0 setup              # Robust setup (can retry if failed)"
+    echo "  $0 test               # Run all regression tests"
     echo "  $0 clean              # Reset after failed setup"
     echo "  $0 start              # Start services"
     echo "  $0 restart-menu       # Interactive menu to restart individual services"
@@ -1218,13 +1244,14 @@ interactive_menu() {
         echo " 10) 🌸 Start Flower monitor"
         echo " 11) 🐚 Django shell"
         echo " 12) 📋 View logs"
-        echo " 13) 🔍 Refresh status"
-        echo " 14) 🧹 Clean up Docker (reset)"
-        echo " 15) ❓ Show help"
+        echo " 13) 🧪 Run regression tests"
+        echo " 14) 🔍 Refresh status"
+        echo " 15) 🧹 Clean up Docker (reset)"
+        echo " 16) ❓ Show help"
         echo "  q) 🚪 Quit"
         echo
         
-        read -p "Select an option (1-15, q): " choice
+        read -p "Select an option (1-16, q): " choice
         echo
         
         case "$choice" in
@@ -1276,13 +1303,17 @@ interactive_menu() {
                 logs_menu
                 ;;
             13)
-                # Just refresh - the loop will show status again
+                docker_run_tests
+                pause
                 ;;
             14)
+                # Just refresh - the loop will show status again
+                ;;
+            15)
                 docker_clean
                 pause
                 ;;
-            15)
+            16)
                 show_help
                 pause
                 ;;
@@ -1362,6 +1393,9 @@ else
             ;;
         "bot-logs")
             docker_bot_logs
+            ;;
+        "test"|"tests")
+            docker_run_tests
             ;;
         "status")
             show_docker_status
