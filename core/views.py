@@ -1,7 +1,7 @@
 from django.shortcuts import render, redirect
 from django.http import JsonResponse
 from django.contrib import messages
-from .models import Trade, Post, Analysis, Source, TradingConfig, ActivityLog, AlertSettings
+from .models import Trade, Post, Analysis, Source, TradingConfig, ActivityLog, AlertSettings, TwitterSession
 from .tasks import (
     close_trade_manually,
     close_all_trades_manually,
@@ -24,6 +24,9 @@ from .source_llm import analyze_news_source_with_llm, build_source_kwargs_from_l
 from django.views.decorators.http import require_POST
 from django.contrib import messages
 from .utils.telegram import send_telegram_message
+from .twitter_login_flow import start_login_flow, complete_login_with_code
+from .twitter_scraper import scrape_twitter_profile
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -1652,8 +1655,147 @@ def test_page_view(request):
             "recent_analyses": recent_analyses,
             "sources": sources,  # Pass sources to the template
             "bot_enabled": bot_enabled,  # Pass bot status to template
+            "has_twitter_session": TwitterSession.objects.exists(),
         },
     )
+
+
+@staff_member_required
+@require_POST
+def twitter_begin_login_api(request):
+    try:
+        data = request.POST if request.content_type != 'application/json' else json.loads(request.body or '{}')
+        username = (data.get('username') or '').strip()
+        email = (data.get('email') or '').strip()
+        password = (data.get('password') or '').strip()
+        logger.info("[Twitter] begin-login called. username_or_email=%s", (username or email))
+        if not username and not email:
+            return JsonResponse({"success": False, "error": "Username or email is required"}, status=400)
+        if not password:
+            return JsonResponse({"success": False, "error": "Password is required"}, status=400)
+
+        start_ts = time.time()
+        logger.info("[Twitter] starting Playwright login flow...")
+        result = start_login_flow(username=username, email=email, password=password)
+        elapsed = (time.time() - start_ts)
+        logger.info("[Twitter] login flow returned in %.2fs: keys=%s", elapsed, list(result.keys()))
+        if not result.get('success'):
+            logger.error("[Twitter] begin-login failed: %s", result.get('error'))
+            return JsonResponse({"success": False, "error": result.get('error', 'Login start failed')}, status=500)
+
+        if result.get('verification_required'):
+            logger.info("[Twitter] verification required; returning token")
+            return JsonResponse({"success": True, "verification_required": True, "token": result.get('token')})
+
+        # No verification required, save session immediately
+        session, _ = TwitterSession.objects.update_or_create(
+            username=username or email,
+            defaults={
+                'email': email or None,
+                'password': password,
+                'storage_state': result.get('storage_state'),
+                'cookies': result.get('cookies'),
+                'last_login_at': timezone.now(),
+                'status': 'ok',
+                'last_error': None,
+            }
+        )
+        logger.info("[Twitter] session saved for %s", (username or email))
+        return JsonResponse({"success": True, "verification_required": False})
+    except Exception as e:
+        logger.exception("[Twitter] twitter_begin_login_api error: %s", e)
+        return JsonResponse({"success": False, "error": str(e)}, status=500)
+
+
+@staff_member_required
+@require_POST
+def twitter_complete_login_api(request):
+    try:
+        data = request.POST if request.content_type != 'application/json' else json.loads(request.body or '{}')
+        token = (data.get('token') or '').strip()
+        code = (data.get('code') or '').strip()
+        username = (data.get('username') or data.get('email') or '').strip()
+        password = (data.get('password') or '').strip()
+        email = (data.get('email') or '').strip()
+        logger.info("[Twitter] complete-login called. username_or_email=%s", username or email)
+        if not token or not code:
+            return JsonResponse({"success": False, "error": "token and code are required"}, status=400)
+
+        logger.info("[Twitter] submitting verification code...")
+        result = complete_login_with_code(token, code)
+        if not result.get('success'):
+            logger.error("[Twitter] complete-login failed: %s", result.get('error'))
+            return JsonResponse({"success": False, "error": result.get('error', 'Verification failed')}, status=500)
+
+        TwitterSession.objects.update_or_create(
+            username=username,
+            defaults={
+                'email': email or None,
+                'password': password or None,
+                'storage_state': result.get('storage_state'),
+                'cookies': result.get('cookies'),
+                'last_login_at': timezone.now(),
+                'status': 'ok',
+                'last_error': None,
+            }
+        )
+        logger.info("[Twitter] verification complete and session saved for %s", username)
+        return JsonResponse({"success": True})
+    except Exception as e:
+        logger.exception("[Twitter] twitter_complete_login_api error: %s", e)
+        return JsonResponse({"success": False, "error": str(e)}, status=500)
+
+
+@staff_member_required
+@require_POST
+def add_twitter_source_api(request):
+    try:
+        data = request.POST if request.content_type != 'application/json' else json.loads(request.body or '{}')
+        handle = (data.get('handle') or '').strip().lstrip('@')
+        if not handle:
+            return JsonResponse({"success": False, "error": "Twitter username is required"}, status=400)
+        url = f"https://x.com/{handle}"
+        source, created = Source.objects.get_or_create(
+            url=url,
+            defaults={
+                'name': f'@{handle}',
+                'scraping_enabled': True,
+                'scraping_method': 'web',
+                'description': 'Twitter/X profile source',
+            }
+        )
+        return JsonResponse({"success": True, "created": created, "source_id": source.id, "name": source.name})
+    except Exception as e:
+        logger.error(f"add_twitter_source_api error: {e}")
+        return JsonResponse({"success": False, "error": str(e)}, status=500)
+
+
+@staff_member_required
+@require_POST
+def scrape_twitter_now_api(request):
+    try:
+        data = request.POST if request.content_type != 'application/json' else json.loads(request.body or '{}')
+        handle = (data.get('handle') or '').strip().lstrip('@')
+        if not handle:
+            return JsonResponse({"success": False, "error": "Twitter username is required"}, status=400)
+        url = f"https://x.com/{handle}"
+
+        session = TwitterSession.objects.order_by('-updated_at').first()
+        storage_state = session.storage_state if session else None
+        tweets = scrape_twitter_profile(url, storage_state=storage_state, max_age_hours=None, backfill=True)
+        created = 0
+        source, _ = Source.objects.get_or_create(url=url, defaults={'name': f'@{handle}', 'scraping_enabled': True})
+        for content, turl, ts in tweets:
+            try:
+                if not Post.objects.filter(url=turl).exists():
+                    Post.objects.create(source=source, content=content, url=turl, published_at=ts)
+                    created += 1
+            except Exception:
+                continue
+        return JsonResponse({"success": True, "created": created, "count": len(tweets)})
+    except Exception as e:
+        logger.error(f"scrape_twitter_now_api error: {e}")
+        return JsonResponse({"success": False, "error": str(e)}, status=500)
 
 
 @staff_member_required

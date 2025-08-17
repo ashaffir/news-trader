@@ -8,7 +8,8 @@ from celery import shared_task
 from core.browser_manager import get_managed_browser_page, get_browser_pool_stats
 import asyncio
 
-from .models import Source, ApiResponse, Post, Analysis, Trade, TradingConfig, ActivityLog, AlertSettings
+from .models import Source, ApiResponse, Post, Analysis, Trade, TradingConfig, ActivityLog, AlertSettings, TwitterSession
+from .twitter_scraper import scrape_twitter_profile
 
 # Health monitoring will be defined in this file for proper Celery registration
 from django.utils import timezone
@@ -433,6 +434,50 @@ def _scrape_with_browser(source):
         from urllib.parse import urljoin
 
         logger.info(f"Playwright scraping from {source.url}")
+
+        # Special handling for Twitter/X profiles so periodic scraping covers them
+        try:
+            url_lower = (source.url or "").lower()
+            if "x.com/" in url_lower or "twitter.com/" in url_lower:
+                session = None
+                try:
+                    session = TwitterSession.objects.order_by('-updated_at').first()
+                except Exception:
+                    session = None
+                storage_state = session.storage_state if session and getattr(session, 'storage_state', None) else None
+                tweets = scrape_twitter_profile(source.url, storage_state=storage_state, max_age_hours=None, backfill=True)
+                created_count = 0
+                analysis_post_ids = []
+                for content, tweet_url, ts in tweets:
+                    try:
+                        if Post.objects.filter(url=tweet_url).exists():
+                            continue
+                        post = Post.objects.create(source=source, content=content, url=tweet_url, published_at=ts)
+                        created_count += 1
+                        analysis_post_ids.append(post.id)
+                        send_dashboard_update(
+                            "new_post",
+                            {
+                                "source": source.name,
+                                "content_preview": content[:100] + ("..." if len(content) > 100 else ""),
+                                "url": tweet_url,
+                                "post_id": post.id,
+                            },
+                        )
+                    except Exception:
+                        continue
+                for pid in analysis_post_ids:
+                    try:
+                        analyze_post.delay(pid)
+                    except Exception:
+                        pass
+                send_dashboard_update(
+                    "scraper_status",
+                    {"status": f"Twitter scrape created {created_count} posts", "source": source.name},
+                )
+                return
+        except Exception as e:
+            logger.warning(f"Twitter scraping fast-path failed; falling back to generic: {e}")
 
         site_config = _get_site_specific_selectors(source.url) or {}
         headline_selectors = [

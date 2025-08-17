@@ -206,6 +206,7 @@ class Post(models.Model):
     )
     content = models.TextField()
     url = models.URLField(unique=True, max_length=600)
+    published_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -464,3 +465,41 @@ class AlertSettings(models.Model):
 
     def __str__(self) -> str:
         return f"AlertSettings (enabled={self.enabled})"
+
+
+class TwitterSession(models.Model):
+    """Stored login state for a Twitter/X account to enable authenticated scraping.
+
+    Stores storage_state and cookies captured from Playwright after a successful login
+    flow. Credentials are stored for convenience in development only; consider
+    encrypting or removing in production.
+    """
+
+    username = models.CharField(max_length=150, unique=True)
+    email = models.EmailField(blank=True, null=True)
+    password = models.CharField(max_length=255, blank=True, null=True)
+
+    # Playwright storage state JSON (contains cookies/localStorage) for re-use
+    storage_state = models.JSONField(blank=True, null=True)
+    cookies = models.JSONField(blank=True, null=True)
+
+    last_login_at = models.DateTimeField(blank=True, null=True)
+    status = models.CharField(
+        max_length=20,
+        choices=[
+            ("ok", "OK"),
+            ("pending", "Pending"),
+            ("error", "Error"),
+        ],
+        default="ok",
+    )
+    last_error = models.TextField(blank=True, null=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updated_at"]
+
+    def __str__(self) -> str:
+        return f"TwitterSession({self.username})"

@@ -259,13 +259,14 @@ class PostAdmin(admin.ModelAdmin):
         "id",
         "source_name",
         "content_preview",
+        "published_at",
         "has_analysis",
         "created_at",
     )
-    list_filter = ("source", "created_at")
+    list_filter = ("source", "published_at", "created_at")
     search_fields = ("content", "url")
     readonly_fields = ("created_at", "api_response")
-    date_hierarchy = "created_at"
+    date_hierarchy = "published_at"
 
     def source_name(self, obj):
         return obj.source.name
