@@ -469,6 +469,10 @@ def _scrape_with_browser(source):
                 for pid in analysis_post_ids:
                     try:
                         analyze_post.delay(pid)
+                        send_dashboard_update(
+                            "analysis_status",
+                            {"post_id": pid, "status": "Queued (new post)"}
+                        )
                     except Exception:
                         pass
                 send_dashboard_update(
@@ -660,6 +664,10 @@ def _scrape_with_browser(source):
             try:
                 analyze_post.delay(post_id)
                 logger.debug(f"Queued analysis for post {post_id}")
+                send_dashboard_update(
+                    "analysis_status",
+                    {"post_id": post_id, "status": "Queued (new post)"}
+                )
             except Exception as e:
                 logger.error(f"Failed to queue analysis for post {post_id}: {e}")
 
