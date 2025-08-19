@@ -1094,44 +1094,43 @@ def manual_close_trade_view(request):
                         # Use current market price or fallback to average entry price
                         exit_price = float(position.avg_entry_price)
 
-                    # Find or create Trade record for this position
-                    trade_record = None
-
-                    # First try to find existing trade record with this Alpaca position
-                    try:
-                        trade_record = Trade.objects.get(
-                            symbol=symbol,
-                            status="open",
-                            alpaca_order_id=f"position_{symbol}"
-                        )
-                    except Trade.DoesNotExist:
-                        # Try to find any open trade for this symbol
-                        try:
-                            trade_record = Trade.objects.filter(
-                                symbol=symbol,
-                                status="open"
-                            ).first()
-                        except:
-                            pass
-
-                    # If no trade record found, create a new one
+                    # Find or create Trade record for this position (de-dup across statuses)
+                    trade_record = (
+                        Trade.objects.filter(alpaca_order_id=f"position_{symbol}")
+                        .order_by("-created_at").first()
+                    )
                     if not trade_record:
-                        # Try to get most recent analysis for this symbol
-                        analysis = Analysis.objects.filter(symbol=symbol).order_by('-created_at').first()
-
-                        trade_record = Trade.objects.create(
-                            analysis=analysis,  # May be None
-                            symbol=symbol,
-                            direction="buy" if current_side == "long" else "sell",
-                            quantity=qty,
-                            entry_price=float(position.avg_entry_price),
-                            status="open",
-                            alpaca_order_id=f"position_{symbol}",
-                            opened_at=timezone.now(),
-                            take_profit_price_percentage=10.0,
-                            stop_loss_price_percentage=2.0,
+                        trade_record = (
+                            Trade.objects.filter(
+                                symbol=symbol,
+                                status__in=["open", "pending", "pending_close"],
+                            )
+                            .order_by("-created_at").first()
                         )
-                        logger.info(f"Created new trade record for Alpaca position {symbol}")
+
+                    # If still not found, create one, guarding against race duplicates
+                    if not trade_record:
+                        analysis = Analysis.objects.filter(symbol=symbol).order_by('-created_at').first()
+                        from django.db import IntegrityError
+                        try:
+                            trade_record = Trade.objects.create(
+                                analysis=analysis,
+                                symbol=symbol,
+                                direction="buy" if current_side == "long" else "sell",
+                                quantity=qty,
+                                entry_price=float(position.avg_entry_price),
+                                status="open",
+                                alpaca_order_id=f"position_{symbol}",
+                                opened_at=timezone.now(),
+                                take_profit_price_percentage=10.0,
+                                stop_loss_price_percentage=2.0,
+                            )
+                            logger.info(f"Created new trade record for Alpaca position {symbol}")
+                        except IntegrityError:
+                            # Another process created it concurrently; fetch it now
+                            trade_record = Trade.objects.filter(
+                                alpaca_order_id=f"position_{symbol}"
+                            ).order_by("-created_at").first()
 
                     # Calculate P&L
                     if trade_record.direction == "buy" or current_side == "long":
@@ -1274,24 +1273,37 @@ def manual_close_trade_view(request):
                             )
 
                         # Find existing trade for this symbol, don't create duplicates
-                        trade = Trade.objects.filter(
-                            symbol=symbol,
-                            status="open"
-                        ).first()
-
+                        trade = (
+                            Trade.objects.filter(alpaca_order_id=f"position_{symbol}")
+                            .order_by('-created_at').first()
+                        )
                         if not trade:
-                            # Only create if no existing trade found
-                            trade = Trade.objects.create(
-                                symbol=symbol,
-                                status="open",
-                                alpaca_order_id=f"position_{symbol}",
-                                analysis=None,  # Manual TP/SL doesn't need analysis
-                                direction="buy" if float(position["qty"]) > 0 else "sell",
-                                quantity=abs(float(position["qty"])),
-                                entry_price=entry_price,
-                                take_profit_price_percentage=10.0,
-                                stop_loss_price_percentage=2.0,
+                            trade = (
+                                Trade.objects.filter(
+                                    symbol=symbol,
+                                    status__in=["open", "pending", "pending_close"],
+                                )
+                                .order_by('-created_at').first()
                             )
+                        if not trade:
+                            # Only create if no existing trade found (guard against race)
+                            from django.db import IntegrityError
+                            try:
+                                trade = Trade.objects.create(
+                                    symbol=symbol,
+                                    status="open",
+                                    alpaca_order_id=f"position_{symbol}",
+                                    analysis=None,  # Manual TP/SL doesn't need analysis
+                                    direction="buy" if float(position["qty"]) > 0 else "sell",
+                                    quantity=abs(float(position["qty"])),
+                                    entry_price=entry_price,
+                                    take_profit_price_percentage=10.0,
+                                    stop_loss_price_percentage=2.0,
+                                )
+                            except IntegrityError:
+                                trade = Trade.objects.filter(
+                                    alpaca_order_id=f"position_{symbol}"
+                                ).order_by('-created_at').first()
 
                         # Update the take profit and stop loss prices
                         if take_profit_price:
