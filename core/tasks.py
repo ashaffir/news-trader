@@ -1318,6 +1318,105 @@ def execute_trade(analysis_id):
         create_new_trade.delay(analysis.id)
 
 
+def get_effective_concurrent_open_trades_count():
+    """Return effective count of open trades based on Alpaca plus pending DB trades.
+
+    Logic:
+    - Count current open positions from Alpaca (unique symbols)
+    - Add DB trades in pending/pending_close whose symbols are not already open at Alpaca
+    This ensures the limit reflects actual broker state plus in-flight orders.
+    """
+    positions_symbols = set()
+    try:
+        ALPACA_API_KEY = os.getenv("ALPACA_API_KEY")
+        ALPACA_SECRET_KEY = os.getenv("ALPACA_SECRET_KEY")
+        ALPACA_BASE_URL = os.getenv("ALPACA_BASE_URL", "https://paper-api.alpaca.markets")
+
+        if ALPACA_API_KEY and ALPACA_SECRET_KEY:
+            try:
+                import alpaca_trade_api as tradeapi  # Lazy import to avoid test/runtime coupling
+                api = tradeapi.REST(ALPACA_API_KEY, ALPACA_SECRET_KEY, base_url=ALPACA_BASE_URL)
+                try:
+                    positions = api.list_positions()
+                    positions_symbols = {getattr(p, "symbol", None) or p.symbol for p in positions}
+                except Exception:
+                    positions_symbols = set()
+            except Exception:
+                # If import or API fails, fall back to DB-only pending consideration below
+                positions_symbols = set()
+    except Exception:
+        positions_symbols = set()
+
+    # DB pending/pending_close trades which may not yet be visible as positions at Alpaca
+    try:
+        pending_symbols = set(
+            Trade.objects.filter(status__in=["pending", "pending_close"]).values_list("symbol", flat=True)
+        )
+    except Exception:
+        pending_symbols = set()
+
+    additional_pending = len([s for s in pending_symbols if s not in positions_symbols])
+    return len(positions_symbols) + additional_pending
+
+
+def get_effective_open_exposure():
+    """Return current total open exposure based on Alpaca positions plus DB pending trades not yet open.
+
+    - From Alpaca: sum absolute market_value for each position (fallback to qty * avg_entry_price)
+    - From DB: add pending/pending_close trades whose symbols are not currently open at Alpaca, using entry_price * quantity when available
+    """
+    positions_symbols = set()
+    total_exposure = 0.0
+
+    try:
+        ALPACA_API_KEY = os.getenv("ALPACA_API_KEY")
+        ALPACA_SECRET_KEY = os.getenv("ALPACA_SECRET_KEY")
+        ALPACA_BASE_URL = os.getenv("ALPACA_BASE_URL", "https://paper-api.alpaca.markets")
+
+        if ALPACA_API_KEY and ALPACA_SECRET_KEY:
+            try:
+                import alpaca_trade_api as tradeapi
+                api = tradeapi.REST(ALPACA_API_KEY, ALPACA_SECRET_KEY, base_url=ALPACA_BASE_URL)
+                positions = []
+                try:
+                    positions = api.list_positions()
+                except Exception:
+                    positions = []
+
+                for pos in positions:
+                    try:
+                        symbol = getattr(pos, "symbol", None) or pos.symbol
+                        positions_symbols.add(symbol)
+                        market_value = getattr(pos, "market_value", None)
+                        if market_value is not None:
+                            total_exposure += abs(float(market_value))
+                        else:
+                            qty = float(getattr(pos, "qty", 0) or 0)
+                            avg_entry_price = float(getattr(pos, "avg_entry_price", 0) or 0)
+                            total_exposure += abs(qty * avg_entry_price)
+                    except Exception:
+                        # Skip malformed position entry
+                        continue
+            except Exception:
+                # Fall through to DB-only fallback below
+                positions_symbols = set()
+    except Exception:
+        positions_symbols = set()
+
+    # Include DB pending exposures for symbols not yet open at Alpaca
+    try:
+        pending_trades = Trade.objects.filter(status__in=["pending", "pending_close"])  # type: ignore
+        for t in pending_trades:
+            try:
+                if t.symbol not in positions_symbols and t.entry_price and t.quantity:
+                    total_exposure += abs(float(t.entry_price) * float(t.quantity))
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    return total_exposure
+
 @shared_task
 def create_new_trade(analysis_id):
     """Create a new trade for the given analysis."""
@@ -1343,11 +1442,8 @@ def create_new_trade(analysis_id):
     try:
         # Enforce configurable limits (concurrent trades and total exposure)
         if config:
-            # Count currently open or pending trades
-            if _is_async_context():
-                concurrent_count = _run_db_call_in_thread(lambda: Trade.objects.filter(status__in=["open", "pending", "pending_close"]).count())
-            else:
-                concurrent_count = Trade.objects.filter(status__in=["open", "pending", "pending_close"]).count()
+            # Count open positions (from Alpaca) plus DB pending/pending_close not yet open
+            concurrent_count = get_effective_concurrent_open_trades_count()
             if config.max_concurrent_open_trades and concurrent_count >= config.max_concurrent_open_trades:
                 logger.warning(
                     f"Rejected new trade due to concurrent open trades limit: {concurrent_count}/{config.max_concurrent_open_trades}"
@@ -1383,19 +1479,7 @@ def create_new_trade(analysis_id):
 
         # Check exposure against configured max_total_open_exposure
         if config and config.max_total_open_exposure:
-            # Current exposure approximated as sum(quantity * entry_price) of open trades
-            current_exposure = 0.0
-            try:
-                if _is_async_context():
-                    open_list = _run_db_call_in_thread(lambda: list(Trade.objects.filter(status__in=["open", "pending", "pending_close"])) )
-                else:
-                    open_list = list(Trade.objects.filter(status__in=["open", "pending", "pending_close"]))
-                for t in open_list:
-                    if t.entry_price and t.quantity:
-                        current_exposure += abs(float(t.entry_price) * float(t.quantity))
-            except Exception:
-                current_exposure = 0.0
-
+            current_exposure = get_effective_open_exposure()
             projected_exposure = current_exposure + float(position_size)
             if projected_exposure > float(config.max_total_open_exposure):
                 logger.warning(
@@ -2080,7 +2164,7 @@ def create_manual_test_trade(symbol, direction, quantity=None, position_size=Non
         config = None
 
     if config:
-        concurrent_count = Trade.objects.filter(status__in=["open", "pending", "pending_close"]).count()
+        concurrent_count = get_effective_concurrent_open_trades_count()
         if config.max_concurrent_open_trades and concurrent_count >= config.max_concurrent_open_trades:
             send_dashboard_update(
                 "trade_rejected",
@@ -2144,29 +2228,22 @@ def create_manual_test_trade(symbol, direction, quantity=None, position_size=Non
 
         # Exposure check after price fetch if needed
         if config and getattr(config, 'max_total_open_exposure', None):
-            try:
-                open_trades = Trade.objects.filter(status__in=["open", "pending", "pending_close"])                
-                current_exposure = 0.0
-                for t in open_trades:
-                    if t.entry_price and t.quantity:
-                        current_exposure += abs(float(t.entry_price) * float(t.quantity))
-                additional = float(position_size) if position_size else (float(quantity) * float(current_price))
-                projected_exposure = current_exposure + additional
-                if projected_exposure > float(config.max_total_open_exposure):
-                    send_dashboard_update(
-                        "trade_rejected",
-                        {
-                            "symbol": symbol,
-                            "reason": "Total exposure limit reached",
-                            "current_exposure": current_exposure,
-                            "projected_exposure": projected_exposure,
-                            "max_exposure": config.max_total_open_exposure,
-                            "tag": "Rejected",
-                        },
-                    )
-                    return {"success": False, "error": "Total exposure limit reached"}
-            except Exception:
-                pass
+            current_exposure = get_effective_open_exposure()
+            additional = float(position_size) if position_size else (float(quantity) * float(current_price))
+            projected_exposure = current_exposure + additional
+            if projected_exposure > float(config.max_total_open_exposure):
+                send_dashboard_update(
+                    "trade_rejected",
+                    {
+                        "symbol": symbol,
+                        "reason": "Total exposure limit reached",
+                        "current_exposure": current_exposure,
+                        "projected_exposure": projected_exposure,
+                        "max_exposure": config.max_total_open_exposure,
+                        "tag": "Rejected",
+                    },
+                )
+                return {"success": False, "error": "Total exposure limit reached"}
 
         # Submit order to Alpaca
         logger.info(f"Submitting test order: {symbol}, qty={quantity}, side={direction}")
