@@ -328,6 +328,38 @@ def get_managed_browser_context():
 
 
 @contextmanager
+def get_managed_browser_context_with_state(storage_state: dict | None = None):
+    """Context manager to create a browser context with optional storage_state.
+
+    Ensures proper cleanup and safe return to the thread-local pool.
+    """
+    pool = get_browser_pool()
+    browser_instance = None
+    context = None
+    try:
+        browser_instance = pool.get_browser()
+        context = browser_instance.browser.new_context(
+            storage_state=storage_state,
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122 Safari/537.36"
+            ),
+            viewport={"width": 1280, "height": 2000},
+        )
+        yield context
+    except Exception as e:
+        logger.error(f"Error in managed browser context with state: {e}")
+        raise
+    finally:
+        if context:
+            try:
+                context.close()
+            except Exception as e:
+                logger.warning(f"Error closing browser context: {e}")
+        if browser_instance:
+            pool.return_browser(browser_instance)
+
+@contextmanager
 def get_managed_browser_page():
     """Context manager for browser page operations with proper pool management"""
     page = None

@@ -8,7 +8,8 @@ from celery import shared_task
 from core.browser_manager import get_managed_browser_page, get_browser_pool_stats
 import asyncio
 
-from .models import Source, ApiResponse, Post, Analysis, Trade, TradingConfig, ActivityLog, AlertSettings
+from .models import Source, ApiResponse, Post, Analysis, Trade, TradingConfig, ActivityLog, AlertSettings, TwitterSession
+from .twitter_scraper import scrape_twitter_profile
 
 # Health monitoring will be defined in this file for proper Celery registration
 from django.utils import timezone
@@ -434,6 +435,54 @@ def _scrape_with_browser(source):
 
         logger.info(f"Playwright scraping from {source.url}")
 
+        # Special handling for Twitter/X profiles so periodic scraping covers them
+        try:
+            url_lower = (source.url or "").lower()
+            if "x.com/" in url_lower or "twitter.com/" in url_lower:
+                session = None
+                try:
+                    session = TwitterSession.objects.order_by('-updated_at').first()
+                except Exception:
+                    session = None
+                storage_state = session.storage_state if session and getattr(session, 'storage_state', None) else None
+                tweets = scrape_twitter_profile(source.url, storage_state=storage_state, max_age_hours=None, backfill=True)
+                created_count = 0
+                analysis_post_ids = []
+                for content, tweet_url, ts in tweets:
+                    try:
+                        if Post.objects.filter(url=tweet_url).exists():
+                            continue
+                        post = Post.objects.create(source=source, content=content, url=tweet_url, published_at=ts)
+                        created_count += 1
+                        analysis_post_ids.append(post.id)
+                        send_dashboard_update(
+                            "new_post",
+                            {
+                                "source": source.name,
+                                "content_preview": content[:100] + ("..." if len(content) > 100 else ""),
+                                "url": tweet_url,
+                                "post_id": post.id,
+                            },
+                        )
+                    except Exception:
+                        continue
+                for pid in analysis_post_ids:
+                    try:
+                        analyze_post.delay(pid)
+                        send_dashboard_update(
+                            "analysis_status",
+                            {"post_id": pid, "status": "Queued (new post)"}
+                        )
+                    except Exception:
+                        pass
+                send_dashboard_update(
+                    "scraper_status",
+                    {"status": f"Twitter scrape created {created_count} posts", "source": source.name},
+                )
+                return
+        except Exception as e:
+            logger.warning(f"Twitter scraping fast-path failed; falling back to generic: {e}")
+
         site_config = _get_site_specific_selectors(source.url) or {}
         headline_selectors = [
             "h1 a", "h2 a", "h3 a",
@@ -615,6 +664,10 @@ def _scrape_with_browser(source):
             try:
                 analyze_post.delay(post_id)
                 logger.debug(f"Queued analysis for post {post_id}")
+                send_dashboard_update(
+                    "analysis_status",
+                    {"post_id": post_id, "status": "Queued (new post)"}
+                )
             except Exception as e:
                 logger.error(f"Failed to queue analysis for post {post_id}: {e}")
 
@@ -1243,9 +1296,9 @@ def execute_trade(analysis_id):
         {"analysis_id": analysis.id, "status": "Analyzing position management"},
     )
 
-    # Check for existing open or pending position in the same symbol
+    # Check for existing active position in the same symbol (including pending_close)
     def _find_existing():
-        return Trade.objects.filter(symbol=analysis.symbol, status__in=["open", "pending"]).first()
+        return Trade.objects.filter(symbol=analysis.symbol, status__in=["open", "pending", "pending_close"]).first()
     existing_trade = _run_db_call_in_thread(_find_existing) if _is_async_context() else _find_existing()
 
     if existing_trade:
@@ -1382,23 +1435,31 @@ def create_new_trade(analysis_id):
                 stop_loss_price = current_price * (1 + config.stop_loss_percentage / 100)
                 take_profit_price = current_price * (1 - config.take_profit_percentage / 100)
 
-        # Create trade record
+        # Create trade record, resilient to race duplicates (unique_active_trade_per_symbol)
         def _create_trade():
-            return Trade.objects.create(
-                analysis=analysis,
-                symbol=analysis.symbol,
-                direction=analysis.direction,
-                quantity=quantity,
-                entry_price=current_price,
-                status="pending",
-                alpaca_order_id=order.id,
-                stop_loss_price=stop_loss_price,
-                take_profit_price=take_profit_price,
-                original_stop_loss_price=stop_loss_price,
-                original_take_profit_price=take_profit_price,
-                take_profit_price_percentage=10.0 if config is None else (config.take_profit_percentage or 10.0),
-                stop_loss_price_percentage=2.0 if config is None else (config.stop_loss_percentage or 2.0),
-            )
+            from django.db import IntegrityError
+            try:
+                return Trade.objects.create(
+                    analysis=analysis,
+                    symbol=analysis.symbol,
+                    direction=analysis.direction,
+                    quantity=quantity,
+                    entry_price=current_price,
+                    status="pending",
+                    alpaca_order_id=order.id,
+                    stop_loss_price=stop_loss_price,
+                    take_profit_price=take_profit_price,
+                    original_stop_loss_price=stop_loss_price,
+                    original_take_profit_price=take_profit_price,
+                    take_profit_price_percentage=10.0 if config is None else (config.take_profit_percentage or 10.0),
+                    stop_loss_price_percentage=2.0 if config is None else (config.stop_loss_percentage or 2.0),
+                )
+            except IntegrityError:
+                # Another worker created the active trade concurrently; return it instead
+                return Trade.objects.filter(
+                    symbol=analysis.symbol,
+                    status__in=["open", "pending", "pending_close"],
+                ).order_by("-created_at").first()
         trade = _run_db_call_in_thread(_create_trade) if _is_async_context() else _create_trade()
 
         logger.info(

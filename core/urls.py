@@ -42,6 +42,11 @@ urlpatterns = [
     path('api/post-analysis/<int:post_id>/', views.get_post_analysis_ajax, name='api_post_analysis'),
     path('api/public-posts/', views.public_posts_api, name='public_posts_api'),
     path('api/toggle-bot-status/', views.toggle_bot_status, name='api_toggle_bot_status'),
+    # Twitter/X integration
+    path('api/twitter/begin-login/', views.twitter_begin_login_api, name='twitter_begin_login'),
+    path('api/twitter/complete-login/', views.twitter_complete_login_api, name='twitter_complete_login'),
+    path('api/twitter/add-source/', views.add_twitter_source_api, name='twitter_add_source'),
+    path('api/twitter/scrape-now/', views.scrape_twitter_now_api, name='twitter_scrape_now'),
     # Deprecated analyze-source endpoints kept temporarily (to be removed after UI consolidation)
     # path('analyze-source/', views.analyze_source_page, name='analyze_source'),
     # path('api/analyze-source/', views.analyze_source_api, name='analyze_source_api'),
