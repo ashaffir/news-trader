@@ -15,6 +15,7 @@ class TradingConfigAdmin(admin.ModelAdmin):
         "max_total_open_exposure",
         "stop_loss_percentage",
         "take_profit_percentage",
+        "trailing_stop_enabled",
         "min_confidence_threshold",
     )
     list_filter = (
@@ -47,6 +48,9 @@ class TradingConfigAdmin(admin.ModelAdmin):
                 "fields": (
                     "stop_loss_percentage",
                     "take_profit_percentage",
+                    "trailing_stop_enabled",
+                    "trailing_stop_distance_percentage",
+                    "trailing_stop_activation_profit_percentage",
                     "min_confidence_threshold",
                 ),
             },

@@ -122,7 +122,10 @@ class TaskTests(TestCase):
 
     def setUp(self):
         self.trading_config = TradingConfig.objects.create(
-            name="Test Config", is_active=True, min_confidence_threshold=0.7, bot_enabled=True
+            name="Test Config", is_active=True, min_confidence_threshold=0.7, bot_enabled=True,
+            trailing_stop_enabled=True,
+            trailing_stop_distance_percentage=1.0,
+            trailing_stop_activation_profit_percentage=0.0,
         )
 
         self.source = Source.objects.create(
@@ -248,6 +251,63 @@ class TaskTests(TestCase):
         self.assertEqual(trade.symbol, "AAPL")
         self.assertEqual(trade.direction, "buy")
         self.assertEqual(trade.alpaca_order_id, "order-123")
+
+    @patch("core.tasks.tradeapi.REST")
+    @patch("core.tasks.os.getenv")
+    def test_trailing_stop_updates_and_triggers(self, mock_getenv, mock_tradeapi):
+        """Trailing stop should move with favorable price and then trigger on reversal."""
+        # Active config already has trailing enabled from setUp
+        analysis = Analysis.objects.create(
+            post=self.post,
+            symbol="AAPL",
+            direction="buy",
+            confidence=0.9,
+            reason="Test trailing",
+        )
+
+        # Mock env and API
+        mock_getenv.side_effect = lambda key, default=None: {
+            "ALPACA_API_KEY": "fake-key",
+            "ALPACA_SECRET_KEY": "fake-secret",
+            "ALPACA_BASE_URL": "https://paper-api.alpaca.markets",
+        }.get(key, default)
+
+        api = MagicMock()
+        mock_tradeapi.return_value = api
+
+        # Entry at 100
+        ticker_entry = MagicMock(); ticker_entry.price = 100.0
+        api.get_latest_trade.return_value = ticker_entry
+        order = MagicMock(); order.id = "ord1"; api.submit_order.return_value = order
+
+        # Execute trade
+        from core.tasks import create_new_trade
+        create_new_trade(analysis.id)
+        trade = Trade.objects.get(symbol="AAPL")
+        trade.status = "open"; trade.save()
+
+        # Disable take profit to focus on trailing stop behavior
+        trade.take_profit_price = None
+        trade.take_profit_price_percentage = None
+        trade.save()
+
+        # Price rises to 110 -> trailing SL should move to 108 (1% distance from high=110)
+        pos1 = MagicMock(); pos1.current_price = 110.0; api.get_position.return_value = pos1
+        from core.tasks import monitor_local_stop_take_levels
+        monitor_local_stop_take_levels()
+        trade.refresh_from_db()
+        self.assertIsNotNone(trade.highest_price_since_open)
+        self.assertGreaterEqual(trade.highest_price_since_open, 110.0)
+        self.assertIsNotNone(trade.stop_loss_price)
+        self.assertAlmostEqual(trade.stop_loss_price, 110.0 * 0.99, places=4)
+
+        # Price falls to 107.9 -> below trailing SL 108 -> should trigger pending_close
+        pos2 = MagicMock(); pos2.current_price = 107.9; api.get_position.return_value = pos2
+        monitor_local_stop_take_levels()
+        trade.refresh_from_db()
+        # Celery runs eagerly in tests, so status may already be 'closed'
+        self.assertIn(trade.status, ["pending_close", "closed"])
+        self.assertEqual(trade.close_reason, "stop_loss")
 
 
 class APITests(APITestCase):

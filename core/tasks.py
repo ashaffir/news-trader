@@ -1535,17 +1535,19 @@ def adjust_position_risk(trade_id, analysis_id):
             trade.take_profit_price = new_tp
             logger.info(f"Adjusted TP for trade {trade_id}: {trade.take_profit_price:.2f}")
 
-        # Adjust stop loss (tighten to lock in profits)
+        # Adjust stop loss (tighten to lock in profits, but never loosen beyond current for trailing)
         if trade.stop_loss_price and trade.entry_price:
             current_sl_distance = abs(trade.stop_loss_price - trade.entry_price)
             tighter_distance = current_sl_distance * (1 - adjustment_factor * 0.3)  # Up to 30% tighter
 
             if trade.direction == "buy":
-                new_sl = trade.entry_price - tighter_distance
+                proposed_sl = trade.entry_price - tighter_distance
+                if trade.stop_loss_price is None or proposed_sl > float(trade.stop_loss_price):
+                    trade.stop_loss_price = proposed_sl
             else:  # sell
-                new_sl = trade.entry_price + tighter_distance
-
-            trade.stop_loss_price = new_sl
+                proposed_sl = trade.entry_price + tighter_distance
+                if trade.stop_loss_price is None or proposed_sl < float(trade.stop_loss_price):
+                    trade.stop_loss_price = proposed_sl
             logger.info(f"Adjusted SL for trade {trade_id}: {trade.stop_loss_price:.2f}")
 
         # Mark as adjusted (one-time only)
@@ -1746,6 +1748,65 @@ def monitor_local_stop_take_levels():
                     except Exception:
                         pnl_percent = None
 
+                # Trailing stop maintenance (before computing triggers)
+                try:
+                    config_ts_enabled = getattr(config, "trailing_stop_enabled", False)
+                    if config_ts_enabled and current_price and trade.entry_price:
+                        activation_pct = float(
+                            getattr(config, "trailing_stop_activation_profit_percentage", 0.0)
+                        )
+                        distance_pct = float(
+                            getattr(config, "trailing_stop_distance_percentage", 1.0)
+                        )
+
+                        # Compute current PnL %
+                        pnl_pct_for_activation = None
+                        try:
+                            if trade.direction == "buy":
+                                pnl_pct_for_activation = (
+                                    (current_price - float(trade.entry_price)) / float(trade.entry_price)
+                                ) * 100.0
+                            else:
+                                pnl_pct_for_activation = (
+                                    (float(trade.entry_price) - current_price) / float(trade.entry_price)
+                                ) * 100.0
+                        except Exception:
+                            pnl_pct_for_activation = None
+
+                        # Update extremes
+                        if trade.direction == "buy":
+                            if trade.highest_price_since_open is None or current_price > float(trade.highest_price_since_open):
+                                trade.highest_price_since_open = current_price
+                        else:
+                            if trade.lowest_price_since_open is None or current_price < float(trade.lowest_price_since_open):
+                                trade.lowest_price_since_open = current_price
+
+                        # If activated, compute trailing SL level from extremes
+                        if pnl_pct_for_activation is not None and pnl_pct_for_activation >= activation_pct:
+                            if trade.direction == "buy" and trade.highest_price_since_open:
+                                new_trailing_sl = float(trade.highest_price_since_open) * (1 - distance_pct / 100.0)
+                                # Only raise SL for longs
+                                if trade.stop_loss_price is None or new_trailing_sl > float(trade.stop_loss_price):
+                                    trade.stop_loss_price = new_trailing_sl
+                            elif trade.direction == "sell" and trade.lowest_price_since_open:
+                                new_trailing_sl = float(trade.lowest_price_since_open) * (1 + distance_pct / 100.0)
+                                # Only lower SL for shorts
+                                if trade.stop_loss_price is None or new_trailing_sl < float(trade.stop_loss_price):
+                                    trade.stop_loss_price = new_trailing_sl
+
+                        # Persist trailing references and potential SL update
+                        try:
+                            trade.save(update_fields=[
+                                "highest_price_since_open",
+                                "lowest_price_since_open",
+                                "stop_loss_price",
+                                "updated_at",
+                            ])
+                        except Exception:
+                            pass
+                except Exception as _ts_err:
+                    logger.debug(f"Trailing stop maintenance skipped for trade {trade.id}: {_ts_err}")
+
                 stop_triggered = False
                 if use_percent_based_sl and pnl_percent is not None:
                     try:
@@ -1757,7 +1818,8 @@ def monitor_local_stop_take_levels():
                             stop_triggered = True
                     except Exception:
                         stop_triggered = False
-                elif should_trigger_stop_loss(trade, current_price):
+                # Always allow absolute price-based SL (including trailing) to trigger
+                if not stop_triggered and should_trigger_stop_loss(trade, current_price):
                     stop_triggered = True
 
                 if stop_triggered:

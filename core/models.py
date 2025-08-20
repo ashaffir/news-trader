@@ -36,6 +36,22 @@ class TradingConfig(models.Model):
         help_text="Take profit percentage (1.0 = 1%)",
     )
 
+    # Trailing stop configuration
+    trailing_stop_enabled = models.BooleanField(
+        default=False,
+        help_text="Enable trailing stop loss management for open positions",
+    )
+    trailing_stop_distance_percentage = models.FloatField(
+        default=1.0,
+        validators=[MinValueValidator(0.1), MaxValueValidator(50.0)],
+        help_text="Distance of trailing stop from favorable extreme (in %)",
+    )
+    trailing_stop_activation_profit_percentage = models.FloatField(
+        default=0.0,
+        validators=[MinValueValidator(0.0), MaxValueValidator(100.0)],
+        help_text="Activate trailing stop only after unrealized profit reaches this %",
+    )
+
     # Trading constraints
     max_daily_trades = models.IntegerField(
         default=10, help_text="Maximum trades per day"
@@ -310,6 +326,10 @@ class Trade(models.Model):
     realized_pnl = models.FloatField(null=True, blank=True)
     commission = models.FloatField(default=0.0)
 
+    # Trailing stop tracking
+    highest_price_since_open = models.FloatField(null=True, blank=True)
+    lowest_price_since_open = models.FloatField(null=True, blank=True)
+
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -381,6 +401,12 @@ class Trade(models.Model):
                     self.original_take_profit_price = self.take_profit_price
                 if self.original_stop_loss_price is None and self.stop_loss_price is not None:
                     self.original_stop_loss_price = self.stop_loss_price
+                # Initialize trailing reference extremes on create
+                if is_new:
+                    if self.highest_price_since_open is None:
+                        self.highest_price_since_open = float(self.entry_price)
+                    if self.lowest_price_since_open is None:
+                        self.lowest_price_since_open = float(self.entry_price)
         except Exception:
             # Do not block save on computation errors
             pass
