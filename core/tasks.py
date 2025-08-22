@@ -7,6 +7,7 @@ from bs4 import BeautifulSoup
 from celery import shared_task
 from core.browser_manager import get_managed_browser_page, get_browser_pool_stats
 import asyncio
+from pathlib import Path
 
 from .models import Source, ApiResponse, Post, Analysis, Trade, TradingConfig, ActivityLog, AlertSettings, TwitterSession
 from .twitter_scraper import scrape_twitter_profile
@@ -19,6 +20,42 @@ import hashlib
 from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
+
+# =============================
+# Database Backup
+# =============================
+
+@shared_task
+def backup_database(backup_dir: str | None = None):
+    """Create a compressed PostgreSQL database backup on the local machine.
+
+    The backup directory defaults to `<project_root>/backups`. You can override
+    by passing an absolute path in `backup_dir`.
+    """
+    try:
+        from .utils.db_backup import create_database_backup, get_default_backup_dir
+
+        target_dir = Path(backup_dir) if backup_dir else get_default_backup_dir()
+        backup_path = create_database_backup(target_dir)
+
+        ActivityLog.objects.create(
+            activity_type="system_event",
+            message="Database backup completed",
+            data={
+                "backup_path": str(backup_path),
+                "timestamp": timezone.now().isoformat(),
+            },
+        )
+        logger.info(f"Database backup created at {backup_path}")
+        return {"status": "success", "path": str(backup_path)}
+    except Exception as e:
+        logger.error(f"Database backup failed: {e}")
+        ActivityLog.objects.create(
+            activity_type="system_event",
+            message="Database backup failed",
+            data={"error": str(e), "timestamp": timezone.now().isoformat()},
+        )
+        return {"status": "error", "error": str(e)}
 
 def _is_async_context() -> bool:
     try:

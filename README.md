@@ -283,6 +283,45 @@ SECURE_SSL_REDIRECT=True
 - [ ] Enable rate limiting
 - [ ] Review API key permissions
 
+## 💾 Database Backups (Celery Beat)
+
+- **What it does**: A daily PostgreSQL backup runs via Celery Beat and saves a compressed dump to the local machine.
+- **Default schedule**: 02:30 daily. You can change the exact time in Django Admin.
+- **Task name**: `Daily Database Backup (Local)` (under Admin → django_celery_beat → Periodic tasks)
+- **Default location**: `<project_root>/backups` on the host where Django runs.
+
+### Configure the schedule
+1. Go to Admin → `django_celery_beat` → `Periodic tasks`.
+2. Find `Daily Database Backup (Local)`.
+3. Edit the `Crontab` to set your desired time, then Save.
+
+Tip (Docker): If running in Docker, bind-mount the backups folder to persist on the host.
+```yaml
+services:
+  web:
+    volumes:
+      - ./:/app
+      - ./backups:/app/backups  # ensure backups are written to host
+```
+
+### Run a backup on demand
+```bash
+# Uses default location: <project_root>/backups
+python manage.py backup_database
+
+# Or specify a custom absolute directory on the host
+python manage.py backup_database --output-dir /absolute/path/to/backups
+```
+
+### Notes
+- Requires `pg_dump` to be available on the machine executing the task (in PATH).
+- Database connection details are taken from `settings.DATABASES['default']`.
+- Each successful run logs an entry in `ActivityLog` (type `system_event`).
+- If you need to (re)create the periodic tasks programmatically:
+```bash
+python manage.py setup_periodic_tasks
+```
+
 ## 📈 Monitoring & Observability
 
 ### Key Metrics

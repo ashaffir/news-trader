@@ -1,5 +1,5 @@
 from django.core.management.base import BaseCommand
-from django_celery_beat.models import PeriodicTask, IntervalSchedule
+from django_celery_beat.models import PeriodicTask, IntervalSchedule, CrontabSchedule
 
 
 class Command(BaseCommand):
@@ -34,6 +34,11 @@ class Command(BaseCommand):
         interval_10_minutes, _ = IntervalSchedule.objects.get_or_create(
             every=10,
             period=IntervalSchedule.MINUTES,
+        )
+
+        # Create crontab (daily at 02:30 by default; configurable via Django Admin)
+        daily_230_cron, _ = CrontabSchedule.objects.get_or_create(
+            minute='30', hour='2', day_of_week='*', day_of_month='*', month_of_year='*'
         )
 
         # Create periodic tasks
@@ -75,6 +80,12 @@ class Command(BaseCommand):
                 'description': 'Monitor system health and trigger auto-recovery'
             },
             {
+                'name': 'Daily Database Backup (Local)',
+                'task': 'core.tasks.backup_database',
+                'crontab': daily_230_cron,
+                'description': 'Create local compressed PostgreSQL backup (configurable time)'
+            },
+            {
                 'name': 'Chrome Process Cleanup',
                 'task': 'core.tasks.cleanup_orphaned_chrome',
                 'interval': interval_5_minutes,
@@ -84,14 +95,19 @@ class Command(BaseCommand):
         ]
 
         for task_config in tasks:
+            defaults = {
+                'task': task_config['task'],
+                'description': task_config['description'],
+                'enabled': True,
+            }
+            if 'interval' in task_config:
+                defaults['interval'] = task_config['interval']
+            if 'crontab' in task_config:
+                defaults['crontab'] = task_config['crontab']
+
             task, created = PeriodicTask.objects.get_or_create(
                 name=task_config['name'],
-                defaults={
-                    'task': task_config['task'],
-                    'interval': task_config['interval'],
-                    'description': task_config['description'],
-                    'enabled': True,
-                }
+                defaults=defaults
             )
             
             if created:
