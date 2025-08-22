@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.utils.html import format_html
 from django.urls import reverse
 from django.utils.safestring import mark_safe
-from .models import Source, Post, Analysis, Trade, TradingConfig, ApiResponse, AlertSettings
+from .models import Source, Post, Analysis, Trade, TradingConfig, ApiResponse, AlertSettings, TrackedCompany
 
 
 @admin.register(TradingConfig)
@@ -369,7 +369,8 @@ class TradeAdmin(admin.ModelAdmin):
         "duration",
         "created_at",
     )
-    list_filter = ("status", "direction", "symbol", "close_reason", "created_at")
+    # Keep filters/back-compat on symbol but add tracked_company for new FK
+    list_filter = ("status", "direction", "symbol", "tracked_company", "close_reason", "created_at")
     search_fields = ("symbol", "alpaca_order_id")
     readonly_fields = (
         "analysis",
@@ -384,7 +385,7 @@ class TradeAdmin(admin.ModelAdmin):
     fieldsets = (
         (
             "Trade Details",
-            {"fields": ("analysis", "symbol", "direction", "quantity", "status")},
+            {"fields": ("analysis", "tracked_company", "symbol", "direction", "quantity", "status")},
         ),
         (
             "Pricing",
@@ -531,3 +532,16 @@ class ApiResponseAdmin(admin.ModelAdmin):
 admin.site.site_header = "News Trader Administration"
 admin.site.site_title = "News Trader Admin"
 admin.site.index_title = "Welcome to News Trader Administration"
+
+
+@admin.register(TrackedCompany)
+class TrackedCompanyAdmin(admin.ModelAdmin):
+    list_display = ("symbol", "name", "sector", "industry", "market", "is_active", "updated_at")
+    list_filter = ("is_active", "sector", "industry", "market")
+    search_fields = ("symbol", "name", "sector", "industry")
+    ordering = ("symbol",)
+    readonly_fields = ("created_at", "updated_at")
+    fieldsets = (
+        ("Company", {"fields": ("symbol", "name", "sector", "industry", "market", "is_active")}),
+        ("Timestamps", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),
+    )

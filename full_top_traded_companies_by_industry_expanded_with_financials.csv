@@ -1,0 +1,766 @@
+symbol,name,industry,sector,market
+NVDA,NVIDIA,Semiconductors,Information Technology,USA
+AMD,Advanced Micro Devices,Semiconductors,Information Technology,USA
+INTC,Intel,Semiconductors,Information Technology,USA
+AVGO,Broadcom,Semiconductors,Information Technology,USA
+TXN,Texas Instruments,Semiconductors,Information Technology,USA
+QCOM,Qualcomm,Semiconductors,Information Technology,USA
+MU,Micron Technology,Semiconductors,Information Technology,USA
+ASML,ASML Holding,Semiconductors,Information Technology,USA
+TSM,Taiwan Semiconductor,Semiconductors,Information Technology,USA
+AMAT,Applied Materials,Semiconductors,Information Technology,USA
+PFE,Pfizer,Pharmaceuticals,Healthcare,USA
+JNJ,Johnson & Johnson,Pharmaceuticals,Healthcare,USA
+MRK,Merck,Pharmaceuticals,Healthcare,USA
+ABBV,AbbVie,Pharmaceuticals,Healthcare,USA
+LLY,Eli Lilly,Pharmaceuticals,Healthcare,USA
+BMY,Bristol-Myers Squibb,Pharmaceuticals,Healthcare,USA
+AZN,AstraZeneca,Pharmaceuticals,Healthcare,USA
+NVS,Novartis,Pharmaceuticals,Healthcare,USA
+GILD,Gilead Sciences,Pharmaceuticals,Healthcare,USA
+REGN,Regeneron,Pharmaceuticals,Healthcare,USA
+JPM,JPMorgan Chase,Banks,Financials,USA
+BAC,Bank of America,Banks,Financials,USA
+C,Citigroup,Banks,Financials,USA
+WFC,Wells Fargo,Banks,Financials,USA
+GS,Goldman Sachs,Banks,Financials,USA
+MS,Morgan Stanley,Banks,Financials,USA
+USB,US Bancorp,Banks,Financials,USA
+PNC,PNC Financial,Banks,Financials,USA
+TD,Toronto-Dominion Bank,Banks,Financials,USA
+HSBC,HSBC Holdings,Banks,Financials,USA
+TSLA,Tesla,Automobiles,Consumer Discretionary,USA
+F,Ford,Automobiles,Consumer Discretionary,USA
+GM,General Motors,Automobiles,Consumer Discretionary,USA
+TM,Toyota,Automobiles,Consumer Discretionary,USA
+HMC,Honda,Automobiles,Consumer Discretionary,USA
+BMWYY,BMW,Automobiles,Consumer Discretionary,USA
+DMLRY,Mercedes-Benz,Automobiles,Consumer Discretionary,USA
+RACE,Ferrari,Automobiles,Consumer Discretionary,USA
+STLA,Stellantis,Automobiles,Consumer Discretionary,USA
+NKLA,Nikola Corp,Automobiles,Consumer Discretionary,USA
+XOM,ExxonMobil,Oil & Gas,Energy,USA
+CVX,Chevron,Oil & Gas,Energy,USA
+COP,ConocoPhillips,Oil & Gas,Energy,USA
+BP,BP,Oil & Gas,Energy,USA
+TOT,TotalEnergies,Oil & Gas,Energy,USA
+PXD,Pioneer Natural Resources,Oil & Gas,Energy,USA
+EOG,EOG Resources,Oil & Gas,Energy,USA
+PSX,Phillips 66,Oil & Gas,Energy,USA
+MRO,Marathon Oil,Oil & Gas,Energy,USA
+DVN,Devon Energy,Oil & Gas,Energy,USA
+LMT,Lockheed Martin,Aerospace & Defense,Industrials,USA
+NOC,Northrop Grumman,Aerospace & Defense,Industrials,USA
+BA,Boeing,Aerospace & Defense,Industrials,USA
+RTX,RTX Corporation,Aerospace & Defense,Industrials,USA
+GD,General Dynamics,Aerospace & Defense,Industrials,USA
+VZ,Verizon,Telecom,Communication Services,USA
+T,AT&T,Telecom,Communication Services,USA
+TMUS,T-Mobile US,Telecom,Communication Services,USA
+CHTR,Charter Communications,Telecom,Communication Services,USA
+CMCSA,Comcast,Telecom,Communication Services,USA
+WMT,Walmart,Retail,Consumer Staples,USA
+TGT,Target,Retail,Consumer Staples,USA
+COST,Costco,Retail,Consumer Staples,USA
+AMZN,Amazon,Retail,Consumer Discretionary,USA
+HD,Home Depot,Retail,Consumer Discretionary,USA
+MSFT,Microsoft,Software,Information Technology,USA
+ADBE,Adobe,Software,Information Technology,USA
+CRM,Salesforce,Software,Information Technology,USA
+ORCL,Oracle,Software,Information Technology,USA
+NOW,ServiceNow,Software,Information Technology,USA
+NFLX,Netflix,Streaming,Communication Services,USA
+GOOGL,Alphabet Inc. (Google),Streaming,Communication Services,USA
+META,Meta Platforms,Social Media,Communication Services,USA
+SNAP,Snap Inc.,Social Media,Communication Services,USA
+PINS,Pinterest,Social Media,Communication Services,USA
+NEE,NextEra Energy,Utilities,Utilities,USA
+DUK,Duke Energy,Utilities,Utilities,USA
+SO,Southern Company,Utilities,Utilities,USA
+D,Dominion Energy,Utilities,Utilities,USA
+AEP,American Electric Power,Utilities,Utilities,USA
+NVDA,NVIDIA,AI Infrastructure,Information Technology,USA
+AMD,Advanced Micro Devices,AI Infrastructure,Information Technology,USA
+SMCI,Super Micro Computer,AI Infrastructure,Information Technology,USA
+PLTR,Palantir Technologies,AI Infrastructure,Information Technology,USA
+SNOW,Snowflake,AI Infrastructure,Information Technology,USA
+LIN,Linde,Materials,Materials,USA
+SHW,Sherwin-Williams,Materials,Materials,USA
+ECL,Ecolab,Materials,Materials,USA
+FCX,Freeport-McMoRan,Materials,Materials,USA
+NEM,Newmont Corporation,Materials,Materials,USA
+AMT,American Tower,Real Estate,Real Estate,USA
+PLD,Prologis,Real Estate,Real Estate,USA
+CCI,Crown Castle,Real Estate,Real Estate,USA
+EQIX,Equinix,Real Estate,Real Estate,USA
+SPG,Simon Property Group,Real Estate,Real Estate,USA
+PANW,Palo Alto Networks,Cybersecurity,Information Technology,USA
+FTNT,Fortinet,Cybersecurity,Information Technology,USA
+CRWD,CrowdStrike,Cybersecurity,Information Technology,USA
+ZS,Zscaler,Cybersecurity,Information Technology,USA
+OKTA,Okta,Cybersecurity,Information Technology,USA
+DAL,Delta Air Lines,Airlines,Industrials,USA
+AAL,American Airlines,Airlines,Industrials,USA
+UAL,United Airlines,Airlines,Industrials,USA
+LUV,Southwest Airlines,Airlines,Industrials,USA
+ALK,Alaska Air Group,Airlines,Industrials,USA
+PEP,PepsiCo,Food & Beverage,Consumer Staples,USA
+KO,Coca-Cola,Food & Beverage,Consumer Staples,USA
+MDLZ,Mondelez International,Food & Beverage,Consumer Staples,USA
+GIS,General Mills,Food & Beverage,Consumer Staples,USA
+KHC,Kraft Heinz,Food & Beverage,Consumer Staples,USA
+BRK.B,Berkshire Hathaway,Insurance,Financials,USA
+MET,MetLife,Insurance,Financials,USA
+PRU,Prudential Financial,Insurance,Financials,USA
+AIG,American International Group,Insurance,Financials,USA
+ALL,Allstate,Insurance,Financials,USA
+UPS,United Parcel Service,Logistics,Industrials,USA
+FDX,FedEx,Logistics,Industrials,USA
+CHRW,C.H. Robinson,Logistics,Industrials,USA
+XPO,XPO Logistics,Logistics,Industrials,USA
+ODFL,Old Dominion Freight Line,Logistics,Industrials,USA
+NKE,Nike,Apparel,Consumer Discretionary,USA
+LULU,Lululemon Athletica,Apparel,Consumer Discretionary,USA
+UAA,Under Armour,Apparel,Consumer Discretionary,USA
+PVH,PVH Corp,Apparel,Consumer Discretionary,USA
+RL,Ralph Lauren,Apparel,Consumer Discretionary,USA
+MRVL,Marvell Technology,Semiconductors,Information Technology,USA
+ADI,Analog Devices,Semiconductors,Information Technology,USA
+NXPI,NXP Semiconductors,Semiconductors,Information Technology,USA
+MCHP,Microchip Technology,Semiconductors,Information Technology,USA
+ON,onsemi,Semiconductors,Information Technology,USA
+KLAC,KLA Corporation,Semiconductors,Information Technology,USA
+LRCX,Lam Research,Semiconductors,Information Technology,USA
+TER,Teradyne,Semiconductors,Information Technology,USA
+MPWR,Monolithic Power Systems,Semiconductors,Information Technology,USA
+SLAB,Silicon Labs,Semiconductors,Information Technology,USA
+SWKS,Skyworks Solutions,Semiconductors,Information Technology,USA
+QRVO,Qorvo,Semiconductors,Information Technology,USA
+GFS,GLOBALFOUNDRIES,Semiconductors,Information Technology,USA
+SMTC,Semtech,Semiconductors,Information Technology,USA
+DIOD,Diodes Incorporated,Semiconductors,Information Technology,USA
+POWI,Power Integrations,Semiconductors,Information Technology,USA
+RMBS,Rambus,Semiconductors,Information Technology,USA
+NVMI,Nova Ltd.,Semiconductors,Information Technology,USA
+CAMT,Camtek Ltd.,Semiconductors,Information Technology,USA
+COHR,Coherent Corp.,Semiconductors,Information Technology,USA
+ACLS,Axcelis Technologies,Semiconductors,Information Technology,USA
+HIMX,Himax Technologies,Semiconductors,Information Technology,USA
+IPGP,IPG Photonics,Semiconductors,Information Technology,USA
+AMKR,Amkor Technology,Semiconductors,Information Technology,USA
+AEIS,Advanced Energy Industries,Semiconductors,Information Technology,USA
+STM,STMicroelectronics (ADR),Semiconductors,Information Technology,USA
+IFX.DE,Infineon Technologies,Semiconductors,Information Technology,Germany
+6723.T,Renesas Electronics,Semiconductors,Information Technology,Japan
+8035.T,Tokyo Electron,Semiconductors,Information Technology,Japan
+6857.T,Advantest,Semiconductors,Information Technology,Japan
+2454.TW,MediaTek,Semiconductors,Information Technology,Taiwan
+2303.TW,United Microelectronics,Semiconductors,Information Technology,Taiwan
+2379.TW,Realtek Semiconductor,Semiconductors,Information Technology,Taiwan
+2337.TW,Macronix International,Semiconductors,Information Technology,Taiwan
+005930.KS,Samsung Electronics,Semiconductors,Information Technology,South Korea
+000660.KS,SK hynix,Semiconductors,Information Technology,South Korea
+STM.PA,STMicroelectronics,Semiconductors,Information Technology,France
+IFX.F,Infineon Technologies,Semiconductors,Information Technology,Germany
+6902.T,Denso (Semis division),Semiconductors,Information Technology,Japan
+8036.T,Hitachi High-Tech (semi equip),Semiconductors,Information Technology,Japan
+5269.TWO,Silergy,Semiconductors,Information Technology,Taiwan
+3529.TW,Silicon Motion Technology,Semiconductors,Information Technology,Taiwan
+0385.HK,Vanguard International Semiconductors,Semiconductors,Information Technology,Hong Kong
+AMGN,Amgen,Pharmaceuticals,Healthcare,USA
+BIIB,Biogen,Pharmaceuticals,Healthcare,USA
+VRTX,Vertex Pharmaceuticals,Pharmaceuticals,Healthcare,USA
+SNY,Sanofi (ADR),Pharmaceuticals,Healthcare,USA
+GSK,GSK plc (ADR),Pharmaceuticals,Healthcare,USA
+BAYRY,Bayer (ADR),Pharmaceuticals,Healthcare,USA
+TAK,Takeda Pharmaceutical (ADR),Pharmaceuticals,Healthcare,USA
+RDY,Dr. Reddy's Laboratories,Pharmaceuticals,Healthcare,USA
+TEVA,Teva Pharmaceutical,Pharmaceuticals,Healthcare,USA
+HIK.L,Hikma Pharmaceuticals,Pharmaceuticals,Healthcare,UK
+ROG.SW,Roche Holding,Pharmaceuticals,Healthcare,Switzerland
+NOVN.SW,Novartis,Pharmaceuticals,Healthcare,Switzerland
+SAN.PA,Sanofi,Pharmaceuticals,Healthcare,France
+AZN.L,AstraZeneca,Pharmaceuticals,Healthcare,UK
+BAYN.DE,Bayer,Pharmaceuticals,Healthcare,Germany
+4502.T,Takeda Pharmaceutical,Pharmaceuticals,Healthcare,Japan
+4507.T,Shionogi,Pharmaceuticals,Healthcare,Japan
+4519.T,Chugai Pharmaceutical,Pharmaceuticals,Healthcare,Japan
+4755.T,Rakuten Medical (biopharma),Pharmaceuticals,Healthcare,Japan
+SUNPHARMA.NS,Sun Pharmaceutical,Pharmaceuticals,Healthcare,India
+CIPLA.NS,Cipla,Pharmaceuticals,Healthcare,India
+LUPIN.NS,Lupin,Pharmaceuticals,Healthcare,India
+DRREDDY.NS,Dr. Reddy's Laboratories,Pharmaceuticals,Healthcare,India
+ZTS,Zoetis,Pharmaceuticals,Healthcare,USA
+ICLR,ICON plc,Pharmaceuticals,Healthcare,USA
+ILMN,Illumina,Pharmaceuticals,Healthcare,USA
+BGNE,BeiGene,Pharmaceuticals,Healthcare,USA
+BNTX,BioNTech,Pharmaceuticals,Healthcare,USA
+NTLA,Intellia Therapeutics,Pharmaceuticals,Healthcare,USA
+VTRS,Viatris,Pharmaceuticals,Healthcare,USA
+SNYNF,Sanofi (OTC),Pharmaceuticals,Healthcare,USA
+RHHBY,Roche Holding (ADR),Pharmaceuticals,Healthcare,USA
+NVO,Novo Nordisk (ADR),Pharmaceuticals,Healthcare,USA
+NOVO-B.CO,Novo Nordisk,Pharmaceuticals,Healthcare,Denmark
+UCB.BR,UCB,Pharmaceuticals,Healthcare,Belgium
+ASND,argenx SE,Pharmaceuticals,Healthcare,USA
+ARGX,argenx SE (AMS),Pharmaceuticals,Healthcare,Netherlands
+ALXN,Alexion (legacy),Pharmaceuticals,Healthcare,USA
+TFC,Truist Financial,Banks,Financials,USA
+BK,Bank of New York Mellon,Banks,Financials,USA
+SCHW,Charles Schwab,Banks,Financials,USA
+RY,Royal Bank of Canada,Banks,Financials,Canada
+BNS,Bank of Nova Scotia,Banks,Financials,Canada
+BMO,Bank of Montreal,Banks,Financials,Canada
+CM,Canadian Imperial Bank of Commerce,Banks,Financials,Canada
+SAN,Banco Santander (ADR),Banks,Financials,USA
+BBVA,Banco Bilbao Vizcaya Argentaria (ADR),Banks,Financials,USA
+ING,ING Groep (ADR),Banks,Financials,USA
+DB,Deutsche Bank,Banks,Financials,Germany
+UBS,UBS Group,Banks,Financials,Switzerland
+NWG,NatWest Group,Banks,Financials,UK
+LLOY.L,Lloyds Banking Group,Banks,Financials,UK
+BARC.L,Barclays,Banks,Financials,UK
+STAN.L,Standard Chartered,Banks,Financials,UK
+BNP.PA,BNP Paribas,Banks,Financials,France
+GLE.PA,Société Générale,Banks,Financials,France
+ISP.MI,Intesa Sanpaolo,Banks,Financials,Italy
+UCG.MI,UniCredit,Banks,Financials,Italy
+DOM.MC,Banco Sabadell,Banks,Financials,Spain
+CABK.MC,CaixaBank,Banks,Financials,Spain
+MFG,Mizuho Financial Group (ADR),Banks,Financials,USA
+MUFG,Mitsubishi UFJ Financial Group (ADR),Banks,Financials,USA
+SMFG,Sumitomo Mitsui Financial Group (ADR),Banks,Financials,USA
+1398.HK,ICBC,Banks,Financials,Hong Kong
+0939.HK,China Construction Bank,Banks,Financials,Hong Kong
+3988.HK,Bank of China,Banks,Financials,Hong Kong
+1288.HK,Agricultural Bank of China,Banks,Financials,Hong Kong
+HDB,HDFC Bank (ADR),Banks,Financials,USA
+IBN,ICICI Bank (ADR),Banks,Financials,USA
+AXISBANK.NS,Axis Bank,Banks,Financials,India
+KOTAKBANK.NS,Kotak Mahindra Bank,Banks,Financials,India
+ANZ.AX,Australia & New Zealand Banking Group,Banks,Financials,Australia
+CBA.AX,Commonwealth Bank of Australia,Banks,Financials,Australia
+NAB.AX,National Australia Bank,Banks,Financials,Australia
+WBC.AX,Westpac Banking,Banks,Financials,Australia
+D05.SI,DBS Group,Banks,Financials,Singapore
+O39.SI,OCBC Bank,Banks,Financials,Singapore
+U11.SI,United Overseas Bank,Banks,Financials,Singapore
+RIVN,Rivian Automotive,Automobiles,Consumer Discretionary,USA
+LCID,Lucid Group,Automobiles,Consumer Discretionary,USA
+NIO,NIO Inc.,Automobiles,Consumer Discretionary,USA
+XPEV,XPeng,Automobiles,Consumer Discretionary,USA
+LI,Li Auto,Automobiles,Consumer Discretionary,USA
+BYDDY,BYD Company (ADR),Automobiles,Consumer Discretionary,USA
+VWAGY,Volkswagen (ADR),Automobiles,Consumer Discretionary,USA
+MBG.DE,Mercedes-Benz Group,Automobiles,Consumer Discretionary,Germany
+PSNY,Polestar Automotive,Automobiles,Consumer Discretionary,USA
+VOLCAR-B.ST,Volvo Car AB,Automobiles,Consumer Discretionary,Sweden
+7201.T,Nissan Motor,Automobiles,Consumer Discretionary,Japan
+7261.T,Mazda Motor,Automobiles,Consumer Discretionary,Japan
+7269.T,Suzuki Motor,Automobiles,Consumer Discretionary,Japan
+7270.T,Subaru,Automobiles,Consumer Discretionary,Japan
+000270.KS,Kia Corporation,Automobiles,Consumer Discretionary,South Korea
+005380.KS,Hyundai Motor,Automobiles,Consumer Discretionary,South Korea
+TTM,Tata Motors (ADR),Automobiles,Consumer Discretionary,USA
+1211.HK,BYD Company,Automobiles,Consumer Discretionary,Hong Kong
+2233.HK,Great Wall Motor,Automobiles,Consumer Discretionary,Hong Kong
+0175.HK,Geely Automobile,Automobiles,Consumer Discretionary,Hong Kong
+SAIC.SS,SAIC Motor,Automobiles,Consumer Discretionary,China
+FCAU,Fiat Chrysler Automobiles (legacy),Automobiles,Consumer Discretionary,USA
+P911.DE,Porsche AG,Automobiles,Consumer Discretionary,Germany
+P911_p.DE,Porsche AG (Pref.),Automobiles,Consumer Discretionary,Germany
+PEUG.PA,Peugeot (legacy PSA),Automobiles,Consumer Discretionary,France
+HOG,Harley-Davidson,Automobiles,Consumer Discretionary,USA
+PII,Polaris,Automobiles,Consumer Discretionary,USA
+DAI.DE,Daimler (legacy),Automobiles,Consumer Discretionary,Germany
+ALV,Autoliv,Automobiles,Consumer Discretionary,USA
+MGA,Magna International,Automobiles,Consumer Discretionary,Canada
+LEA,Lear Corporation,Automobiles,Consumer Discretionary,USA
+BWA,BorgWarner,Automobiles,Consumer Discretionary,USA
+APTV,Aptiv,Automobiles,Consumer Discretionary,USA
+VC,Visteon,Automobiles,Consumer Discretionary,USA
+FREY,FREYR Battery,Automobiles,Consumer Discretionary,USA
+LCII,LCI Industries,Automobiles,Consumer Discretionary,USA
+WKHS,Workhorse Group,Automobiles,Consumer Discretionary,USA
+FSR,Fisker,Automobiles,Consumer Discretionary,USA
+OXY,Occidental Petroleum,Oil & Gas,Energy,USA
+FANG,Diamondback Energy,Oil & Gas,Energy,USA
+APA,APA Corporation,Oil & Gas,Energy,USA
+CTRA,Coterra Energy,Oil & Gas,Energy,USA
+VLO,Valero Energy,Oil & Gas,Energy,USA
+MPC,Marathon Petroleum,Oil & Gas,Energy,USA
+PBR,Petrobras (ADR),Oil & Gas,Energy,USA
+EC,Ecopetrol (ADR),Oil & Gas,Energy,USA
+ENB,Enbridge,Oil & Gas,Energy,Canada
+TRP,TC Energy,Oil & Gas,Energy,Canada
+PBA,Pembina Pipeline,Oil & Gas,Energy,Canada
+CNQ,Canadian Natural Resources,Oil & Gas,Energy,Canada
+SU,Suncor Energy,Oil & Gas,Energy,Canada
+IMO,Imperial Oil,Oil & Gas,Energy,Canada
+SHEL,Shell plc,Oil & Gas,Energy,UK
+TTE,TotalEnergies,Oil & Gas,Energy,France
+EQNR,Equinor,Oil & Gas,Energy,Norway
+ENI,Eni SpA (ADR),Oil & Gas,Energy,USA
+SLB,Schlumberger,Oil & Gas,Energy,USA
+HAL,Halliburton,Oil & Gas,Energy,USA
+BKR,Baker Hughes,Oil & Gas,Energy,USA
+WDS,Woodside Energy Group,Oil & Gas,Energy,USA
+SNP,Sinopec (ADR),Oil & Gas,Energy,USA
+PTR,PetroChina (ADR),Oil & Gas,Energy,USA
+CNOOC,CNOOC (ADR),Oil & Gas,Energy,USA
+AR,Antero Resources,Oil & Gas,Energy,USA
+RRC,Range Resources,Oil & Gas,Energy,USA
+SWN,Southwestern Energy,Oil & Gas,Energy,USA
+CHK,Chesapeake Energy,Oil & Gas,Energy,USA
+OVV,Ovintiv,Oil & Gas,Energy,USA
+HES,Hess,Oil & Gas,Energy,USA
+KMI,Kinder Morgan,Oil & Gas,Energy,USA
+WMB,Williams Companies,Oil & Gas,Energy,USA
+OKE,ONEOK,Oil & Gas,Energy,USA
+ET,Energy Transfer LP,Oil & Gas,Energy,USA
+TRMD,TORM plc (tankers),Oil & Gas,Energy,USA
+DHT,DHT Holdings (tankers),Oil & Gas,Energy,USA
+EURN,Euronav (tankers),Oil & Gas,Energy,Belgium
+FRO,Frontline,Oil & Gas,Energy,Norway
+STNG,Scorpio Tankers,Oil & Gas,Energy,USA
+VOD,Vodafone Group,Telecom,Communication Services,UK
+ORAN,Orange,Telecom,Communication Services,France
+TEF,Telefónica,Telecom,Communication Services,Spain
+AMX,América Móvil,Telecom,Communication Services,Mexico
+BT,BT Group (ADR),Telecom,Communication Services,USA
+DTEGY,Deutsche Telekom (ADR),Telecom,Communication Services,USA
+RCI,Rogers Communications,Telecom,Communication Services,Canada
+BCE,BCE Inc.,Telecom,Communication Services,Canada
+TU,TELUS,Telecom,Communication Services,Canada
+NTTYY,Nippon Telegraph and Telephone (ADR),Telecom,Communication Services,USA
+KDDIY,KDDI (ADR),Telecom,Communication Services,USA
+SKM,SK Telecom,Telecom,Communication Services,South Korea
+TLSYY,Telstra (ADR),Telecom,Communication Services,USA
+MBT,Mobile TeleSystems,Telecom,Communication Services,USA
+TDS,Telephone and Data Systems,Telecom,Communication Services,USA
+USM,UScellular,Telecom,Communication Services,USA
+IILTD.NS,Indus Towers,Telecom,Communication Services,India
+BHARTIARTL.NS,Bharti Airtel,Telecom,Communication Services,India
+IDEA.NS,Vodafone Idea,Telecom,Communication Services,India
+0941.HK,China Mobile,Telecom,Communication Services,Hong Kong
+0762.HK,China Unicom,Telecom,Communication Services,Hong Kong
+0728.HK,China Telecom,Telecom,Communication Services,Hong Kong
+TLS.AX,Telstra,Telecom,Communication Services,Australia
+SPT.L,Spirent Communications,Telecom,Communication Services,UK
+SAP,SAP SE (ADR),Software,Information Technology,USA
+INTU,Intuit,Software,Information Technology,USA
+SNOW,Snowflake,Software,Information Technology,USA
+MDB,MongoDB,Software,Information Technology,USA
+DDOG,Datadog,Software,Information Technology,USA
+WDAY,Workday,Software,Information Technology,USA
+TEAM,Atlassian,Software,Information Technology,USA
+DOCU,DocuSign,Software,Information Technology,USA
+HUBS,HubSpot,Software,Information Technology,USA
+PTC,PTC Inc.,Software,Information Technology,USA
+ANSS,ANSYS,Software,Information Technology,USA
+ADSK,Autodesk,Software,Information Technology,USA
+CDNS,Cadence Design Systems,Software,Information Technology,USA
+SNPS,Synopsys,Software,Information Technology,USA
+SHOP,Shopify,Software,Information Technology,Canada
+ZEN,Zendesk (legacy),Software,Information Technology,USA
+ESTC,Elastic,Software,Information Technology,USA
+U,Unity Software,Software,Information Technology,USA
+PLTR,Palantir Technologies,Software,Information Technology,USA
+SMAR,Smartsheet,Software,Information Technology,USA
+APP,AppLovin,Software,Information Technology,USA
+DT,Dynatrace,Software,Information Technology,USA
+OKTA,Okta,Software,Information Technology,USA
+NET,Cloudflare,Software,Information Technology,USA
+ZS,Zscaler,Software,Information Technology,USA
+DIS,The Walt Disney Company,Streaming,Communication Services,USA
+WBD,Warner Bros. Discovery,Streaming,Communication Services,USA
+PARA,Paramount Global,Streaming,Communication Services,USA
+ROKU,Roku,Streaming,Communication Services,USA
+SPOT,Spotify,Streaming,Communication Services,USA
+CMCSA,Comcast (Peacock),Streaming,Communication Services,USA
+AAPL,Apple (Apple TV+),Streaming,Communication Services,USA
+AMZN,Amazon (Prime Video),Streaming,Communication Services,USA
+IQ,iQIYI,Streaming,Communication Services,USA
+BILI,Bilibili,Streaming,Communication Services,USA
+TME,Tencent Music,Streaming,Communication Services,USA
+HUYA,HUYA,Streaming,Communication Services,USA
+YY,JOYY,Streaming,Communication Services,USA
+WB,Weibo,Social Media,Communication Services,USA
+MTCH,Match Group,Social Media,Communication Services,USA
+TCEHY,Tencent (ADR),Social Media,Communication Services,USA
+BIDU,Baidu,Social Media,Communication Services,USA
+BZFD,BuzzFeed,Social Media,Communication Services,USA
+YY,JOYY,Social Media,Communication Services,USA
+EXC,Constellation Energy,Utilities,Utilities,USA
+XEL,Xcel Energy,Utilities,Utilities,USA
+PEG,Public Service Enterprise Group,Utilities,Utilities,USA
+SRE,Sempra,Utilities,Utilities,USA
+PPL,PPL Corporation,Utilities,Utilities,USA
+ED,Consolidated Edison,Utilities,Utilities,USA
+PCG,PG&E,Utilities,Utilities,USA
+EIX,Edison International,Utilities,Utilities,USA
+AES,The AES Corporation,Utilities,Utilities,USA
+AWK,American Water Works,Utilities,Utilities,USA
+WEC,WEC Energy Group,Utilities,Utilities,USA
+ETR,Entergy,Utilities,Utilities,USA
+FE,FirstEnergy,Utilities,Utilities,USA
+CEG,Constellation Energy,Utilities,Utilities,USA
+FTS,Fortis,Utilities,Utilities,Canada
+NGG,National Grid (ADR),Utilities,Utilities,USA
+ENLAY,Enel (ADR),Utilities,Utilities,USA
+IBDRY,Iberdrola (ADR),Utilities,Utilities,USA
+RWE.DE,RWE,Utilities,Utilities,Germany
+EOAN.DE,E.ON,Utilities,Utilities,Germany
+DLR,Digital Realty,Real Estate,Real Estate,USA
+O,Realty Income,Real Estate,Real Estate,USA
+VTR,Ventas,Real Estate,Real Estate,USA
+WELL,Welltower,Real Estate,Real Estate,USA
+EQR,Equity Residential,Real Estate,Real Estate,USA
+AVB,AvalonBay Communities,Real Estate,Real Estate,USA
+ESS,Essex Property Trust,Real Estate,Real Estate,USA
+UDR,"UDR, Inc.",Real Estate,Real Estate,USA
+CPT,Camden Property Trust,Real Estate,Real Estate,USA
+ARE,Alexandria Real Estate,Real Estate,Real Estate,USA
+BXP,Boston Properties,Real Estate,Real Estate,USA
+SLG,SL Green Realty,Real Estate,Real Estate,USA
+VNO,Vornado Realty Trust,Real Estate,Real Estate,USA
+KIM,Kimco Realty,Real Estate,Real Estate,USA
+REG,Regency Centers,Real Estate,Real Estate,USA
+PSA,Public Storage,Real Estate,Real Estate,USA
+EXR,Extra Space Storage,Real Estate,Real Estate,USA
+CUBE,CubeSmart,Real Estate,Real Estate,USA
+WY,Weyerhaeuser,Real Estate,Real Estate,USA
+HST,Host Hotels & Resorts,Real Estate,Real Estate,USA
+NLY,Annaly Capital Management,Real Estate,Real Estate,USA
+AGNC,AGNC Investment,Real Estate,Real Estate,USA
+PEAK,Healthpeak Properties,Real Estate,Real Estate,USA
+S,SentinelOne,Cybersecurity,Information Technology,USA
+CYBR,CyberArk,Cybersecurity,Information Technology,USA
+TENB,Tenable,Cybersecurity,Information Technology,USA
+QLYS,Qualys,Cybersecurity,Information Technology,USA
+RPD,Rapid7,Cybersecurity,Information Technology,USA
+VRNS,Varonis Systems,Cybersecurity,Information Technology,USA
+NET,Cloudflare,Cybersecurity,Information Technology,USA
+AKAM,Akamai Technologies,Cybersecurity,Information Technology,USA
+DT,Dynatrace,Cybersecurity,Information Technology,USA
+CHKP,Check Point Software,Cybersecurity,Information Technology,USA
+TREND.T,Trend Micro,Cybersecurity,Information Technology,Japan
+JBLU,JetBlue Airways,Airlines,Industrials,USA
+SAVE,Spirit Airlines,Airlines,Industrials,USA
+ULCC,Frontier Group Holdings,Airlines,Industrials,USA
+RYAAY,Ryanair Holdings,Airlines,Industrials,USA
+EZJ.L,easyJet,Airlines,Industrials,UK
+IAG.L,International Airlines Group,Airlines,Industrials,UK
+AF.PA,Air France-KLM,Airlines,Industrials,France
+LHA.DE,Deutsche Lufthansa,Airlines,Industrials,Germany
+QAN.AX,Qantas Airways,Airlines,Industrials,Australia
+AC.TO,Air Canada,Airlines,Industrials,Canada
+CPA,Copa Holdings,Airlines,Industrials,USA
+GOL,GOL Linhas Aéreas Inteligentes,Airlines,Industrials,USA
+AZUL,Azul S.A.,Airlines,Industrials,USA
+9202.T,ANA Holdings,Airlines,Industrials,Japan
+9201.T,Japan Airlines,Airlines,Industrials,Japan
+C6L.SI,Singapore Airlines,Airlines,Industrials,Singapore
+0293.HK,Cathay Pacific Airways,Airlines,Industrials,Hong Kong
+THYAO.IS,Turkish Airlines,Airlines,Industrials,Turkey
+WIZZ.L,Wizz Air Holdings,Airlines,Industrials,UK
+K,Kellanova,Food & Beverage,Consumer Staples,USA
+CPB,Campbell Soup,Food & Beverage,Consumer Staples,USA
+MCD,McDonald's,Food & Beverage,Consumer Staples,USA
+YUM,Yum! Brands,Food & Beverage,Consumer Staples,USA
+QSR,Restaurant Brands International,Food & Beverage,Consumer Staples,Canada
+SBUX,Starbucks,Food & Beverage,Consumer Staples,USA
+TSN,Tyson Foods,Food & Beverage,Consumer Staples,USA
+HSY,Hershey,Food & Beverage,Consumer Staples,USA
+KDP,Keurig Dr Pepper,Food & Beverage,Consumer Staples,USA
+MNST,Monster Beverage,Food & Beverage,Consumer Staples,USA
+NSRGY,Nestlé (ADR),Food & Beverage,Consumer Staples,USA
+UL,Unilever,Food & Beverage,Consumer Staples,UK
+DANOY,Danone (ADR),Food & Beverage,Consumer Staples,USA
+HEINY,Heineken (ADR),Food & Beverage,Consumer Staples,USA
+BUD,AB InBev,Food & Beverage,Consumer Staples,Belgium
+DEO,Diageo,Food & Beverage,Consumer Staples,UK
+STZ,Constellation Brands,Food & Beverage,Consumer Staples,USA
+TAP,Molson Coors,Food & Beverage,Consumer Staples,USA
+CAG,Conagra Brands,Food & Beverage,Consumer Staples,USA
+KOF,Coca-Cola FEMSA,Food & Beverage,Consumer Staples,Mexico
+FMX,FEMSA,Food & Beverage,Consumer Staples,Mexico
+BRFS,BRF S.A.,Food & Beverage,Consumer Staples,Brazil
+BYND,Beyond Meat,Food & Beverage,Consumer Staples,USA
+PGR,Progressive,Insurance,Financials,USA
+TRV,Travelers,Insurance,Financials,USA
+CB,Chubb,Insurance,Financials,USA
+LNC,Lincoln National,Insurance,Financials,USA
+AFL,Aflac,Insurance,Financials,USA
+HIG,Hartford Financial Services,Insurance,Financials,USA
+AON,Aon plc,Insurance,Financials,UK
+MMC,Marsh & McLennan,Insurance,Financials,USA
+WTW,Willis Towers Watson,Insurance,Financials,UK
+ERIE,Erie Indemnity,Insurance,Financials,USA
+PUK,Prudential plc (ADR),Insurance,Financials,USA
+MFC,Manulife Financial,Insurance,Financials,Canada
+SLF,Sun Life Financial,Insurance,Financials,Canada
+ZURVY,Zurich Insurance Group (ADR),Insurance,Financials,USA
+ALIZY,Allianz (ADR),Insurance,Financials,USA
+AXAHY,AXA (ADR),Insurance,Financials,USA
+MURGY,Munich Re (ADR),Insurance,Financials,USA
+DPW.DE,Deutsche Post DHL Group,Logistics,Industrials,Germany
+GXO,GXO Logistics,Logistics,Industrials,USA
+EXPD,Expeditors International,Logistics,Industrials,USA
+JBHT,J.B. Hunt Transport,Logistics,Industrials,USA
+WERN,Werner Enterprises,Logistics,Industrials,USA
+SAIA,"Saia, Inc.",Logistics,Industrials,USA
+HLAG.DE,Hapag-Lloyd,Logistics,Industrials,Germany
+ZIM,ZIM Integrated Shipping,Logistics,Industrials,USA
+1919.HK,COSCO Shipping Holdings,Logistics,Industrials,Hong Kong
+2603.TW,Evergreen Marine,Logistics,Industrials,Taiwan
+2609.TW,Yang Ming Marine Transport,Logistics,Industrials,Taiwan
+9101.T,Nippon Yusen,Logistics,Industrials,Japan
+9104.T,Mitsui O.S.K. Lines,Logistics,Industrials,Japan
+9107.T,Kawasaki Kisen Kaisha,Logistics,Industrials,Japan
+KNIN.SW,Kuehne + Nagel,Logistics,Industrials,Switzerland
+DSV.CO,DSV A/S,Logistics,Industrials,Denmark
+MAERSK-B.CO,AP Møller-Mærsk B,Logistics,Industrials,Denmark
+ACWI,Atlas Corp. (legacy),Logistics,Industrials,USA
+ADDYY,Adidas (ADR),Apparel,Consumer Discretionary,USA
+PUM.DE,Puma,Apparel,Consumer Discretionary,Germany
+UA,Under Armour C,Apparel,Consumer Discretionary,USA
+VFC,VF Corporation,Apparel,Consumer Discretionary,USA
+TPR,Tapestry,Apparel,Consumer Discretionary,USA
+CPRI,Capri Holdings,Apparel,Consumer Discretionary,USA
+HMB.ST,H&M,Apparel,Consumer Discretionary,Sweden
+ITX.MC,Inditex (Zara),Apparel,Consumer Discretionary,Spain
+9983.T,Fast Retailing (Uniqlo),Apparel,Consumer Discretionary,Japan
+BRBY.L,Burberry,Apparel,Consumer Discretionary,UK
+MONC.MI,Moncler,Apparel,Consumer Discretionary,Italy
+KER.PA,Kering,Apparel,Consumer Discretionary,France
+MC.PA,LVMH,Apparel,Consumer Discretionary,France
+SHOO,Steven Madden,Apparel,Consumer Discretionary,USA
+CROX,Crocs,Apparel,Consumer Discretionary,USA
+DECK,Deckers Outdoor,Apparel,Consumer Discretionary,USA
+SKX,Skechers,Apparel,Consumer Discretionary,USA
+COLM,Columbia Sportswear,Apparel,Consumer Discretionary,USA
+ASC.L,ASOS,Apparel,Consumer Discretionary,UK
+ONON,On Holding,Apparel,Consumer Discretionary,USA
+GOOS,Canada Goose,Apparel,Consumer Discretionary,Canada
+APD,Air Products & Chemicals,Materials,Materials,USA
+PPG,PPG Industries,Materials,Materials,USA
+MLM,Martin Marietta Materials,Materials,Materials,USA
+VMC,Vulcan Materials,Materials,Materials,USA
+GOLD,Barrick Gold,Materials,Materials,Canada
+SCCO,Southern Copper,Materials,Materials,USA
+BHP,BHP Group,Materials,Materials,Australia
+RIO,Rio Tinto,Materials,Materials,UK
+VALE,Vale S.A.,Materials,Materials,Brazil
+NUE,Nucor,Materials,Materials,USA
+X,United States Steel,Materials,Materials,USA
+STLD,Steel Dynamics,Materials,Materials,USA
+AA,Alcoa,Materials,Materials,USA
+MOS,The Mosaic Company,Materials,Materials,USA
+NTR,Nutrien,Materials,Materials,Canada
+CF,CF Industries,Materials,Materials,USA
+ICL,ICL Group,Materials,Materials,Israel
+SQM,Sociedad Química y Minera,Materials,Materials,Chile
+ALB,Albemarle,Materials,Materials,USA
+LHX,L3Harris Technologies,Aerospace & Defense,Industrials,USA
+HII,Huntington Ingalls Industries,Aerospace & Defense,Industrials,USA
+TDG,TransDigm Group,Aerospace & Defense,Industrials,USA
+HEI,HEICO,Aerospace & Defense,Industrials,USA
+TXT,Textron,Aerospace & Defense,Industrials,USA
+AIR.PA,Airbus,Aerospace & Defense,Industrials,France
+SAF.PA,Safran,Aerospace & Defense,Industrials,France
+RR.L,Rolls-Royce Holdings,Aerospace & Defense,Industrials,UK
+BAESY,BAE Systems (ADR),Aerospace & Defense,Industrials,USA
+HO.PA,Thales,Aerospace & Defense,Industrials,France
+ERJ,Embraer,Aerospace & Defense,Industrials,USA
+ESLT,Elbit Systems,Aerospace & Defense,Industrials,Israel
+AVAV,AeroVironment,Aerospace & Defense,Industrials,USA
+KTOS,Kratos Defense & Security,Aerospace & Defense,Industrials,USA
+DELL,Dell Technologies,AI Infrastructure,Information Technology,USA
+HPE,Hewlett Packard Enterprise,AI Infrastructure,Information Technology,USA
+IBM,IBM,AI Infrastructure,Information Technology,USA
+ANET,Arista Networks,AI Infrastructure,Information Technology,USA
+CSCO,Cisco Systems,AI Infrastructure,Information Technology,USA
+EQIX,Equinix,AI Infrastructure,Information Technology,USA
+DLR,Digital Realty,AI Infrastructure,Information Technology,USA
+AMZN,Amazon Web Services (Amazon),AI Infrastructure,Information Technology,USA
+MSFT,Microsoft Azure (Microsoft),AI Infrastructure,Information Technology,USA
+GOOGL,Alphabet (Google Cloud),AI Infrastructure,Information Technology,USA
+META,Meta Platforms,AI Infrastructure,Information Technology,USA
+TSM,Taiwan Semiconductor (ADR),AI Infrastructure,Information Technology,USA
+ASML,ASML Holding,AI Infrastructure,Information Technology,USA
+AMAT,Applied Materials,AI Infrastructure,Information Technology,USA
+KLAC,KLA Corporation,AI Infrastructure,Information Technology,USA
+LRCX,Lam Research,AI Infrastructure,Information Technology,USA
+INTC,Intel,AI Infrastructure,Information Technology,USA
+LOW,Lowe's,Retail,Consumer Staples,USA
+BABA,Alibaba Group,Retail,Consumer Staples,USA
+JD,JD.com,Retail,Consumer Staples,USA
+MELI,MercadoLibre,Retail,Consumer Staples,USA
+EBAY,eBay,Retail,Consumer Staples,USA
+PDD,PDD Holdings,Retail,Consumer Staples,USA
+KR,Kroger,Retail,Consumer Staples,USA
+WBA,Walgreens Boots Alliance,Retail,Consumer Staples,USA
+CVS,CVS Health,Retail,Consumer Staples,USA
+BBY,Best Buy,Retail,Consumer Staples,USA
+TJX,TJX Companies,Retail,Consumer Staples,USA
+ROST,Ross Stores,Retail,Consumer Staples,USA
+DG,Dollar General,Retail,Consumer Staples,USA
+DLTR,Dollar Tree,Retail,Consumer Staples,USA
+FIVE,Five Below,Retail,Consumer Staples,USA
+ULTA,Ulta Beauty,Retail,Consumer Staples,USA
+AZO,AutoZone,Retail,Consumer Staples,USA
+ORLY,O'Reilly Automotive,Retail,Consumer Staples,USA
+AAP,Advance Auto Parts,Retail,Consumer Staples,USA
+KMX,CarMax,Retail,Consumer Staples,USA
+AN,AutoNation,Retail,Consumer Staples,USA
+BLK,BlackRock,Asset Management & Investment Firms,Financials,USA
+BX,Blackstone,Asset Management & Investment Firms,Financials,USA
+KKR,KKR & Co.,Asset Management & Investment Firms,Financials,USA
+APO,Apollo Global Management,Asset Management & Investment Firms,Financials,USA
+CG,The Carlyle Group,Asset Management & Investment Firms,Financials,USA
+ARES,Ares Management,Asset Management & Investment Firms,Financials,USA
+OWL,Blue Owl Capital,Asset Management & Investment Firms,Financials,USA
+HLNE,Hamilton Lane,Asset Management & Investment Firms,Financials,USA
+AMG,Affiliated Managers Group,Asset Management & Investment Firms,Financials,USA
+TROW,T. Rowe Price,Asset Management & Investment Firms,Financials,USA
+BEN,Franklin Resources,Asset Management & Investment Firms,Financials,USA
+IVZ,Invesco Ltd.,Asset Management & Investment Firms,Financials,USA
+JHG,Janus Henderson Group,Asset Management & Investment Firms,Financials,USA
+AB,AllianceBernstein,Asset Management & Investment Firms,Financials,USA
+FHI,Federated Hermes,Asset Management & Investment Firms,Financials,USA
+SEIC,SEI Investments,Asset Management & Investment Firms,Financials,USA
+TPG,TPG Inc.,Asset Management & Investment Firms,Financials,USA
+STEP,StepStone Group,Asset Management & Investment Firms,Financials,USA
+ARCC,Ares Capital Corp.,Asset Management & Investment Firms,Financials,USA
+APAM,Artisan Partners Asset Mgmt,Asset Management & Investment Firms,Financials,USA
+CNS,Cohen & Steers,Asset Management & Investment Firms,Financials,USA
+LAZ,Lazard Ltd,Asset Management & Investment Firms,Financials,USA
+NTRS,Northern Trust,Asset Management & Investment Firms,Financials,USA
+STT,State Street,Asset Management & Investment Firms,Financials,USA
+PFG,Principal Financial Group,Asset Management & Investment Firms,Financials,USA
+VRTS,Virtus Investment Partners,Asset Management & Investment Firms,Financials,USA
+BAM,Brookfield Asset Management,Asset Management & Investment Firms,Financials,Canada
+BN,Brookfield Corporation,Asset Management & Investment Firms,Financials,Canada
+AMUN.PA,Amundi SA,Asset Management & Investment Firms,Financials,France
+SDR.L,Schroders plc,Asset Management & Investment Firms,Financials,UK
+ABDN.L,abrdn plc,Asset Management & Investment Firms,Financials,UK
+EMG.L,Man Group plc,Asset Management & Investment Firms,Financials,UK
+ICP.L,Intermediate Capital Group,Asset Management & Investment Firms,Financials,UK
+III.L,3i Group plc,Asset Management & Investment Firms,Financials,UK
+DWS.DE,DWS Group,Asset Management & Investment Firms,Financials,Germany
+AZM.MI,Azimut Holding,Asset Management & Investment Firms,Financials,Italy
+ANIM.MI,Anima Holding,Asset Management & Investment Firms,Financials,Italy
+EQT.ST,EQT AB,Asset Management & Investment Firms,Financials,Sweden
+PGHN.SW,Partners Group,Asset Management & Investment Firms,Financials,Switzerland
+BAER.SW,Julius Baer Group,Asset Management & Investment Firms,Financials,Switzerland
+IGM.TO,IGM Financial,Asset Management & Investment Firms,Financials,Canada
+CIX.TO,CI Financial,Asset Management & Investment Firms,Financials,Canada
+FSZ.TO,Fiera Capital,Asset Management & Investment Firms,Financials,Canada
+INVE-B.ST,Investor AB (B),Asset Management & Investment Firms,Financials,Sweden
+360ONE.NS,360 ONE WAM,Asset Management & Investment Firms,Financials,India
+HDFCAMC.NS,HDFC Asset Management,Asset Management & Investment Firms,Financials,India
+UTIAMC.NS,UTI Asset Management,Asset Management & Investment Firms,Financials,India
+ABSLAMC.NS,Aditya Birla Sun Life AMC,Asset Management & Investment Firms,Financials,India
+SJP.L,St. James's Place,Asset Management & Investment Firms,Financials,UK
+ASHM.L,Ashmore Group,Asset Management & Investment Firms,Financials,UK
+CME,CME Group,Exchanges & Brokerage,Financials,USA
+ICE,Intercontinental Exchange,Exchanges & Brokerage,Financials,USA
+NDAQ,Nasdaq,Exchanges & Brokerage,Financials,USA
+CBOE,Cboe Global Markets,Exchanges & Brokerage,Financials,USA
+MKTX,MarketAxess Holdings,Exchanges & Brokerage,Financials,USA
+TW,Tradeweb Markets,Exchanges & Brokerage,Financials,USA
+VIRT,Virtu Financial,Exchanges & Brokerage,Financials,USA
+HOOD,Robinhood Markets,Exchanges & Brokerage,Financials,USA
+IBKR,Interactive Brokers,Exchanges & Brokerage,Financials,USA
+JEF,Jefferies Financial Group,Exchanges & Brokerage,Financials,USA
+RJF,Raymond James Financial,Exchanges & Brokerage,Financials,USA
+SF,Stifel Financial,Exchanges & Brokerage,Financials,USA
+SCHW,Charles Schwab,Exchanges & Brokerage,Financials,USA
+MS,Morgan Stanley,Exchanges & Brokerage,Financials,USA
+GS,Goldman Sachs Group,Exchanges & Brokerage,Financials,USA
+SNEX,StoneX Group,Exchanges & Brokerage,Financials,USA
+COIN,Coinbase Global,Exchanges & Brokerage,Financials,USA
+LSEG.L,London Stock Exchange Group,Exchanges & Brokerage,Financials,UK
+IGG.L,IG Group,Exchanges & Brokerage,Financials,UK
+HL.L,Hargreaves Lansdown,Exchanges & Brokerage,Financials,UK
+PLUS.L,Plus500,Exchanges & Brokerage,Financials,UK
+DB1.DE,Deutsche Börse,Exchanges & Brokerage,Financials,Germany
+0388.HK,Hong Kong Exchanges & Clearing,Exchanges & Brokerage,Financials,Hong Kong
+6030.HK,CITIC Securities,Exchanges & Brokerage,Financials,Hong Kong
+6881.HK,China Galaxy Securities,Exchanges & Brokerage,Financials,Hong Kong
+1776.HK,GF Securities,Exchanges & Brokerage,Financials,Hong Kong
+6837.HK,Haitong Securities,Exchanges & Brokerage,Financials,Hong Kong
+8697.T,Japan Exchange Group,Exchanges & Brokerage,Financials,Japan
+8604.T,Nomura Holdings,Exchanges & Brokerage,Financials,Japan
+8601.T,Daiwa Securities Group,Exchanges & Brokerage,Financials,Japan
+X.TO,TMX Group,Exchanges & Brokerage,Financials,Canada
+CF.TO,Canaccord Genuity Group,Exchanges & Brokerage,Financials,Canada
+ASX.AX,ASX Ltd,Exchanges & Brokerage,Financials,Australia
+MQG.AX,Macquarie Group,Exchanges & Brokerage,Financials,Australia
+NZX.NZ,NZX Ltd,Exchanges & Brokerage,Financials,New Zealand
+S68.SI,Singapore Exchange,Exchanges & Brokerage,Financials,Singapore
+MCX.NS,Multi Commodity Exchange of India,Exchanges & Brokerage,Financials,India
+BSE.NS,BSE Ltd,Exchanges & Brokerage,Financials,India
+ISEC.NS,ICICI Securities,Exchanges & Brokerage,Financials,India
+ANGELONE.NS,Angel One,Exchanges & Brokerage,Financials,India
+MOTILALOFS.NS,Motilal Oswal Financial Services,Exchanges & Brokerage,Financials,India
+5PAISA.NS,5paisa Capital,Exchanges & Brokerage,Financials,India
+1111.SR,Saudi Tadawul Group,Exchanges & Brokerage,Financials,Saudi Arabia
+B3SA3.SA,B3 (Brasil Bolsa Balcão),Exchanges & Brokerage,Financials,Brazil
+BGC,BGC Group,Exchanges & Brokerage,Financials,USA
+CMCX.L,CMC Markets,Exchanges & Brokerage,Financials,UK
+JSE.JO,JSE Ltd,Exchanges & Brokerage,Financials,South Africa
+AMP,Ameriprise Financial,Exchanges & Brokerage,Financials,USA
+LPLA,LPL Financial,Exchanges & Brokerage,Financials,USA
+EVR,Evercore Inc.,Exchanges & Brokerage,Financials,USA
+V,Visa,Payment Services / FinTech,Financials,USA
+MA,Mastercard,Payment Services / FinTech,Financials,USA
+PYPL,PayPal,Payment Services / FinTech,Financials,USA
+SQ,Block,Payment Services / FinTech,Financials,USA
+FI,Fiserv,Payment Services / FinTech,Financials,USA
+FIS,Fidelity National Information Services,Payment Services / FinTech,Financials,USA
+GPN,Global Payments,Payment Services / FinTech,Financials,USA
+ACIW,ACI Worldwide,Payment Services / FinTech,Financials,USA
+FLYW,Flywire,Payment Services / FinTech,Financials,USA
+BILL,Bill Holdings,Payment Services / FinTech,Financials,USA
+MQ,Marqeta,Payment Services / FinTech,Financials,USA
+FOUR,Shift4 Payments,Payment Services / FinTech,Financials,USA
+TOST,Toast,Payment Services / FinTech,Financials,USA
+PAYO,Payoneer Global,Payment Services / FinTech,Financials,USA
+RELY,Remitly Global,Payment Services / FinTech,Financials,USA
+AFRM,Affirm Holdings,Payment Services / FinTech,Financials,USA
+UPST,Upstart Holdings,Payment Services / FinTech,Financials,USA
+SOFI,SoFi Technologies,Payment Services / FinTech,Financials,USA
+WEX,WEX Inc.,Payment Services / FinTech,Financials,USA
+FLT,FleetCor Technologies,Payment Services / FinTech,Financials,USA
+EEFT,Euronet Worldwide,Payment Services / FinTech,Financials,USA
+GLBE,Global-e Online,Payment Services / FinTech,Financials,USA
+ALKT,Alkami Technology,Payment Services / FinTech,Financials,USA
+NCNO,nCino,Payment Services / FinTech,Financials,USA
+FICO,Fair Isaac,Payment Services / FinTech,Financials,USA
+TRU,TransUnion,Payment Services / FinTech,Financials,USA
+EFX,Equifax,Payment Services / FinTech,Financials,USA
+YOU,Clear Secure,Payment Services / FinTech,Financials,USA
+AXP,American Express,Payment Services / FinTech,Financials,USA
+DFS,Discover Financial Services,Payment Services / FinTech,Financials,USA
+LSPD.TO,Lightspeed Commerce,Payment Services / FinTech,Financials,Canada
+WISE.L,Wise plc,Payment Services / FinTech,Financials,UK
+PAY.L,PayPoint plc,Payment Services / FinTech,Financials,UK
+EXPN.L,Experian plc,Payment Services / FinTech,Financials,UK
+ADYEN.AS,Adyen N.V.,Payment Services / FinTech,Financials,Netherlands
+WLN.PA,Worldline,Payment Services / FinTech,Financials,France
+NEXI.MI,Nexi,Payment Services / FinTech,Financials,Italy
+TEMN.SW,Temenos,Payment Services / FinTech,Financials,Switzerland
+RPAY,Repay Holdings,Payment Services / FinTech,Financials,USA
+PAGS,PagSeguro Digital,Payment Services / FinTech,Financials,USA
+STNE,StoneCo,Payment Services / FinTech,Financials,USA
+DLO,dLocal,Payment Services / FinTech,Financials,USA
+PSFE,Paysafe,Payment Services / FinTech,Financials,USA
+INTU,Intuit,Payment Services / FinTech,Financials,USA
+3769.T,GMO Payment Gateway,Payment Services / FinTech,Financials,Japan
+3994.T,Money Forward,Payment Services / FinTech,Financials,Japan
+PAYTM.NS,One97 Communications (Paytm),Payment Services / FinTech,Financials,India
+H78.SI,iFAST Corporation,Payment Services / FinTech,Financials,Singapore
+NU,Nu Holdings,Payment Services / FinTech,Financials,USA
+LSPD,Lightspeed Commerce (NYSE),Payment Services / FinTech,Financials,USA

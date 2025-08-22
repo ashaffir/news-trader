@@ -63,6 +63,12 @@ nano .env
 ```bash
 # Build and start all services (auto-migrates, bootstraps superuser, tasks, and CNBC Latest)
 docker-compose up -d
+
+# Important: Load tracked companies (required for opening any trades)
+# This is NOT done automatically by docker-compose. Run once after services are up:
+docker-compose exec web python manage.py import_tracked_companies /app/full_top_traded_companies_by_industry_expanded_with_financials.csv
+
+# You can re-run the import any time to update names/metadata
 ```
 
 ### 3. Access the System

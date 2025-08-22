@@ -69,6 +69,7 @@ class TradeSerializer(serializers.ModelSerializer):
     analysis_confidence = serializers.FloatField(
         source="analysis.confidence", read_only=True
     )
+    tracked_company_symbol = serializers.CharField(source="tracked_company.symbol", read_only=True)
 
     class Meta:
         model = Trade

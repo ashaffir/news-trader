@@ -6,7 +6,7 @@ from unittest.mock import patch, MagicMock
 from unittest import skipIf
 from rest_framework.test import APITestCase
 from rest_framework.authtoken.models import Token
-from core.models import Source, Post, Analysis, Trade, TradingConfig, ApiResponse, AlertSettings
+from core.models import Source, Post, Analysis, Trade, TradingConfig, ApiResponse, AlertSettings, TrackedCompany
 from core.tasks import analyze_post, execute_trade, scrape_posts
 from unittest.mock import patch, MagicMock
 from core.source_llm import analyze_news_source_with_llm, build_source_kwargs_from_llm_analysis
@@ -29,6 +29,9 @@ class ModelTests(TestCase):
             take_profit_percentage=10.0,
             min_confidence_threshold=0.7,
         )
+        # Ensure tracked companies used in model tests exist
+        TrackedCompany.objects.get_or_create(symbol="TSLA", defaults={"name": "Tesla"})
+        TrackedCompany.objects.get_or_create(symbol="AAPL", defaults={"name": "Apple"})
 
         self.source = Source.objects.create(
             name="Test Source",
@@ -127,6 +130,8 @@ class TaskTests(TestCase):
             trailing_stop_distance_percentage=1.0,
             trailing_stop_activation_profit_percentage=0.0,
         )
+        # Ensure tracked companies exist for symbols used in task tests
+        TrackedCompany.objects.get_or_create(symbol="AAPL", defaults={"name": "Apple"})
 
         self.source = Source.objects.create(
             name="Test Source", url="https://example.com", scraping_method="web"
@@ -454,6 +459,9 @@ class IntegrationTests(TestCase):
         self.trading_config = TradingConfig.objects.create(
             name="Test Config", is_active=True, min_confidence_threshold=0.8, bot_enabled=True
         )
+        # Ensure tracked companies for integration symbols
+        TrackedCompany.objects.get_or_create(symbol="TSLA", defaults={"name": "Tesla"})
+        TrackedCompany.objects.get_or_create(symbol="AAPL", defaults={"name": "Apple"})
 
         self.source = Source.objects.create(
             name="Test Source", url="https://example.com", scraping_method="web"
@@ -518,6 +526,9 @@ class IntegrationTests(TestCase):
         # Check that trade was created (should be triggered automatically due to high confidence)
         trade = Trade.objects.get(analysis=analysis)
         self.assertEqual(trade.symbol, "TSLA")
+        # Backward compatible: tracked_company is set when a matching company exists
+        # In this integration test, tracked companies may not be populated; allow None
+        self.assertTrue(trade.tracked_company is None or trade.tracked_company.symbol == "TSLA")
         self.assertEqual(trade.direction, "buy")
         self.assertEqual(trade.alpaca_order_id, "order-123")
 

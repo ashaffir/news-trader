@@ -774,21 +774,35 @@ def sync_alpaca_positions_to_database(alpaca_positions):
         unrealized_pnl = float(position.get("unrealized_pl", 0))
 
         # Check if a non-closed record exists (open, pending, pending_close) to avoid duplicates
-        existing_trade = (
-            Trade.objects
-            .filter(symbol=symbol, status__in=["open", "pending", "pending_close"]) 
-            .order_by("-created_at")
-            .first()
-        )
+        # Prefer tracked_company when available
+        from .models import TrackedCompany
+        tc = TrackedCompany.objects.filter(symbol__iexact=symbol).first()
+        if tc:
+            existing_trade = (
+                Trade.objects
+                .filter(tracked_company=tc, status__in=["open", "pending", "pending_close"]) 
+                .order_by("-created_at")
+                .first()
+            )
+        else:
+            existing_trade = (
+                Trade.objects
+                .filter(symbol=symbol, status__in=["open", "pending", "pending_close"]) 
+                .order_by("-created_at")
+                .first()
+            )
 
         if not existing_trade:
             # Create new trade record
             # Try to find recent analysis for this symbol
             analysis = Analysis.objects.filter(symbol=symbol).order_by('-created_at').first()
 
+            # Resolve tracked_company for FK if exists
+            tc = TrackedCompany.objects.filter(symbol__iexact=symbol).first()
             trade = Trade.objects.create(
                 analysis=analysis,
                 symbol=symbol,
+                tracked_company=tc,
                 direction=direction,
                 quantity=quantity,
                 entry_price=entry_price,
@@ -1100,22 +1114,36 @@ def manual_close_trade_view(request):
                         .order_by("-created_at").first()
                     )
                     if not trade_record:
-                        trade_record = (
-                            Trade.objects.filter(
-                                symbol=symbol,
-                                status__in=["open", "pending", "pending_close"],
+                        from .models import TrackedCompany
+                        tc = TrackedCompany.objects.filter(symbol__iexact=symbol).first()
+                        if tc:
+                            trade_record = (
+                                Trade.objects.filter(
+                                    tracked_company=tc,
+                                    status__in=["open", "pending", "pending_close"],
+                                )
+                                .order_by("-created_at").first()
                             )
-                            .order_by("-created_at").first()
-                        )
+                        else:
+                            trade_record = (
+                                Trade.objects.filter(
+                                    symbol=symbol,
+                                    status__in=["open", "pending", "pending_close"],
+                                )
+                                .order_by("-created_at").first()
+                            )
 
                     # If still not found, create one, guarding against race duplicates
                     if not trade_record:
                         analysis = Analysis.objects.filter(symbol=symbol).order_by('-created_at').first()
                         from django.db import IntegrityError
                         try:
+                            # Attach tracked_company when available
+                            tc = TrackedCompany.objects.filter(symbol__iexact=symbol).first()
                             trade_record = Trade.objects.create(
                                 analysis=analysis,
                                 symbol=symbol,
+                                tracked_company=tc,
                                 direction="buy" if current_side == "long" else "sell",
                                 quantity=qty,
                                 entry_price=float(position.avg_entry_price),
@@ -1278,19 +1306,33 @@ def manual_close_trade_view(request):
                             .order_by('-created_at').first()
                         )
                         if not trade:
-                            trade = (
-                                Trade.objects.filter(
-                                    symbol=symbol,
-                                    status__in=["open", "pending", "pending_close"],
+                            from .models import TrackedCompany
+                            tc = TrackedCompany.objects.filter(symbol__iexact=symbol).first()
+                            if tc:
+                                trade = (
+                                    Trade.objects.filter(
+                                        tracked_company=tc,
+                                        status__in=["open", "pending", "pending_close"],
+                                    )
+                                    .order_by('-created_at').first()
                                 )
-                                .order_by('-created_at').first()
-                            )
+                            else:
+                                trade = (
+                                    Trade.objects.filter(
+                                        symbol=symbol,
+                                        status__in=["open", "pending", "pending_close"],
+                                    )
+                                    .order_by('-created_at').first()
+                                )
                         if not trade:
                             # Only create if no existing trade found (guard against race)
                             from django.db import IntegrityError
                             try:
+                                from .models import TrackedCompany
+                                tc = TrackedCompany.objects.filter(symbol__iexact=symbol).first()
                                 trade = Trade.objects.create(
                                     symbol=symbol,
+                                    tracked_company=tc,
                                     status="open",
                                     alpaca_order_id=f"position_{symbol}",
                                     analysis=None,  # Manual TP/SL doesn't need analysis

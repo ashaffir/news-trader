@@ -1333,8 +1333,12 @@ def execute_trade(analysis_id):
         {"analysis_id": analysis.id, "status": "Analyzing position management"},
     )
 
-    # Check for existing active position in the same symbol (including pending_close)
+    # Check for existing active position for the same tracked company/symbol
     def _find_existing():
+        from .models import TrackedCompany
+        tc = TrackedCompany.objects.filter(symbol__iexact=analysis.symbol).first()
+        if tc:
+            return Trade.objects.filter(tracked_company=tc, status__in=["open", "pending", "pending_close"]).first()
         return Trade.objects.filter(symbol=analysis.symbol, status__in=["open", "pending", "pending_close"]).first()
     existing_trade = _run_db_call_in_thread(_find_existing) if _is_async_context() else _find_existing()
 
@@ -1536,6 +1540,25 @@ def create_new_trade(analysis_id):
                 )
                 return
 
+        # Enforce tracked-company requirement for analysis-driven trades
+        try:
+            from .models import TrackedCompany
+            tc_enforced = TrackedCompany.objects.filter(symbol__iexact=analysis.symbol).first()
+        except Exception:
+            tc_enforced = None
+        if not tc_enforced:
+            logger.warning(f"Rejected new trade for untracked symbol: {analysis.symbol}")
+            send_dashboard_update(
+                "trade_rejected",
+                {
+                    "analysis_id": analysis.id,
+                    "symbol": analysis.symbol,
+                    "reason": "Symbol not in tracked companies",
+                    "tag": "Rejected",
+                },
+            )
+            return
+
         # Submit order to Alpaca (market order). Broker-side TP/SL intentionally not used per requirements
         order = api.submit_order(
             symbol=analysis.symbol,
@@ -1560,9 +1583,17 @@ def create_new_trade(analysis_id):
         def _create_trade():
             from django.db import IntegrityError
             try:
+                # Resolve tracked company by symbol for FK
+                from .models import TrackedCompany
+                tc = None
+                try:
+                    tc = TrackedCompany.objects.filter(symbol__iexact=analysis.symbol).first()
+                except Exception:
+                    tc = None
                 return Trade.objects.create(
                     analysis=analysis,
                     symbol=analysis.symbol,
+                    tracked_company=tc,
                     direction=analysis.direction,
                     quantity=quantity,
                     entry_price=current_price,
@@ -1578,7 +1609,7 @@ def create_new_trade(analysis_id):
             except IntegrityError:
                 # Another worker created the active trade concurrently; return it instead
                 return Trade.objects.filter(
-                    symbol=analysis.symbol,
+                    tracked_company__symbol__iexact=analysis.symbol,
                     status__in=["open", "pending", "pending_close"],
                 ).order_by("-created_at").first()
         trade = _run_db_call_in_thread(_create_trade) if _is_async_context() else _create_trade()
@@ -2194,6 +2225,33 @@ def create_manual_test_trade(symbol, direction, quantity=None, position_size=Non
     """Create a manual test trade directly to Alpaca API for testing purposes."""
     logger.info(f"Creating manual test trade: {symbol} {direction}")
 
+    # Enforce tracked company requirement for any trade (including manual)
+    try:
+        from .models import TrackedCompany
+        if not TrackedCompany.objects.filter(symbol__iexact=symbol).exists():
+            send_dashboard_update(
+                "trade_rejected",
+                {
+                    "symbol": symbol,
+                    "reason": "Symbol not in tracked companies",
+                    "tag": "Rejected",
+                },
+            )
+            return {
+                "success": False,
+                "error": "Symbol not in tracked companies"
+            }
+    except Exception:
+        # If lookup fails unexpectedly, be safe and reject
+        send_dashboard_update(
+            "trade_rejected",
+            {"symbol": symbol, "reason": "Tracked company check failed", "tag": "Rejected"},
+        )
+        return {
+            "success": False,
+            "error": "Tracked company check failed"
+        }
+
     # Enforce configurable limits here as well
     try:
         config = get_active_trading_config()
@@ -2293,9 +2351,17 @@ def create_manual_test_trade(symbol, direction, quantity=None, position_size=Non
         )
 
         # Create minimal trade record for tracking (without analysis)
+        # Resolve tracked company if exists
+        try:
+            from .models import TrackedCompany
+            tc = TrackedCompany.objects.filter(symbol__iexact=symbol).first()
+        except Exception:
+            tc = None
+
         trade = Trade.objects.create(
             analysis=None,  # No analysis for manual test trades
             symbol=symbol,
+            tracked_company=tc,
             direction=direction,
             quantity=quantity,
             entry_price=current_price,

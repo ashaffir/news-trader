@@ -290,7 +290,16 @@ class Trade(models.Model):
     analysis = models.ForeignKey(
         Analysis, on_delete=models.CASCADE, related_name="trades", null=True, blank=True
     )
+    # Temporary transition state: keep legacy symbol column for backward compatibility
+    # but introduce a proper FK to TrackedCompany for referential integrity.
     symbol = models.CharField(max_length=10)
+    tracked_company = models.ForeignKey(
+        "TrackedCompany",
+        on_delete=models.PROTECT,
+        related_name="trades",
+        null=True,
+        blank=True,
+    )
     direction = models.CharField(max_length=4, choices=Analysis.DIRECTION_CHOICES)
     quantity = models.FloatField()
     entry_price = models.FloatField()
@@ -339,9 +348,9 @@ class Trade(models.Model):
     class Meta:
         constraints = [
             models.UniqueConstraint(
-                fields=['symbol'],
+                fields=['tracked_company'],
                 condition=models.Q(status__in=['open', 'pending', 'pending_close']),
-                name='unique_active_trade_per_symbol'
+                name='unique_active_trade_per_company'
             )
         ]
 
@@ -371,6 +380,15 @@ class Trade(models.Model):
         corresponding price field is not already set.
         """
         is_new = self.pk is None
+
+        # Keep legacy symbol synchronized with tracked_company when available
+        try:
+            if getattr(self, "tracked_company_id", None):
+                tc_symbol = getattr(self.tracked_company, "symbol", None)
+                if tc_symbol and self.symbol != tc_symbol:
+                    self.symbol = tc_symbol
+        except Exception:
+            pass
 
         # Apply default percentages on create if missing
         if is_new:
@@ -529,3 +547,28 @@ class TwitterSession(models.Model):
 
     def __str__(self) -> str:
         return f"TwitterSession({self.username})"
+
+
+class TrackedCompany(models.Model):
+    """A company tracked by the bot for trading decisions.
+
+    Populated from a curated CSV containing highly traded companies and their
+    metadata. Records are kept minimal and include an active flag for pool
+    membership management.
+    """
+
+    symbol = models.CharField(max_length=32, unique=True)
+    name = models.CharField(max_length=255)
+    industry = models.CharField(max_length=255, blank=True)
+    sector = models.CharField(max_length=255, blank=True)
+    market = models.CharField(max_length=255, blank=True)
+
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["symbol"]
+
+    def __str__(self) -> str:
+        return f"{self.symbol} - {self.name}"
