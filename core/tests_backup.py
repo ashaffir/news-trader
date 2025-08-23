@@ -73,4 +73,16 @@ class BackupTaskTests(TestCase):
         mock_create_backup.assert_called_once()
         self.assertTrue(mock_log_create.called)
 
+    @patch("core.utils.telegram.send_system_error_alert")
+    @patch("core.tasks.ActivityLog.objects.create")
+    @patch("core.utils.db_backup.create_database_backup")
+    def test_backup_task_failure_sends_alert(self, mock_create_backup, mock_log_create, mock_alert):
+        from core.tasks import backup_database
+
+        mock_create_backup.side_effect = RuntimeError("pg_dump not found")
+        result = backup_database()
+
+        self.assertEqual(result["status"], "error")
+        mock_alert.assert_called_once()
+
 

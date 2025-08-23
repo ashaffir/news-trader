@@ -55,6 +55,13 @@ def backup_database(backup_dir: str | None = None):
             message="Database backup failed",
             data={"error": str(e), "timestamp": timezone.now().isoformat()},
         )
+        try:
+            # Send system error alert via Telegram if enabled
+            from .utils.telegram import send_system_error_alert
+            send_system_error_alert(f"Database backup failed: {e}")
+        except Exception:
+            # Avoid secondary exceptions from alert path
+            logger.exception("Failed to send system error alert for backup failure")
         return {"status": "error", "error": str(e)}
 
 

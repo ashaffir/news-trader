@@ -24,6 +24,12 @@ class Command(BaseCommand):
             backup_path = create_database_backup(target_dir)
             self.stdout.write(self.style.SUCCESS(f"Backup created: {backup_path}"))
         except Exception as e:
+            # Best-effort Telegram alert for system errors
+            try:
+                from core.utils.telegram import send_system_error_alert
+                send_system_error_alert(f"Database backup failed (command): {e}")
+            except Exception:
+                pass
             raise CommandError(f"Database backup failed: {e}")
 
 
