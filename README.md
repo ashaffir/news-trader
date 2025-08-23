@@ -358,8 +358,14 @@ docker-compose logs -f celery
 docker-compose logs -f celery-beat
 
 # Log files location
-./logs/news_trader.log
+./logs/django.log (rotated nightly)
 ```
+
+#### Log rotation and automatic cleanup
+- The application writes logs to `logs/django.log` and rotates them nightly (UTC) using a timed rotating handler.
+- Retention is controlled by the `LOG_RETENTION_DAYS` environment variable. Default: `14`.
+- A daily Celery Beat task named `Daily Log Maintenance` removes old log files exceeding the retention window.
+- You can adjust the schedule from Admin → `django_celery_beat` → `Periodic tasks`.
 
 ## 🎛️ Management Commands
 

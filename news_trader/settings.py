@@ -167,6 +167,9 @@ REST_FRAMEWORK = {
 LOGS_DIR = BASE_DIR / 'logs'
 LOGS_DIR.mkdir(exist_ok=True)
 
+# Log rotation / retention
+LOG_RETENTION_DAYS = int(os.getenv('LOG_RETENTION_DAYS', '14'))
+
 # Logging configuration
 LOGGING = {
     'version': 1,
@@ -184,9 +187,14 @@ LOGGING = {
     'handlers': {
         'file': {
             'level': 'INFO',
-            'class': 'logging.FileHandler',
+            'class': 'logging.handlers.TimedRotatingFileHandler',
             'filename': LOGS_DIR / 'django.log',
             'formatter': 'verbose',
+            'when': 'midnight',
+            'interval': 1,
+            'backupCount': LOG_RETENTION_DAYS,
+            'utc': True,
+            'encoding': 'utf-8',
         },
         'console': {
             'level': 'INFO',

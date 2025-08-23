@@ -57,6 +57,54 @@ def backup_database(backup_dir: str | None = None):
         )
         return {"status": "error", "error": str(e)}
 
+
+# =============================
+# Log Maintenance
+# =============================
+
+@shared_task
+def cleanup_old_logs(max_age_days: int | None = None):
+    """Remove old log files from the project's logs directory.
+
+    Age threshold can be provided explicitly or taken from the
+    LOG_RETENTION_DAYS env var (defaults to 14).
+    """
+    try:
+        from django.conf import settings
+        from .utils.logs import cleanup_logs
+
+        if max_age_days is None:
+            try:
+                max_age_days = int(os.getenv("LOG_RETENTION_DAYS", "14"))
+            except Exception:
+                max_age_days = 14
+
+        result = cleanup_logs(settings.LOGS_DIR, max_age_days=max_age_days)
+
+        ActivityLog.objects.create(
+            activity_type="system_event",
+            message="Log maintenance completed",
+            data={
+                "retention_days": max_age_days,
+                **result,
+            },
+        )
+        logger.info(
+            "Log cleanup done: deleted=%s kept=%s scanned=%s",
+            result["deleted_count"],
+            result["kept_count"],
+            result["total_scanned"],
+        )
+        return {"status": "success", **result}
+    except Exception as e:
+        logger.error(f"Log cleanup failed: {e}")
+        ActivityLog.objects.create(
+            activity_type="system_event",
+            message="Log maintenance failed",
+            data={"error": str(e)},
+        )
+        return {"status": "error", "error": str(e)}
+
 def _is_async_context() -> bool:
     try:
         asyncio.get_running_loop()
@@ -2923,6 +2971,60 @@ def cleanup_orphaned_chrome():
 # def cleanup_browser_pool_task():
 #     """[REMOVED] This task was causing browser pool shutdown errors with thread-local pools."""
 #     pass
+
+
+@shared_task
+def disable_bot_on_weekends():
+    """Disable the trading bot on Saturdays and Sundays.
+
+    This task is intended to be scheduled via django-celery-beat with a weekend
+    cron schedule. It will safely no-op on weekdays. When disabling, it logs a
+    system event and optionally sends a Telegram notification if enabled.
+    """
+    try:
+        now = timezone.now()
+        # Monday is 0 and Sunday is 6
+        if now.weekday() not in (5, 6):
+            return
+
+        config = TradingConfig.objects.filter(is_active=True).first()
+        if not config:
+            return
+
+        if config.bot_enabled:
+            config.bot_enabled = False
+            config.save(update_fields=["bot_enabled"])
+
+            # Log system event for dashboard
+            try:
+                ActivityLog.objects.create(
+                    activity_type="system_event",
+                    message="Bot disabled for weekend (no market trading)",
+                    data={"action": "bot_disabled_weekend", "timestamp": now.isoformat()},
+                )
+            except Exception as log_err:
+                logger.warning("Failed to log weekend disable event: %s", log_err)
+
+            # Optional Telegram notification
+            try:
+                from .utils.telegram import is_alert_enabled, send_telegram_message
+
+                if is_alert_enabled("bot_status"):
+                    send_telegram_message("🔴 Bot disabled for weekend (no market trading).")
+            except Exception as notify_err:
+                logger.info("Telegram notification skipped/failed: %s", notify_err)
+        else:
+            # Already disabled; still record a lightweight event once per run
+            try:
+                ActivityLog.objects.create(
+                    activity_type="system_event",
+                    message="Weekend check: bot already disabled",
+                    data={"action": "bot_already_disabled_weekend", "timestamp": now.isoformat()},
+                )
+            except Exception:
+                pass
+    except Exception as e:
+        logger.error("disable_bot_on_weekends failed: %s", e)
 
 
 @shared_task(bind=True)

@@ -40,6 +40,7 @@ ALERT_MAP = {
     "trade_closed_conflict": "order_close_enabled",
     "trade_rejected": "trading_limit_enabled",
     "heartbeat": "heartbeat_enabled",
+    "system_error": "system_errors_enabled",
 }
 
 
@@ -60,5 +61,22 @@ def is_alert_enabled(message_type: str) -> bool:
     enabled = getattr(settings, field, False)
     logger.info("Alert toggle check: type=%s field=%s enabled=%s", message_type, field, enabled)
     return enabled
+
+
+def send_system_error_alert(message: str) -> bool:
+    """Send a system error alert to Telegram if enabled.
+
+    Prepends a standard prefix to help identify error alerts in Telegram.
+    Returns True if the message was sent successfully, otherwise False.
+    """
+    try:
+        if not is_alert_enabled("system_error"):
+            logger.info("System error alert suppressed by settings")
+            return False
+        prefix = "[SYSTEM ERROR] "
+        return send_telegram_message(prefix + (message or ""))
+    except Exception:
+        logger.exception("Failed to send system error alert")
+        return False
 
 

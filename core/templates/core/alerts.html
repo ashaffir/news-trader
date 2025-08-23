@@ -34,9 +34,14 @@
               <label class="form-check-label" for="order_close_enabled">Order close</label>
             </div>
 
-            <div class="form-check form-switch mb-4">
+            <div class="form-check form-switch mb-2">
               <input class="form-check-input" type="checkbox" id="trading_limit_enabled" name="trading_limit_enabled" {% if settings.trading_limit_enabled %}checked{% endif %}>
               <label class="form-check-label" for="trading_limit_enabled">Trading limit reached</label>
+            </div>
+
+            <div class="form-check form-switch mb-4">
+              <input class="form-check-input" type="checkbox" id="system_errors_enabled" name="system_errors_enabled" {% if settings.system_errors_enabled %}checked{% endif %}>
+              <label class="form-check-label" for="system_errors_enabled">System errors</label>
             </div>
 
             <hr/>

@@ -1867,6 +1867,7 @@ def alerts_view(request):
             settings_obj.order_open_enabled = bool(request.POST.get("order_open_enabled"))
             settings_obj.order_close_enabled = bool(request.POST.get("order_close_enabled"))
             settings_obj.trading_limit_enabled = bool(request.POST.get("trading_limit_enabled"))
+            settings_obj.system_errors_enabled = bool(request.POST.get("system_errors_enabled"))
             settings_obj.heartbeat_enabled = bool(request.POST.get("heartbeat_enabled"))
             try:
                 interval_val = int(request.POST.get("heartbeat_interval_minutes", settings_obj.heartbeat_interval_minutes))

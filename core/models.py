@@ -484,6 +484,9 @@ class AlertSettings(models.Model):
     trading_limit_enabled = models.BooleanField(
         default=True, help_text="Send alert when a trading limit is reached"
     )
+    system_errors_enabled = models.BooleanField(
+        default=True, help_text="Send alert when a system error occurs"
+    )
 
     # Periodic heartbeat when bot is enabled
     heartbeat_enabled = models.BooleanField(

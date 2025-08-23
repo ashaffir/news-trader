@@ -41,6 +41,11 @@ class Command(BaseCommand):
             minute='30', hour='2', day_of_week='*', day_of_month='*', month_of_year='*'
         )
 
+        # Weekends at 02:30 UTC (Saturday and Sunday)
+        weekend_230_cron, _ = CrontabSchedule.objects.get_or_create(
+            minute='30', hour='2', day_of_week='6,0', day_of_month='*', month_of_year='*'
+        )
+
         # Create periodic tasks
         tasks = [
             {
@@ -86,10 +91,22 @@ class Command(BaseCommand):
                 'description': 'Create local compressed PostgreSQL backup (configurable time)'
             },
             {
+                'name': 'Daily Log Maintenance',
+                'task': 'core.tasks.cleanup_old_logs',
+                'crontab': daily_230_cron,
+                'description': 'Remove old log files based on LOG_RETENTION_DAYS'
+            },
+            {
                 'name': 'Chrome Process Cleanup',
                 'task': 'core.tasks.cleanup_orphaned_chrome',
                 'interval': interval_5_minutes,
                 'description': 'Clean up orphaned Chrome processes'
+            },
+            {
+                'name': 'Disable Bot On Weekends',
+                'task': 'core.tasks.disable_bot_on_weekends',
+                'crontab': weekend_230_cron,
+                'description': 'Automatically disable trading bot on Saturdays and Sundays'
             },
 
         ]
