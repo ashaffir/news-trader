@@ -2,7 +2,10 @@ from django.contrib import admin
 from django.utils.html import format_html
 from django.urls import reverse
 from django.utils.safestring import mark_safe
-from .models import Source, Post, Analysis, Trade, TradingConfig, ApiResponse, AlertSettings, TrackedCompany
+from .models import Source, Post, Analysis, Trade, TradingConfig, ApiResponse, AlertSettings, TrackedCompany, ActivityLog
+from django.utils import timezone
+from datetime import timedelta
+import json
 
 
 @admin.register(TradingConfig)
@@ -545,3 +548,156 @@ class TrackedCompanyAdmin(admin.ModelAdmin):
         ("Company", {"fields": ("symbol", "name", "sector", "industry", "market", "is_active")}),
         ("Timestamps", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),
     )
+
+
+class RelatedObjectFilter(admin.SimpleListFilter):
+    title = "Related object"
+    parameter_name = "related"
+
+    def lookups(self, request, model_admin):
+        return (
+            ("trade", "Trade"),
+            ("post", "Post"),
+            ("source", "Source"),
+            ("analysis", "Analysis"),
+        )
+
+    def queryset(self, request, queryset):
+        value = self.value()
+        if value == "trade":
+            try:
+                return queryset.filter(data__has_key="trade_id")
+            except Exception:
+                return queryset
+        if value == "post":
+            try:
+                return queryset.filter(data__has_key="post_id")
+            except Exception:
+                return queryset
+        if value == "source":
+            try:
+                return queryset.filter(data__has_key="source_id")
+            except Exception:
+                return queryset
+        if value == "analysis":
+            try:
+                return queryset.filter(data__has_key="analysis_id")
+            except Exception:
+                return queryset
+        return queryset
+
+
+@admin.register(ActivityLog)
+class ActivityLogAdmin(admin.ModelAdmin):
+    list_display = (
+        "created_at",
+        "activity_badge",
+        "message_short",
+        "related_object_link",
+    )
+    list_filter = ("activity_type", RelatedObjectFilter, "created_at")
+    search_fields = ("message",)
+    date_hierarchy = "created_at"
+    ordering = ("-created_at",)
+    list_per_page = 50
+    readonly_fields = ("created_at", "activity_type", "message", "data_pretty")
+    fieldsets = (
+        ("Activity", {"fields": ("activity_type", "message", "created_at")}),
+        ("Details", {"fields": ("data_pretty",)}),
+    )
+
+    actions = [
+        "prune_older_than_7_days",
+        "prune_older_than_30_days",
+        "prune_older_than_90_days",
+    ]
+
+    def activity_badge(self, obj):
+        color = "#4a5568"  # gray
+        atype = obj.activity_type or ""
+        if "error" in atype or "rejected" in atype:
+            color = "#e53e3e"  # red
+        elif atype.startswith("trade"):
+            color = "#3182ce"  # blue
+        elif atype.startswith("analysis"):
+            color = "#805ad5"  # purple
+        elif atype.startswith("scraper"):
+            color = "#2f855a"  # green
+        return format_html(
+            '<span style="background:{}; color:white; padding:2px 8px; border-radius:12px; font-size:12px;">{}</span>',
+            color,
+            atype.replace("_", " ").title(),
+        )
+
+    activity_badge.short_description = "Type"
+
+    def message_short(self, obj):
+        text = obj.message or ""
+        return (text[:120] + "…") if len(text) > 120 else text
+
+    message_short.short_description = "Message"
+
+    def data_pretty(self, obj):
+        try:
+            pretty = json.dumps(obj.data or {}, indent=2, ensure_ascii=False)
+        except Exception:
+            pretty = str(obj.data)
+        return mark_safe(f"<pre style=\"white-space:pre-wrap; word-break:break-word;\">{pretty}</pre>")
+
+    data_pretty.short_description = "Data (JSON)"
+
+    def related_object_link(self, obj):
+        data = obj.data or {}
+        # Priority: trade -> analysis -> post -> source
+        if isinstance(data, dict):
+            trade_id = data.get("trade_id")
+            if trade_id:
+                try:
+                    url = reverse("admin:core_trade_change", args=[trade_id])
+                    return format_html('<a href="{}">Trade #{}</a>', url, trade_id)
+                except Exception:
+                    pass
+            analysis_id = data.get("analysis_id")
+            if analysis_id:
+                try:
+                    url = reverse("admin:core_analysis_change", args=[analysis_id])
+                    return format_html('<a href="{}">Analysis #{}</a>', url, analysis_id)
+                except Exception:
+                    pass
+            post_id = data.get("post_id")
+            if post_id:
+                try:
+                    url = reverse("admin:core_post_change", args=[post_id])
+                    return format_html('<a href="{}">Post #{}</a>', url, post_id)
+                except Exception:
+                    pass
+            source_id = data.get("source_id")
+            if source_id:
+                try:
+                    url = reverse("admin:core_source_change", args=[source_id])
+                    return format_html('<a href="{}">Source #{}</a>', url, source_id)
+                except Exception:
+                    pass
+        return mark_safe("<span style=\"color:#718096;\">—</span>")
+
+    related_object_link.short_description = "Related"
+
+    def _prune_before(self, request, days):
+        cutoff = timezone.now() - timedelta(days=days)
+        deleted, _ = ActivityLog.objects.filter(created_at__lt=cutoff).delete()
+        self.message_user(request, f"Pruned {deleted} log entries older than {days} days.")
+
+    def prune_older_than_7_days(self, request, queryset):
+        self._prune_before(request, 7)
+
+    prune_older_than_7_days.short_description = "Prune logs older than 7 days"
+
+    def prune_older_than_30_days(self, request, queryset):
+        self._prune_before(request, 30)
+
+    prune_older_than_30_days.short_description = "Prune logs older than 30 days"
+
+    def prune_older_than_90_days(self, request, queryset):
+        self._prune_before(request, 90)
+
+    prune_older_than_90_days.short_description = "Prune logs older than 90 days"
