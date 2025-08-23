@@ -22,6 +22,7 @@ from django.conf.urls.static import static
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('', include('core.urls')),
+    path('stats/', include('stats.urls')),
 ]
 
 # Serve static files in development and Docker

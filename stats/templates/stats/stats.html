@@ -1,0 +1,103 @@
+{% extends 'core/base.html' %}
+{% load static %}
+
+{% block title %}Performance Stats{% endblock %}
+
+{% block extra_head %}
+<style>
+  .metric-card { background: #f8f9fa; border-radius: 8px; padding: 12px 16px; }
+  .chart-card { background: #fff; border-radius: 8px; padding: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+  .filter-bar { background: #fff; border-radius: 8px; padding: 12px; margin-bottom: 16px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-2">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h2 class="mb-0">Performance Stats</h2>
+      <div class="text-muted small">Commission-adjusted metrics; default range last 30 days.</div>
+    </div>
+  </div>
+
+  <div class="filter-bar">
+    <div class="row g-2 align-items-end">
+      <div class="col-md-3">
+        <label class="form-label">Start</label>
+        <input id="filter-start" type="datetime-local" class="form-control">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">End</label>
+        <input id="filter-end" type="datetime-local" class="form-control">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Symbol</label>
+        <input id="filter-symbol" type="text" class="form-control" placeholder="Leave blank for all symbols" autocomplete="off">
+      </div>
+      <div class="col-md-3">
+        <button id="apply-filters" class="btn btn-primary w-100"><i class="fas fa-filter me-1"></i>Apply</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-2">
+    <div class="col-md-2"><div class="metric-card"><div class="text-muted small">Total P&L</div><div id="kpi-total-pnl" class="fs-4">-</div></div></div>
+    <div class="col-md-2"><div class="metric-card"><div class="text-muted small">Win Rate</div><div id="kpi-win-rate" class="fs-4">-</div></div></div>
+    <div class="col-md-2"><div class="metric-card"><div class="text-muted small">Max Drawdown</div><div id="kpi-max-dd" class="fs-4">-</div></div></div>
+    <div class="col-md-2"><div class="metric-card"><div class="text-muted small">Sharpe (Daily)</div><div id="kpi-sharpe" class="fs-4">-</div></div></div>
+    <div class="col-md-2"><div class="metric-card"><div class="text-muted small">Avg R/Trade</div><div id="kpi-avg-r" class="fs-4">-</div></div></div>
+    <div class="col-md-2"><div class="metric-card"><div class="text-muted small">Trades</div><div id="kpi-trades" class="fs-4">-</div></div></div>
+  </div>
+
+  <div class="row g-3">
+    <div class="col-lg-8">
+      <div class="chart-card">
+        <div class="d-flex justify-content-between align-items-center mb-2"><div class="fw-semibold">Equity Curve</div></div>
+        <canvas id="chart-equity" height="120"></canvas>
+      </div>
+    </div>
+    <div class="col-lg-4">
+      <div class="chart-card mb-3">
+        <div class="fw-semibold mb-2">Daily PnL</div>
+        <canvas id="chart-daily" height="120"></canvas>
+      </div>
+      <div class="chart-card">
+        <div class="fw-semibold mb-2">Buy vs Sell</div>
+        <canvas id="chart-direction" height="120"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3 mt-1">
+    <div class="col-lg-6">
+      <div class="chart-card">
+        <div class="fw-semibold mb-2">Top Symbols by PnL</div>
+        <canvas id="chart-symbols" height="150"></canvas>
+      </div>
+    </div>
+    <div class="col-lg-6">
+      <div class="chart-card">
+        <div class="fw-semibold mb-2">Trades Heatmap (Weekday x Hour)</div>
+        <canvas id="chart-heatmap" height="150"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Chart.js CDN (pinned) -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="{% static 'js/stats.js' %}"></script>
+<script>
+  // Initialize default date range
+  (function(){
+    const start = new Date("{{ default_start }}");
+    const end = new Date("{{ default_end }}");
+    function toLocal(dt){ const z=dt.getTimezoneOffset(); const t=new Date(dt.getTime()-z*60000); return t.toISOString().slice(0,16); }
+    const s = document.getElementById('filter-start');
+    const e = document.getElementById('filter-end');
+    if (s && e) { s.value = toLocal(start); e.value = toLocal(end); }
+  })();
+</script>
+{% endblock %}
+
+
