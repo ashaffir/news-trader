@@ -112,6 +112,54 @@ def cleanup_old_logs(max_age_days: int | None = None):
         )
         return {"status": "error", "error": str(e)}
 
+
+# =============================
+# ActivityLog Maintenance
+# =============================
+
+@shared_task
+def prune_activity_log(max_age_days: int | None = None):
+    """Delete ActivityLog rows older than a retention window.
+
+    Retention can be configured via ACTIVITYLOG_RETENTION_DAYS env var (default 30).
+    """
+    try:
+        if max_age_days is None:
+            from .utils.config import get_config_value
+            max_age_days = get_config_value("activitylog_retention_days", 30)
+            try:
+                max_age_days = int(max_age_days)
+            except Exception:
+                max_age_days = 30
+
+        cutoff = timezone.now() - timedelta(days=int(max_age_days))
+        qs = ActivityLog.objects.filter(created_at__lt=cutoff)
+        deleted_count = qs.count()
+        qs.delete()
+
+        ActivityLog.objects.create(
+            activity_type="system_event",
+            message="ActivityLog prune completed",
+            data={
+                "retention_days": max_age_days,
+                "deleted_count": deleted_count,
+            },
+        )
+        logger.info("Pruned %s ActivityLog entries older than %s days", deleted_count, max_age_days)
+        return {"status": "success", "deleted_count": deleted_count, "retention_days": max_age_days}
+    except Exception as e:
+        logger.error(f"ActivityLog prune failed: {e}")
+        try:
+            ActivityLog.objects.create(
+                activity_type="system_event",
+                message="ActivityLog prune failed",
+                data={"error": str(e)},
+            )
+        except Exception:
+            # avoid cascading errors if DB is inaccessible
+            pass
+        return {"status": "error", "error": str(e)}
+
 def _is_async_context() -> bool:
     try:
         asyncio.get_running_loop()

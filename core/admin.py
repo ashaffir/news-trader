@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.utils.html import format_html
 from django.urls import reverse
 from django.utils.safestring import mark_safe
-from .models import Source, Post, Analysis, Trade, TradingConfig, ApiResponse, AlertSettings, TrackedCompany, ActivityLog
+from .models import Source, Post, Analysis, Trade, TradingConfig, ApiResponse, AlertSettings, TrackedCompany, ActivityLog, ConfigControl
 from django.utils import timezone
 from datetime import timedelta
 import json
@@ -549,6 +549,39 @@ class TrackedCompanyAdmin(admin.ModelAdmin):
         ("Timestamps", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),
     )
 
+
+@admin.register(ConfigControl)
+class ConfigControlAdmin(admin.ModelAdmin):
+    list_display = ("name", "value_type", "value_preview", "updated_at")
+    list_filter = ("value_type",)
+    search_fields = ("name",)
+    readonly_fields = ("created_at", "updated_at")
+    fieldsets = (
+        ("Key", {"fields": ("name", "value_type")}),
+        (
+            "Values",
+            {
+                "fields": (
+                    "value_string",
+                    "value_int",
+                    "value_float",
+                    "value_json",
+                ),
+                "description": "Fill only the field that matches the selected value type.",
+            },
+        ),
+        ("Timestamps", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),
+    )
+
+    def value_preview(self, obj):
+        try:
+            v = obj.value
+            s = str(v)
+            return s if len(s) <= 60 else s[:57] + "..."
+        except Exception:
+            return "<invalid>"
+
+    value_preview.short_description = "Value"
 
 class RelatedObjectFilter(admin.SimpleListFilter):
     title = "Related object"

@@ -97,6 +97,12 @@ class Command(BaseCommand):
                 'description': 'Remove old log files based on LOG_RETENTION_DAYS'
             },
             {
+                'name': 'Daily ActivityLog Prune',
+                'task': 'core.tasks.prune_activity_log',
+                'crontab': daily_230_cron,
+                'description': 'Delete ActivityLog rows older than days set in ConfigControl: activitylog_retention_days'
+            },
+            {
                 'name': 'Chrome Process Cleanup',
                 'task': 'core.tasks.cleanup_orphaned_chrome',
                 'interval': interval_5_minutes,

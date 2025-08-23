@@ -514,6 +514,66 @@ class AlertSettings(models.Model):
         return f"AlertSettings (enabled={self.enabled})"
 
 
+class ConfigControl(models.Model):
+    """Key-value configuration editable from admin with typed values.
+
+    Supported types: string, integer, float, json. Use `value` property to
+    retrieve the unified typed value.
+    """
+
+    TYPE_STRING = "string"
+    TYPE_INTEGER = "integer"
+    TYPE_FLOAT = "float"
+    TYPE_JSON = "json"
+
+    VALUE_TYPE_CHOICES = [
+        (TYPE_STRING, "String"),
+        (TYPE_INTEGER, "Integer"),
+        (TYPE_FLOAT, "Float"),
+        (TYPE_JSON, "JSON"),
+    ]
+
+    name = models.CharField(max_length=255, unique=True)
+    value_type = models.CharField(max_length=20, choices=VALUE_TYPE_CHOICES, default=TYPE_STRING)
+
+    value_string = models.TextField(blank=True, null=True)
+    value_int = models.IntegerField(blank=True, null=True)
+    value_float = models.FloatField(blank=True, null=True)
+    value_json = models.JSONField(blank=True, null=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name"]
+        indexes = [
+            models.Index(fields=["name"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.name} = {self.preview_value()}"
+
+    def preview_value(self) -> str:
+        try:
+            v = self.value
+            s = str(v)
+            return s if len(s) <= 80 else s[:77] + "..."
+        except Exception:
+            return "<invalid>"
+
+    @property
+    def value(self):
+        if self.value_type == self.TYPE_STRING:
+            return self.value_string or ""
+        if self.value_type == self.TYPE_INTEGER:
+            return int(self.value_int) if self.value_int is not None else None
+        if self.value_type == self.TYPE_FLOAT:
+            return float(self.value_float) if self.value_float is not None else None
+        if self.value_type == self.TYPE_JSON:
+            return self.value_json
+        return None
+
+
 class TwitterSession(models.Model):
     """Stored login state for a Twitter/X account to enable authenticated scraping.
 
