@@ -1,4 +1,5 @@
 import os
+import shutil
 import subprocess
 import datetime
 from pathlib import Path
@@ -31,13 +32,29 @@ def get_default_backup_dir() -> Path:
     return root / "backups"
 
 
+def _resolve_pg_dump_path() -> str:
+    # Prefer explicit path via env; fallback to PATH lookup
+    explicit = os.environ.get("PG_DUMP_PATH")
+    if explicit and Path(explicit).exists():
+        return explicit
+    resolved = shutil.which("pg_dump")
+    if not resolved:
+        raise FileNotFoundError("pg_dump not found. Install PostgreSQL client or set PG_DUMP_PATH.")
+    return resolved
+
+
 def run_pg_dump(output_path: Path, db_env: dict) -> None:
     env = os.environ.copy()
     if db_env.get("PASSWORD"):
         env["PGPASSWORD"] = db_env["PASSWORD"]
 
+    pg_dump_bin = _resolve_pg_dump_path()
+
+    # We'll output plain SQL and gzip it ourselves for portability across pg_dump versions
+    temp_sql_path = output_path.with_suffix("").with_suffix(".sql")
+
     cmd = [
-        "pg_dump",
+        pg_dump_bin,
         "-h",
         db_env.get("HOST", "localhost"),
         "-p",
@@ -46,13 +63,20 @@ def run_pg_dump(output_path: Path, db_env: dict) -> None:
         db_env.get("USER", "postgres"),
         "-d",
         db_env.get("NAME"),
-        "-Z",
-        "9",
         "-f",
-        str(output_path),
+        str(temp_sql_path),
     ]
 
     subprocess.run(cmd, check=True, env=env)
+
+    # Compress using Python to avoid pg_dump -Z dependency
+    import gzip
+    with open(temp_sql_path, 'rb') as f_in, gzip.open(output_path, 'wb', compresslevel=9) as f_out:
+        shutil.copyfileobj(f_in, f_out)
+    try:
+        temp_sql_path.unlink(missing_ok=True)
+    except Exception:
+        pass
 
 
 def create_database_backup(backup_dir: Path | None = None) -> Path:

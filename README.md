@@ -320,7 +320,11 @@ python manage.py backup_database --output-dir /absolute/path/to/backups
 ```
 
 ### Notes
-- Requires `pg_dump` to be available on the machine executing the task (in PATH).
+- Requires `pg_dump` to be available on the machine executing the task.
+  - The app will look for `PG_DUMP_PATH` first (e.g., `/usr/local/bin/pg_dump`),
+    otherwise it falls back to your `PATH` using `which pg_dump`.
+  - macOS (Homebrew): `brew install libpq && echo 'export PATH="/opt/homebrew/opt/libpq/bin:$PATH"' >> ~/.zshrc`
+  - Ubuntu/Debian: `sudo apt-get install -y postgresql-client`
 - Database connection details are taken from `settings.DATABASES['default']`.
 - Each successful run logs an entry in `ActivityLog` (type `system_event`).
 - If you need to (re)create the periodic tasks programmatically:

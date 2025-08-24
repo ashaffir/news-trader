@@ -15,6 +15,8 @@ RUN apt-get update && apt-get install -y \
     wget \
     gnupg2 \
     ca-certificates \
+    # PostgreSQL client for pg_dump backups
+    postgresql-client \
     # Chromium dependencies
     fonts-liberation \
     libasound2 \

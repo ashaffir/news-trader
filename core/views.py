@@ -9,6 +9,7 @@ from .tasks import (
     analyze_post,
     execute_trade,
     send_dashboard_update,
+    backup_database,
 )
 import logging
 import json
@@ -309,6 +310,20 @@ def toggle_bot_status(request):
         logger.error(f"Error toggling bot status: {e}")
         return JsonResponse({"success": False, "error": str(e)}, status=500)
 
+
+@staff_member_required
+@require_POST
+def trigger_backup_api(request):
+    """Trigger an immediate database backup and return JSON status."""
+    try:
+        # Run synchronously to return path; tests run Celery eagerly
+        result = backup_database.apply(args=[]).get()
+        if result.get("status") == "success":
+            return JsonResponse({"success": True, "path": result.get("path")})
+        return JsonResponse({"success": False, "error": result.get("error", "Unknown error")}, status=500)
+    except Exception as e:
+        logger.error(f"Backup trigger failed: {e}")
+        return JsonResponse({"success": False, "error": str(e)}, status=500)
 
 @staff_member_required
 def system_status_api(request):

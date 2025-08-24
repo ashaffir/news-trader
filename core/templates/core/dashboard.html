@@ -741,6 +741,73 @@
             }
         }
 
+        // Backup DB Modal and trigger
+        function openBackupModal() {
+            const modalHtml = `
+                <div class="modal fade" id="backupConfirmModal" tabindex="-1" aria-hidden="true">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title"><i class="fas fa-database me-2"></i>Confirm Database Backup</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="alert alert-info">
+                                    This will create a compressed PostgreSQL backup on the server. Continue?
+                                </div>
+                                <div id="backupResult" class="small text-muted"></div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                <button type="button" class="btn btn-primary" id="confirmBackupBtn">
+                                    <i class="fas fa-play me-1"></i>Start Backup
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>`;
+
+            // Inject modal if not present
+            let existing = document.getElementById('backupConfirmModal');
+            if (!existing) {
+                const container = document.createElement('div');
+                container.innerHTML = modalHtml;
+                document.body.appendChild(container.firstElementChild);
+                existing = document.getElementById('backupConfirmModal');
+            }
+
+            const modal = new bootstrap.Modal(existing);
+            modal.show();
+
+            const btn = existing.querySelector('#confirmBackupBtn');
+            const resultDiv = existing.querySelector('#backupResult');
+            btn.onclick = function() {
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Running...';
+                resultDiv.textContent = '';
+                fetch('/api/trigger-backup/', {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': getCookie('csrftoken')
+                    }
+                }).then(r => r.json()).then(data => {
+                    if (data.success) {
+                        resultDiv.className = 'small text-success';
+                        resultDiv.textContent = 'Backup created: ' + data.path;
+                    } else {
+                        resultDiv.className = 'small text-danger';
+                        resultDiv.textContent = 'Backup failed: ' + (data.error || 'Unknown error');
+                    }
+                }).catch(err => {
+                    resultDiv.className = 'small text-danger';
+                    resultDiv.textContent = 'Backup failed: ' + err.message;
+                }).finally(() => {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-play me-1"></i>Start Backup';
+                });
+            };
+        }
+
         function viewSystemLogs() {
             window.open('/admin/core/', '_blank');
         }
