@@ -4,7 +4,7 @@ from django.urls import reverse
 from django.utils import timezone
 from datetime import timedelta
 
-from core.models import Trade
+from core.models import Trade, TradingConfig
 
 
 @override_settings(ROOT_URLCONF='news_trader.urls')
@@ -33,6 +33,29 @@ class StatsAPITests(TestCase):
         self.assertEqual(len(eq['labels']), 2)
         daily = self.client.get('/stats/api/pnl-by-day').json()
         self.assertEqual(len(daily['labels']), 2)
+
+    def test_navbar_bot_badge_reflects_state(self):
+        """Stats page should receive bot_enabled for navbar indicator."""
+        # Bot disabled
+        TradingConfig.objects.update_or_create(
+            is_active=True,
+            defaults={
+                'name': 'Default',
+                'bot_enabled': False,
+                'trading_enabled': True,
+            }
+        )
+        resp = self.client.get(reverse('stats_page'))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'BOT DISABLED')
+
+        # Bot enabled
+        cfg = TradingConfig.objects.get(is_active=True)
+        cfg.bot_enabled = True
+        cfg.save(update_fields=['bot_enabled'])
+        resp = self.client.get(reverse('stats_page'))
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'BOT RUNNING')
 
 
 # Create your tests here.
