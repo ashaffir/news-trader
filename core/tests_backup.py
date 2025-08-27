@@ -116,3 +116,57 @@ class BackupAPITests(TestCase):
         mock_alert.assert_called_once()
 
 
+class RestoreUtilityTests(TestCase):
+    @patch("core.utils.db_backup._resolve_psql_path", return_value="/usr/bin/psql")
+    @patch("core.utils.db_backup.subprocess.run")
+    def test_restore_database_from_backup_invokes_psql(self, mock_run, mock_resolve):
+        from core.utils import db_backup
+        temp_dir = Path("/tmp/news_trader_test_backups")
+        try:
+            temp_dir.mkdir(parents=True, exist_ok=True)
+            sql = temp_dir / "dummy.sql"
+            sql.write_text("-- dummy")
+
+            # Mock drop schema then apply file
+            calls = []
+            def _side_effect(cmd, check=True, env=None):
+                calls.append(cmd)
+                return MagicMock()
+            mock_run.side_effect = _side_effect
+
+            db_backup.restore_database_from_backup(sql)
+
+            self.assertTrue(mock_run.called)
+            # Expect at least two psql invocations (drop schema + -f sql)
+            self.assertGreaterEqual(len(calls), 2)
+            # The second call should include -f path
+            self.assertIn("-f", calls[-1])
+        finally:
+            try:
+                if sql.exists():
+                    sql.unlink()
+                temp_dir.rmdir()
+            except Exception:
+                pass
+
+
+class RestoreTaskAndAPITests(TestCase):
+    @patch("core.tasks.ActivityLog.objects.create")
+    @patch("core.utils.db_backup.restore_latest_backup")
+    def test_restore_task_success(self, mock_restore_latest, mock_log_create):
+        from core.tasks import restore_database
+        mock_restore_latest.return_value = Path("/tmp/fake_backup.sql.gz")
+        result = restore_database()
+        self.assertEqual(result["status"], "success")
+
+    @patch("core.tasks.ActivityLog.objects.create")
+    @patch("core.utils.db_backup.restore_latest_backup")
+    def test_trigger_restore_api(self, mock_restore_latest, mock_log_create):
+        from django.contrib.auth.models import User
+        self.client.force_login(User.objects.create_user("admin", is_staff=True))
+        mock_restore_latest.return_value = Path("/tmp/fake_backup.sql.gz")
+        resp = self.client.post(reverse("api_trigger_restore"))
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data.get("success"))
+

@@ -164,14 +164,55 @@ REST_FRAMEWORK = {
     'PAGE_SIZE': 50
 }
 
-# Ensure logs directory exists for Docker deployment
+# Ensure logs directory exists for Docker deployment and determine file logging capability
 LOGS_DIR = BASE_DIR / 'logs'
-LOGS_DIR.mkdir(exist_ok=True)
 
-# Log rotation / retention
+def _env_truthy(value: str) -> bool:
+    return value.lower() in ('1', 'true', 'yes', 'on')
+
+# Retention for rotating file handler
 LOG_RETENTION_DAYS = int(os.getenv('LOG_RETENTION_DAYS', '14'))
 
-# Logging configuration
+# Decide if file logging is enabled and possible
+_enable_file_logging_env = os.getenv('ENABLE_FILE_LOGGING', 'true')
+_file_logging_enabled = _env_truthy(_enable_file_logging_env)
+_can_write_log_file = False
+_log_file_path = LOGS_DIR / 'django.log'
+
+if _file_logging_enabled:
+    try:
+        LOGS_DIR.mkdir(parents=True, exist_ok=True)
+        # Probe writability by touching the file
+        with open(_log_file_path, 'a', encoding='utf-8'):
+            pass
+        _can_write_log_file = True
+    except Exception:
+        _can_write_log_file = False
+
+# Compose logging configuration with safe fallback to console-only
+_handlers = {
+    'console': {
+        'level': 'INFO',
+        'class': 'logging.StreamHandler',
+        'formatter': 'simple',
+    }
+}
+
+if _can_write_log_file:
+    _handlers['file'] = {
+        'level': 'INFO',
+        'class': 'logging.handlers.TimedRotatingFileHandler',
+        'filename': str(_log_file_path),
+        'formatter': 'verbose',
+        'when': 'midnight',
+        'interval': 1,
+        'backupCount': LOG_RETENTION_DAYS,
+        'utc': True,
+        'encoding': 'utf-8',
+    }
+
+_root_handlers = ['console'] + (['file'] if 'file' in _handlers else [])
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
@@ -185,36 +226,19 @@ LOGGING = {
             'style': '{',
         },
     },
-    'handlers': {
-        'file': {
-            'level': 'INFO',
-            'class': 'logging.handlers.TimedRotatingFileHandler',
-            'filename': LOGS_DIR / 'django.log',
-            'formatter': 'verbose',
-            'when': 'midnight',
-            'interval': 1,
-            'backupCount': LOG_RETENTION_DAYS,
-            'utc': True,
-            'encoding': 'utf-8',
-        },
-        'console': {
-            'level': 'INFO',
-            'class': 'logging.StreamHandler',
-            'formatter': 'simple',
-        },
-    },
+    'handlers': _handlers,
     'root': {
-        'handlers': ['console', 'file'],
+        'handlers': _root_handlers,
         'level': 'INFO',
     },
     'loggers': {
         'django': {
-            'handlers': ['console', 'file'],
+            'handlers': _root_handlers,
             'level': 'INFO',
             'propagate': False,
         },
         'core': {
-            'handlers': ['console', 'file'],
+            'handlers': _root_handlers,
             'level': 'INFO',
             'propagate': False,
         },

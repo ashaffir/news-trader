@@ -10,6 +10,7 @@ from .tasks import (
     execute_trade,
     send_dashboard_update,
     backup_database,
+    restore_database,
 )
 import logging
 import json
@@ -323,6 +324,31 @@ def trigger_backup_api(request):
         return JsonResponse({"success": False, "error": result.get("error", "Unknown error")}, status=500)
     except Exception as e:
         logger.error(f"Backup trigger failed: {e}")
+        return JsonResponse({"success": False, "error": str(e)}, status=500)
+
+@staff_member_required
+@require_POST
+def trigger_restore_api(request):
+    """Trigger a database restore from the latest backup and return JSON status.
+
+    WARNING: This will overwrite existing data. Restricted to staff.
+    """
+    try:
+        # Optional explicit backup_path provided in body
+        backup_path = None
+        try:
+            import json
+            payload = json.loads(request.body or b"{}")
+            backup_path = payload.get("backup_path")
+        except Exception:
+            pass
+
+        result = restore_database.apply(kwargs={"backup_path": backup_path}).get()
+        if result.get("status") == "success":
+            return JsonResponse({"success": True, "path": result.get("path")})
+        return JsonResponse({"success": False, "error": result.get("error", "Unknown error")}, status=500)
+    except Exception as e:
+        logger.error(f"Restore trigger failed: {e}")
         return JsonResponse({"success": False, "error": str(e)}, status=500)
 
 @staff_member_required

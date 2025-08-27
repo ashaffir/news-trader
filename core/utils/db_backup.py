@@ -91,3 +91,88 @@ def create_database_backup(backup_dir: Path | None = None) -> Path:
     return output_path
 
 
+
+# =============================
+# Restore utilities
+# =============================
+
+def _resolve_psql_path() -> str:
+    explicit = os.environ.get("PSQL_PATH")
+    if explicit and Path(explicit).exists():
+        return explicit
+    resolved = shutil.which("psql")
+    if not resolved:
+        raise FileNotFoundError("psql not found. Install PostgreSQL client or set PSQL_PATH.")
+    return resolved
+
+
+def list_backup_files(backup_dir: Path | None = None) -> list[Path]:
+    backup_dir = backup_dir or get_default_backup_dir()
+    if not backup_dir.exists():
+        return []
+    # Support both .sql and .sql.gz
+    files = list(backup_dir.glob("*.sql")) + list(backup_dir.glob("*.sql.gz"))
+    return sorted(files)
+
+
+def find_latest_backup(backup_dir: Path | None = None) -> Path:
+    files = list_backup_files(backup_dir)
+    if not files:
+        raise FileNotFoundError("No backup files found in backups directory")
+    # Sort by modified time descending; fall back to name
+    files.sort(key=lambda p: (p.stat().st_mtime, p.name))
+    return files[-1]
+
+
+def _run_psql_command(args: list[str], db_env: dict) -> None:
+    env = os.environ.copy()
+    if db_env.get("PASSWORD"):
+        env["PGPASSWORD"] = db_env["PASSWORD"]
+
+    psql_bin = _resolve_psql_path()
+    cmd = [psql_bin, "-h", db_env.get("HOST", "localhost"), "-p", db_env.get("PORT", "5432"), "-U", db_env.get("USER", "postgres"), "-d", db_env.get("NAME")] + args
+    subprocess.run(cmd, check=True, env=env)
+
+
+def drop_public_schema(db_env: dict) -> None:
+    # Safely drop and recreate public schema to avoid conflicts on restore
+    _run_psql_command(["-v", "ON_ERROR_STOP=1", "-c", "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;"], db_env)
+
+
+def _decompress_if_needed(backup_path: Path) -> Path:
+    if backup_path.suffix == ".gz":
+        import gzip
+        target_sql = backup_path.with_suffix("")  # remove .gz -> .sql
+        with gzip.open(backup_path, 'rb') as f_in, open(target_sql, 'wb') as f_out:
+            shutil.copyfileobj(f_in, f_out)
+        return target_sql
+    return backup_path
+
+
+def restore_database_from_backup(backup_file: Path) -> None:
+    if not backup_file.exists():
+        raise FileNotFoundError(f"Backup not found: {backup_file}")
+
+    db_env = get_database_connection_settings()
+
+    # Prepare database by dropping schema
+    drop_public_schema(db_env)
+
+    # Decompress if .gz and apply with psql
+    sql_file = _decompress_if_needed(backup_file)
+    try:
+        _run_psql_command(["-v", "ON_ERROR_STOP=1", "-f", str(sql_file)], db_env)
+    finally:
+        # Clean up temp decompressed file if we created it
+        if sql_file != backup_file and sql_file.exists():
+            try:
+                sql_file.unlink()
+            except Exception:
+                pass
+
+
+def restore_latest_backup(backup_dir: Path | None = None) -> Path:
+    latest = find_latest_backup(backup_dir)
+    restore_database_from_backup(latest)
+    return latest
+

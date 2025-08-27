@@ -66,6 +66,55 @@ def backup_database(backup_dir: str | None = None):
 
 
 # =============================
+# Database Restore
+# =============================
+
+@shared_task
+def restore_database(backup_path: str | None = None, backup_dir: str | None = None):
+    """Restore the PostgreSQL database from a specified backup or the latest available.
+
+    - If `backup_path` is provided, it must point to a .sql or .sql.gz file.
+    - Otherwise, the latest backup in `backup_dir` (or default backups dir) will be used.
+    """
+    try:
+        from .utils.db_backup import restore_latest_backup, restore_database_from_backup, get_default_backup_dir
+        target_path: str
+
+        if backup_path:
+            target = Path(backup_path)
+            restore_database_from_backup(target)
+            target_path = str(target)
+        else:
+            target_dir = Path(backup_dir) if backup_dir else get_default_backup_dir()
+            target = restore_latest_backup(target_dir)
+            target_path = str(target)
+
+        ActivityLog.objects.create(
+            activity_type="system_event",
+            message="Database restore completed",
+            data={
+                "backup_path": target_path,
+                "timestamp": timezone.now().isoformat(),
+            },
+        )
+        logger.info(f"Database restored from {target_path}")
+        return {"status": "success", "path": target_path}
+    except Exception as e:
+        logger.error(f"Database restore failed: {e}")
+        ActivityLog.objects.create(
+            activity_type="system_event",
+            message="Database restore failed",
+            data={"error": str(e), "timestamp": timezone.now().isoformat()},
+        )
+        try:
+            from .utils.telegram import send_system_error_alert
+            send_system_error_alert(f"Database restore failed: {e}")
+        except Exception:
+            logger.exception("Failed to send system error alert for restore failure")
+        return {"status": "error", "error": str(e)}
+
+
+# =============================
 # Log Maintenance
 # =============================
 

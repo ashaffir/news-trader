@@ -134,7 +134,7 @@
             return cookieValue;
         }
 
-        // Backup DB modal and trigger (works from navbar on any page)
+        // Backup/Restore DB modals and triggers (works from navbar on any page)
         window.openBackupModal = function() {
             const modalHtml = `
                 <div class="modal fade" id="backupConfirmModal" tabindex="-1" aria-hidden="true">
@@ -202,6 +202,77 @@
                 .finally(() => {
                     btn.disabled = false;
                     btn.innerHTML = '<i class="fas fa-play me-1"></i>Start Backup';
+                });
+            };
+        };
+
+        window.openRestoreModal = function() {
+            const modalHtml = `
+                <div class="modal fade" id="restoreConfirmModal" tabindex="-1" aria-hidden="true">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title"><i class="fas fa-undo me-2"></i>Confirm Database Restore</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="alert alert-warning">
+                                    Restoring the latest backup will OVERWRITE the current database. Proceed?
+                                </div>
+                                <div id="restoreResult" class="small text-muted"></div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                <button type="button" class="btn btn-danger" id="confirmRestoreBtn">
+                                    <i class="fas fa-play me-1"></i>Restore Latest Backup
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>`;
+
+            let existing = document.getElementById('restoreConfirmModal');
+            if (!existing) {
+                const container = document.createElement('div');
+                container.innerHTML = modalHtml;
+                document.body.appendChild(container.firstElementChild);
+                existing = document.getElementById('restoreConfirmModal');
+            }
+
+            const modal = new bootstrap.Modal(existing);
+            modal.show();
+
+            const btn = existing.querySelector('#confirmRestoreBtn');
+            const resultDiv = existing.querySelector('#restoreResult');
+            btn.onclick = function() {
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Restoring...';
+                resultDiv.className = 'small text-muted';
+                resultDiv.textContent = '';
+
+                fetch('/api/trigger-restore/', {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': getCookie('csrftoken')
+                    }
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        resultDiv.className = 'small text-success';
+                        resultDiv.textContent = 'Database restored from: ' + data.path;
+                    } else {
+                        resultDiv.className = 'small text-danger';
+                        resultDiv.textContent = 'Restore failed: ' + (data.error || 'Unknown error');
+                    }
+                })
+                .catch(err => {
+                    resultDiv.className = 'small text-danger';
+                    resultDiv.textContent = 'Restore failed: ' + err.message;
+                })
+                .finally(() => {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-play me-1"></i>Restore Latest Backup';
                 });
             };
         };
