@@ -1,0 +1,183 @@
+{% extends 'core/base.html' %}
+{% load static %}
+
+{% block title %}Analysis{% endblock %}
+
+{% block extra_head %}
+<style>
+  .metric-card { background: #f8f9fa; border-radius: 8px; padding: 12px 16px; }
+  .chart-card { background: #fff; border-radius: 8px; padding: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+  .filter-bar { background: #fff; border-radius: 8px; padding: 12px; margin-bottom: 16px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+  .subtle { color: #6c757d; font-size: 0.9rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-2">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h2 class="mb-0">Analysis</h2>
+      <div class="text-muted small">Confidence, calibration, industries, and behavior analytics.</div>
+    </div>
+  </div>
+
+  <div class="filter-bar">
+    <div class="row g-2 align-items-end">
+      <div class="col-md-3">
+        <label class="form-label">Start</label>
+        <input id="filter-start" type="datetime-local" class="form-control">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">End</label>
+        <input id="filter-end" type="datetime-local" class="form-control">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Symbol</label>
+        <input id="filter-symbol" type="text" class="form-control" placeholder="Leave blank for all symbols" autocomplete="off">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Confidence ≥</label>
+        <div class="input-group">
+          <input id="filter-min-confidence" type="number" min="0" max="1" step="0.01" class="form-control" placeholder="0.70">
+          <button id="apply-filters" class="btn btn-primary"><i class="fas fa-filter me-1"></i>Apply</button>
+        </div>
+      </div>
+    </div>
+    <div class="row g-2 align-items-end mt-1">
+      <div class="col-md-4">
+        <label class="form-label">Industry</label>
+        <input id="filter-industry" type="text" class="form-control" placeholder="Exact match or leave blank">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Sector</label>
+        <input id="filter-sector" type="text" class="form-control" placeholder="Exact match or leave blank">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Source</label>
+        <input id="filter-source" type="text" class="form-control" placeholder="Exact source name or leave blank">
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-2">
+    <div class="col-md-3"><div class="metric-card"><div class="text-muted small">Trades (closed)</div><div id="kpi-trades" class="fs-4">-</div></div></div>
+    <div class="col-md-3"><div class="metric-card"><div class="text-muted small">Win Rate</div><div id="kpi-win-rate" class="fs-4">-</div></div></div>
+    <div class="col-md-3"><div class="metric-card"><div class="text-muted small">Total P&L (adj)</div><div id="kpi-total-pnl" class="fs-4">-</div></div></div>
+    <div class="col-md-3"><div class="metric-card"><div class="text-muted small">Avg P&L / Trade</div><div id="kpi-avg-pnl" class="fs-4">-</div></div></div>
+  </div>
+
+  <div class="row g-3">
+    <div class="col-lg-6">
+      <div class="chart-card">
+        <div class="fw-semibold mb-2">Confidence Distribution</div>
+        <canvas id="chart-confidence" height="140"></canvas>
+      </div>
+    </div>
+    <div class="col-lg-6">
+      <div class="chart-card">
+        <div class="fw-semibold mb-2">Calibration (Win Rate by Confidence Bin)</div>
+        <canvas id="chart-calibration" height="140"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3 mt-1">
+    <div class="col-lg-6">
+      <div class="chart-card">
+        <div class="fw-semibold mb-2">PnL by Confidence Bin</div>
+        <canvas id="chart-conf-pnl" height="150"></canvas>
+      </div>
+    </div>
+    <div class="col-lg-6">
+      <div class="chart-card">
+        <div class="fw-semibold mb-2">Buy vs Sell by Confidence Bin</div>
+        <canvas id="chart-dir-bucket" height="150"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3 mt-1">
+    <div class="col-lg-6">
+      <div class="chart-card">
+        <div class="fw-semibold mb-2">Industry Performance</div>
+        <canvas id="chart-industry" height="160"></canvas>
+        <div class="subtle mt-1">Minimum 5 trades per industry</div>
+      </div>
+    </div>
+    <div class="col-lg-6">
+      <div class="chart-card">
+        <div class="fw-semibold mb-2">Sector Performance</div>
+        <canvas id="chart-sector" height="160"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3 mt-1">
+    <div class="col-lg-6">
+      <div class="chart-card">
+        <div class="fw-semibold mb-2">Source Performance</div>
+        <canvas id="chart-source" height="160"></canvas>
+      </div>
+    </div>
+    <div class="col-lg-6">
+      <div class="chart-card">
+        <div class="fw-semibold mb-2">Model Performance</div>
+        <canvas id="chart-model" height="160"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3 mt-1">
+    <div class="col-lg-12">
+      <div class="chart-card">
+        <div class="d-flex justify-content-between align-items-center">
+          <div class="fw-semibold mb-2">Threshold Simulation (Confidence ≥ X)</div>
+          <div>
+            <div class="input-group input-group-sm" style="width: 220px;">
+              <span class="input-group-text">X</span>
+              <input id="sim-min-confidence" type="number" min="0" max="1" step="0.01" class="form-control" placeholder="0.70">
+              <button id="run-sim" class="btn btn-outline-primary">Run</button>
+            </div>
+          </div>
+        </div>
+        <div class="row g-2">
+          <div class="col-md-3"><div class="metric-card"><div class="text-muted small">Trades</div><div id="sim-trades" class="fs-5">-</div></div></div>
+          <div class="col-md-3"><div class="metric-card"><div class="text-muted small">Win Rate</div><div id="sim-win-rate" class="fs-5">-</div></div></div>
+          <div class="col-md-3"><div class="metric-card"><div class="text-muted small">Total P&L (adj)</div><div id="sim-total-pnl" class="fs-5">-</div></div></div>
+          <div class="col-md-3"><div class="metric-card"><div class="text-muted small">Avg P&L / Trade</div><div id="sim-avg-pnl" class="fs-5">-</div></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3 mt-1">
+    <div class="col-lg-6">
+      <div class="chart-card">
+        <div class="fw-semibold mb-2">Scatter: Confidence vs PnL</div>
+        <canvas id="chart-scatter-conf" height="180"></canvas>
+      </div>
+    </div>
+    <div class="col-lg-6">
+      <div class="chart-card">
+        <div class="fw-semibold mb-2">Scatter: Duration (min) vs PnL</div>
+        <canvas id="chart-scatter-dur" height="180"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="{% static 'js/analysis.js' %}"></script>
+<script>
+  (function(){
+    const start = new Date("{{ default_start }}");
+    const end = new Date("{{ default_end }}");
+    function toLocal(dt){ const z=dt.getTimezoneOffset(); const t=new Date(dt.getTime()-z*60000); return t.toISOString().slice(0,16); }
+    const s = document.getElementById('filter-start');
+    const e = document.getElementById('filter-end');
+    if (s && e) { s.value = toLocal(start); e.value = toLocal(end); }
+  })();
+</script>
+{% endblock %}
+
+

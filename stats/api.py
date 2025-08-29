@@ -7,6 +7,7 @@ from django.views.decorators.http import require_GET
 from django.contrib.auth.decorators import login_required
 
 from core.models import Trade
+from django.db.models import F
 
 
 def _parse_dt(value: str | None):
@@ -23,12 +24,28 @@ def _filtered_trades(request):
     start = _parse_dt(request.GET.get('start'))
     end = _parse_dt(request.GET.get('end'))
     symbol = request.GET.get('symbol')
+    min_conf = request.GET.get('min_confidence')
+    industry = request.GET.get('industry')
+    sector = request.GET.get('sector')
+    source = request.GET.get('source')
     if start:
         qs = qs.filter(created_at__gte=start)
     if end:
         qs = qs.filter(created_at__lte=end)
     if symbol:
         qs = qs.filter(symbol__iexact=symbol)
+    if min_conf:
+        try:
+            mc = float(min_conf)
+            qs = qs.filter(analysis__confidence__gte=mc)
+        except Exception:
+            pass
+    if industry:
+        qs = qs.filter(tracked_company__industry__iexact=industry)
+    if sector:
+        qs = qs.filter(tracked_company__sector__iexact=sector)
+    if source:
+        qs = qs.filter(analysis__post__source__name__iexact=source)
     return qs
 
 
@@ -180,4 +197,263 @@ def heatmap_api(request):
     # Chart.js stacked bars want datasets per hour (rows)
     return JsonResponse({ 'hours': hours, 'weekdays': weekdays, 'matrix': matrix })
 
+
+
+@login_required
+@require_GET
+def confidence_distribution_api(request):
+    qs = _filtered_trades(request).filter(status='closed', realized_pnl__isnull=False, analysis__isnull=False)
+    # Bins: 0.50-0.60 ... 0.90-1.00
+    edges = [0.5, 0.6, 0.7, 0.8, 0.9, 1.01]
+    labels = ["0.50-0.60","0.60-0.70","0.70-0.80","0.80-0.90","0.90-1.00"]
+    all_counts = [0]*5
+    win_counts = [0]*5
+    lose_counts = [0]*5
+    for t in qs.select_related('analysis'):
+        c = float(getattr(t.analysis, 'confidence', 0.0) or 0.0)
+        idx = None
+        for i in range(5):
+            if edges[i] <= c < edges[i+1]:
+                idx = i
+                break
+        if idx is None:
+            continue
+        all_counts[idx] += 1
+        pnl = _commission_adjusted_realized_pnl(t)
+        if pnl > 0:
+            win_counts[idx] += 1
+        elif pnl < 0:
+            lose_counts[idx] += 1
+    return JsonResponse({ 'bins': labels, 'all_counts': all_counts, 'win_counts': win_counts, 'lose_counts': lose_counts })
+
+
+@login_required
+@require_GET
+def calibration_api(request):
+    qs = _filtered_trades(request).filter(status='closed', realized_pnl__isnull=False, analysis__isnull=False)
+    edges = [0.5, 0.6, 0.7, 0.8, 0.9, 1.01]
+    labels = ["0.50-0.60","0.60-0.70","0.70-0.80","0.80-0.90","0.90-1.00"]
+    wins = [0]*5
+    counts = [0]*5
+    for t in qs.select_related('analysis'):
+        c = float(getattr(t.analysis, 'confidence', 0.0) or 0.0)
+        idx = None
+        for i in range(5):
+            if edges[i] <= c < edges[i+1]:
+                idx = i
+                break
+        if idx is None:
+            continue
+        counts[idx] += 1
+        if _commission_adjusted_realized_pnl(t) > 0:
+            wins[idx] += 1
+    win_rate = [round((wins[i]/counts[i])*100.0, 2) if counts[i] else 0.0 for i in range(5)]
+    return JsonResponse({ 'bins': labels, 'win_rate': win_rate, 'counts': counts })
+
+
+@login_required
+@require_GET
+def confidence_pnl_buckets_api(request):
+    qs = _filtered_trades(request).filter(status='closed', realized_pnl__isnull=False, analysis__isnull=False)
+    edges = [0.5, 0.6, 0.7, 0.8, 0.9, 1.01]
+    labels = ["0.50-0.60","0.60-0.70","0.70-0.80","0.80-0.90","0.90-1.00"]
+    totals = [0.0]*5
+    counts = [0]*5
+    for t in qs.select_related('analysis'):
+        c = float(getattr(t.analysis, 'confidence', 0.0) or 0.0)
+        idx = None
+        for i in range(5):
+            if edges[i] <= c < edges[i+1]:
+                idx = i
+                break
+        if idx is None:
+            continue
+        totals[idx] += _commission_adjusted_realized_pnl(t)
+        counts[idx] += 1
+    avg = [ (totals[i]/counts[i]) if counts[i] else 0.0 for i in range(5) ]
+    return JsonResponse({ 'bins': labels, 'avg_pnl': avg, 'total_pnl': totals, 'counts': counts })
+
+
+def _aggregate_dimension(qs, key_name, min_trades=5):
+    # Build aggregates safely in Python to account for commission adjustment
+    from collections import defaultdict
+    by = defaultdict(lambda: { 'name': '', 'count': 0, 'wins': 0, 'total_pnl_adjusted': 0.0 })
+    for t in qs:
+        key = getattr(t, key_name, None)
+        if key_name == 'tracked_company':
+            key = getattr(getattr(t, 'tracked_company', None), 'industry', '')
+        if key is None:
+            key = ''
+        name = key if isinstance(key, str) else str(key)
+        pnl = _commission_adjusted_realized_pnl(t)
+        item = by[name]
+        item['name'] = name or '(Unknown)'
+        item['count'] += 1
+        if pnl > 0:
+            item['wins'] += 1
+        item['total_pnl_adjusted'] += pnl
+    items = []
+    for v in by.values():
+        if v['count'] >= min_trades:
+            v['win_rate'] = round((v['wins']/v['count'])*100.0, 2)
+            items.append(v)
+    items.sort(key=lambda x: x['total_pnl_adjusted'], reverse=True)
+    return items
+
+
+@login_required
+@require_GET
+def industry_performance_api(request):
+    qs = _filtered_trades(request).filter(status='closed', realized_pnl__isnull=False)
+    # Only trades linked to tracked_company to access industry
+    qs = qs.filter(tracked_company__isnull=False)
+    # Attach industry name onto trade instance for aggregation
+    trades = list(qs.select_related('tracked_company'))
+    for t in trades:
+        setattr(t, 'industry', getattr(getattr(t, 'tracked_company', None), 'industry', ''))
+    items = _aggregate_dimension(trades, 'industry', min_trades=5)
+    return JsonResponse({ 'items': items })
+
+
+@login_required
+@require_GET
+def sector_performance_api(request):
+    qs = _filtered_trades(request).filter(status='closed', realized_pnl__isnull=False)
+    qs = qs.filter(tracked_company__isnull=False)
+    trades = list(qs.select_related('tracked_company'))
+    for t in trades:
+        setattr(t, 'sector', getattr(getattr(t, 'tracked_company', None), 'sector', ''))
+    items = _aggregate_dimension(trades, 'sector', min_trades=5)
+    return JsonResponse({ 'items': items })
+
+
+@login_required
+@require_GET
+def source_performance_api(request):
+    qs = _filtered_trades(request).filter(status='closed', realized_pnl__isnull=False, analysis__isnull=False)
+    trades = list(qs.select_related('analysis__post__source'))
+    for t in trades:
+        src_name = ''
+        try:
+            src_name = t.analysis.post.source.name
+        except Exception:
+            src_name = ''
+        setattr(t, 'source_name', src_name)
+    items = _aggregate_dimension(trades, 'source_name', min_trades=5)
+    return JsonResponse({ 'items': items })
+
+
+@login_required
+@require_GET
+def model_performance_api(request):
+    qs = _filtered_trades(request).filter(status='closed', realized_pnl__isnull=False, analysis__isnull=False)
+    trades = list(qs.select_related('analysis__trading_config_used'))
+    for t in trades:
+        model = ''
+        try:
+            model = t.analysis.trading_config_used.llm_model
+        except Exception:
+            model = ''
+        setattr(t, 'llm_model', model)
+    items = _aggregate_dimension(trades, 'llm_model', min_trades=3)
+    return JsonResponse({ 'items': items })
+
+
+@login_required
+@require_GET
+def behavior_api(request):
+    qs = _filtered_trades(request).filter(status='closed', realized_pnl__isnull=False, analysis__isnull=False)
+    edges = [0.5, 0.6, 0.7, 0.8, 0.9, 1.01]
+    labels = ["0.50-0.60","0.60-0.70","0.70-0.80","0.80-0.90","0.90-1.00"]
+    buy_wins = [0]*5; buy_counts = [0]*5
+    sell_wins = [0]*5; sell_counts = [0]*5
+    for t in qs.select_related('analysis'):
+        c = float(getattr(t.analysis, 'confidence', 0.0) or 0.0)
+        idx = None
+        for i in range(5):
+            if edges[i] <= c < edges[i+1]:
+                idx = i
+                break
+        if idx is None:
+            continue
+        is_win = _commission_adjusted_realized_pnl(t) > 0
+        if (t.direction or 'buy').lower() == 'sell':
+            sell_counts[idx] += 1
+            if is_win:
+                sell_wins[idx] += 1
+        else:
+            buy_counts[idx] += 1
+            if is_win:
+                buy_wins[idx] += 1
+    buy_win_rate = [ round((buy_wins[i]/buy_counts[i])*100.0, 2) if buy_counts[i] else 0.0 for i in range(5) ]
+    sell_win_rate = [ round((sell_wins[i]/sell_counts[i])*100.0, 2) if sell_counts[i] else 0.0 for i in range(5) ]
+    return JsonResponse({ 'conf_bins': labels, 'buy_win_rate': buy_win_rate, 'sell_win_rate': sell_win_rate })
+
+
+@login_required
+@require_GET
+def threshold_simulation_api(request):
+    qs = _filtered_trades(request).filter(status='closed', realized_pnl__isnull=False)
+    closed = list(qs)
+    trades = len(closed)
+    total = sum(_commission_adjusted_realized_pnl(t) for t in closed)
+    wins = sum(1 for t in closed if _commission_adjusted_realized_pnl(t) > 0)
+    win_rate = (wins / trades * 100.0) if trades else 0.0
+    avg = (total / trades) if trades else 0.0
+    return JsonResponse({ 'trades': trades, 'total_pnl_adjusted': round(total, 4), 'win_rate': round(win_rate, 2), 'avg_pnl': round(avg, 4) })
+
+
+@login_required
+@require_GET
+def symbols_api(request):
+    qs = _filtered_trades(request).filter(status='closed', realized_pnl__isnull=False)
+    from collections import defaultdict
+    agg = defaultdict(lambda: { 'name': '', 'count': 0, 'wins': 0, 'total_pnl_adjusted': 0.0 })
+    for t in qs:
+        sym = (t.symbol or '').upper()
+        pnl = _commission_adjusted_realized_pnl(t)
+        a = agg[sym]
+        a['name'] = sym
+        a['count'] += 1
+        if pnl > 0:
+            a['wins'] += 1
+        a['total_pnl_adjusted'] += pnl
+    items = []
+    for v in agg.values():
+        v['win_rate'] = round((v['wins']/v['count'])*100.0, 2) if v['count'] else 0.0
+        items.append(v)
+    items.sort(key=lambda x: x['total_pnl_adjusted'], reverse=True)
+    return JsonResponse({ 'items': items[:30] })
+
+
+@login_required
+@require_GET
+def confidence_pnl_scatter_api(request):
+    qs = _filtered_trades(request).filter(status='closed', realized_pnl__isnull=False, analysis__isnull=False)
+    points = []
+    for t in qs.select_related('analysis'):
+        try:
+            c = float(t.analysis.confidence or 0.0)
+            pnl = _commission_adjusted_realized_pnl(t)
+            points.append({ 'x': round(c, 4), 'y': round(pnl, 4), 'symbol': (t.symbol or '').upper(), 'dir': (t.direction or '').lower() })
+        except Exception:
+            continue
+    return JsonResponse({ 'points': points })
+
+
+@login_required
+@require_GET
+def duration_pnl_scatter_api(request):
+    qs = _filtered_trades(request).filter(status='closed', realized_pnl__isnull=False, opened_at__isnull=False, closed_at__isnull=False)
+    points = []
+    for t in qs:
+        try:
+            duration_min = t.duration_minutes
+            if duration_min is None:
+                continue
+            pnl = _commission_adjusted_realized_pnl(t)
+            points.append({ 'x': int(duration_min), 'y': round(pnl, 4), 'symbol': (t.symbol or '').upper(), 'dir': (t.direction or '').lower() })
+        except Exception:
+            continue
+    return JsonResponse({ 'points': points })
 

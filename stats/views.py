@@ -24,3 +24,18 @@ def stats_page(request):
     return render(request, "stats/stats.html", context)
 
 # Create your views here.
+
+
+@login_required
+def analysis_page(request):
+    """Render Analysis page shell; data loaded via JS."""
+    end = timezone.now()
+    start = end - timedelta(days=30)
+    trading_config = TradingConfig.objects.filter(is_active=True).first()
+    bot_enabled = trading_config.bot_enabled if trading_config else False
+    context = {
+        "default_start": start.isoformat(),
+        "default_end": end.isoformat(),
+        "bot_enabled": bot_enabled,
+    }
+    return render(request, "stats/analysis.html", context)
