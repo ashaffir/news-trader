@@ -13,6 +13,7 @@ class TradingConfigAdmin(admin.ModelAdmin):
     list_display = (
         "name",
         "is_active",
+        "autostart",
         "default_position_size",
         "max_concurrent_open_trades",
         "max_total_open_exposure",
@@ -26,13 +27,14 @@ class TradingConfigAdmin(admin.ModelAdmin):
         "position_sizing_method",
         "market_hours_only",
         "trading_enabled",
+        "autostart",
     )
     search_fields = ("name",)
 
     fieldsets = (
         (
             "Basic Configuration",
-            {"fields": ("name", "is_active", "trading_enabled", "market_hours_only")},
+            {"fields": ("name", "is_active", "trading_enabled", "market_hours_only", "autostart")},
         ),
         (
             "Position Sizing",
