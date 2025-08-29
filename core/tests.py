@@ -7,7 +7,7 @@ from unittest import skipIf
 from rest_framework.test import APITestCase
 from rest_framework.authtoken.models import Token
 from core.models import Source, Post, Analysis, Trade, TradingConfig, ApiResponse, AlertSettings, TrackedCompany
-from core.tasks import analyze_post, execute_trade, scrape_posts
+from core.tasks import analyze_post, execute_trade, scrape_posts, enforce_bot_autostart, is_market_open_now
 from unittest.mock import patch, MagicMock
 from core.source_llm import analyze_news_source_with_llm, build_source_kwargs_from_llm_analysis
 import json
@@ -629,6 +629,51 @@ class ErrorHandlingTests(TestCase):
         self.assertIn("invalid JSON", analysis.reason)
 
 
+class AutostartTests(TestCase):
+    def setUp(self):
+        self.config = TradingConfig.objects.create(
+            name="Test Config",
+            is_active=True,
+            autostart=True,
+            bot_enabled=False,
+        )
+
+    def test_is_market_open_now_weekend(self):
+        # Saturday 12:00 UTC
+        import datetime as _dt
+        dt = _dt.datetime(2025, 8, 16, 12, 0, 0, tzinfo=_dt.timezone.utc)
+        self.assertFalse(is_market_open_now(dt))
+
+    def test_is_market_open_now_open_window(self):
+        # Monday 14:00 UTC
+        import datetime as _dt
+        dt = _dt.datetime(2025, 8, 18, 14, 0, 0, tzinfo=_dt.timezone.utc)
+        self.assertTrue(is_market_open_now(dt))
+
+    def test_enforce_bot_autostart_enables_on_open(self):
+        # Force heuristic path by clearing Alpaca env
+        os.environ.pop("ALPACA_API_KEY", None)
+        os.environ.pop("ALPACA_SECRET_KEY", None)
+        import datetime as _dt
+        with patch('core.tasks.timezone.now', return_value=_dt.datetime(2025, 8, 18, 14, 0, 0, tzinfo=_dt.timezone.utc)):
+            result = enforce_bot_autostart.apply(args=[]).get()
+        self.config.refresh_from_db()
+        self.assertTrue(self.config.bot_enabled)
+        self.assertTrue(result.get("market_open"))
+
+    def test_enforce_bot_autostart_disables_on_close(self):
+        self.config.bot_enabled = True
+        self.config.save(update_fields=["bot_enabled"])
+        os.environ.pop("ALPACA_API_KEY", None)
+        os.environ.pop("ALPACA_SECRET_KEY", None)
+        import datetime as _dt
+        with patch('core.tasks.timezone.now', return_value=_dt.datetime(2025, 8, 18, 21, 0, 0, tzinfo=_dt.timezone.utc)):
+            result = enforce_bot_autostart.apply(args=[]).get()
+        self.config.refresh_from_db()
+        self.assertFalse(self.config.bot_enabled)
+        self.assertFalse(result.get("market_open"))
+
+
 class ExternalIntegrationTests(TestCase):
     """
     Integration tests that verify real external connections.
@@ -830,7 +875,7 @@ class ExternalIntegrationTests(TestCase):
             name="Integration Test Source",
             url="https://example.com",
             scraping_method="web",
-        )
+            )
         
         post = Post.objects.create(
             source=source,

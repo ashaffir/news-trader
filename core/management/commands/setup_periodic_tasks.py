@@ -35,6 +35,10 @@ class Command(BaseCommand):
             every=10,
             period=IntervalSchedule.MINUTES,
         )
+        interval_2_minutes, _ = IntervalSchedule.objects.get_or_create(
+            every=2,
+            period=IntervalSchedule.MINUTES,
+        )
 
         # Create crontab (daily at 02:30 by default; configurable via Django Admin)
         daily_230_cron, _ = CrontabSchedule.objects.get_or_create(
@@ -113,6 +117,12 @@ class Command(BaseCommand):
                 'task': 'core.tasks.disable_bot_on_weekends',
                 'crontab': weekend_230_cron,
                 'description': 'Automatically disable trading bot on Saturdays and Sundays'
+            },
+            {
+                'name': 'Enforce Bot Autostart',
+                'task': 'core.tasks.enforce_bot_autostart',
+                'interval': interval_2_minutes,
+                'description': 'Enable/disable bot automatically based on market hours when autostart is enabled'
             },
 
         ]

@@ -18,6 +18,7 @@ from django.db.models import Q
 import logging
 import hashlib
 from datetime import datetime, timedelta
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -1153,6 +1154,25 @@ def is_trading_allowed():
     # Market-hours-only constraint removed per requirements
 
     return True, "Trading allowed"
+
+
+def is_market_open_now(now_utc: Optional[datetime] = None) -> bool:
+    """Heuristic market-hours check in UTC (Mon-Fri 13:30-20:00). Ignores holidays.
+
+    Prefer broker clock when available in autostart task; this is a fallback.
+    """
+    try:
+        if now_utc is None:
+            now_utc = timezone.now()
+        weekday = now_utc.weekday()  # Mon=0..Sun=6
+        if weekday >= 5:
+            return False
+        minutes = now_utc.hour * 60 + now_utc.minute
+        open_min = 13 * 60 + 30
+        close_min = 20 * 60
+        return open_min <= minutes < close_min
+    except Exception:
+        return False
 
 
 def check_daily_trade_limit():
@@ -3129,6 +3149,78 @@ def disable_bot_on_weekends():
                 pass
     except Exception as e:
         logger.error("disable_bot_on_weekends failed: %s", e)
+
+
+@shared_task
+def enforce_bot_autostart():
+    """Enable/disable bot automatically based on market hours when autostart is enabled.
+
+    Prefer Alpaca clock when available; fall back to heuristic UTC window.
+    """
+    try:
+        config = TradingConfig.objects.filter(is_active=True).first()
+        if not config or not getattr(config, "autostart", False):
+            return {"changed": False, "reason": "autostart_disabled_or_no_config"}
+
+        # Determine market status
+        market_open = None
+        try:
+            ALPACA_API_KEY = os.getenv("ALPACA_API_KEY")
+            ALPACA_SECRET_KEY = os.getenv("ALPACA_SECRET_KEY")
+            ALPACA_BASE_URL = os.getenv("ALPACA_BASE_URL", "https://paper-api.alpaca.markets")
+            if ALPACA_API_KEY and ALPACA_SECRET_KEY:
+                import alpaca_trade_api as tradeapi
+                api = tradeapi.REST(ALPACA_API_KEY, ALPACA_SECRET_KEY, base_url=ALPACA_BASE_URL)
+                clock = api.get_clock()
+                market_open = bool(getattr(clock, "is_open", False))
+        except Exception:
+            market_open = None
+
+        if market_open is None:
+            market_open = is_market_open_now()
+
+        changed = False
+        if market_open and not config.bot_enabled:
+            config.bot_enabled = True
+            config.save(update_fields=["bot_enabled"])
+            changed = True
+            try:
+                ActivityLog.objects.create(
+                    activity_type="system_event",
+                    message="Bot enabled automatically (market open)",
+                    data={"action": "bot_enabled_autostart", "timestamp": timezone.now().isoformat()},
+                )
+            except Exception:
+                pass
+            try:
+                from .utils.telegram import is_alert_enabled, send_telegram_message
+                if is_alert_enabled("bot_status"):
+                    send_telegram_message("🟢 Bot ENABLED automatically (market open)")
+            except Exception:
+                pass
+        elif not market_open and config.bot_enabled:
+            config.bot_enabled = False
+            config.save(update_fields=["bot_enabled"])
+            changed = True
+            try:
+                ActivityLog.objects.create(
+                    activity_type="system_event",
+                    message="Bot disabled automatically (market closed)",
+                    data={"action": "bot_disabled_autostart", "timestamp": timezone.now().isoformat()},
+                )
+            except Exception:
+                pass
+            try:
+                from .utils.telegram import is_alert_enabled, send_telegram_message
+                if is_alert_enabled("bot_status"):
+                    send_telegram_message("🔴 Bot DISABLED automatically (market closed)")
+            except Exception:
+                pass
+
+        return {"changed": changed, "market_open": bool(market_open), "bot_enabled": config.bot_enabled}
+    except Exception as e:
+        logger.error(f"enforce_bot_autostart failed: {e}")
+        return {"error": str(e)}
 
 
 @shared_task(bind=True)

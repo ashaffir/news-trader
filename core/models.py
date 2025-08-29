@@ -118,6 +118,10 @@ Direction can be 'buy', 'sell', or 'hold'. Confidence is a float between 0 and 1
         default=False,
         help_text="Master switch to enable/disable all bot activities (scraping, analysis, trading)",
     )
+    autostart = models.BooleanField(
+        default=False,
+        help_text="Automatically enable bot during market hours and disable when closed",
+    )
 
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
