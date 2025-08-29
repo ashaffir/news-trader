@@ -406,12 +406,42 @@ def send_dashboard_update(message_type, data):
             )
             logger.debug(f"Activity logged to database: {message_type}")
             try:
-                from .utils.telegram import send_telegram_message, is_alert_enabled
+                from .utils.telegram import send_telegram_message, is_alert_enabled, ALERT_MAP
                 logger.debug("Alert dispatch gate check for type=%s", message_type)
                 if is_alert_enabled(message_type):
-                    logger.info("Dispatching Telegram alert for type=%s", message_type)
-                    sent = send_telegram_message(message)
-                    logger.info("Telegram alert sent=%s type=%s", sent, message_type)
+                    # Suppress noisy alerts where key fields are missing/unknown.
+                    # Apply only to mapped trading-related alerts, excluding system/heartbeat.
+                    mapped_types = set(ALERT_MAP.keys()) - {"system_error", "heartbeat"}
+                    suppress = False
+                    if message_type in mapped_types:
+                        raw_symbol = (
+                            data.get("symbol")
+                            or data.get("tracked_company_symbol")
+                            or data.get("ticker")
+                            or data.get("stock")
+                        )
+                        try:
+                            symbol_str = (raw_symbol or "").strip()
+                        except Exception:
+                            symbol_str = str(raw_symbol) if raw_symbol is not None else ""
+
+                        if not symbol_str or symbol_str.upper() == "N/A":
+                            suppress = True
+                        # Fallback suppression if formatted message still contains placeholder text
+                        if "N/A" in (message or ""):
+                            suppress = True
+
+                    if suppress:
+                        logger.info(
+                            "Suppressing Telegram alert due to missing/unknown symbol. type=%s data_symbol=%s message_prefix=%s",
+                            message_type,
+                            data.get("symbol"),
+                            (message or "")[:80],
+                        )
+                    else:
+                        logger.info("Dispatching Telegram alert for type=%s", message_type)
+                        sent = send_telegram_message(message)
+                        logger.info("Telegram alert sent=%s type=%s", sent, message_type)
                 else:
                     logger.info("Telegram alert disabled by settings for type=%s", message_type)
             except Exception as notify_error:
