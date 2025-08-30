@@ -11,6 +11,11 @@ from pathlib import Path
 
 from .models import Source, ApiResponse, Post, Analysis, Trade, TradingConfig, ActivityLog, AlertSettings, TwitterSession
 from .twitter_scraper import scrape_twitter_profile
+from .utils.content_fetcher import (
+    find_urls_in_text,
+    pick_best_article_url,
+    extract_article_text,
+)
 
 # Health monitoring will be defined in this file for proper Celery registration
 from django.utils import timezone
@@ -543,6 +548,17 @@ def _scrape_rss_feed(source):
                     
                 # Create content from title and summary
                 content = f"{title}\n\n{summary}"
+                # Try to enrich with article excerpt from link
+                try:
+                    if link:
+                        fetched = extract_article_text(link)
+                        if fetched.get("success") and fetched.get("text"):
+                            excerpt = fetched["text"]
+                            if len(excerpt) > 2000:
+                                excerpt = excerpt[:2000]
+                            content = f"{title}\n\n{summary}\n\n[Article]\n{excerpt}"
+                except Exception:
+                    pass
                 
                 # Check for duplicates by URL and content similarity
                 if link:
@@ -672,14 +688,29 @@ def _scrape_with_browser(source):
                     try:
                         if Post.objects.filter(url=tweet_url).exists():
                             continue
-                        post = Post.objects.create(source=source, content=content, url=tweet_url, published_at=ts)
+                        # Enrich tweet content with linked article excerpt if present
+                        enriched_content = content
+                        try:
+                            urls_in_text = find_urls_in_text(content)
+                            best_link = pick_best_article_url(urls_in_text)
+                            if best_link:
+                                emb = extract_article_text(best_link)
+                                if emb.get("success") and emb.get("text"):
+                                    excerpt = emb["text"]
+                                    if len(excerpt) > 1500:
+                                        excerpt = excerpt[:1500]
+                                    enriched_content = f"{content}\n\n[Linked Article]\n{excerpt}"
+                        except Exception:
+                            pass
+
+                        post = Post.objects.create(source=source, content=enriched_content, url=tweet_url, published_at=ts)
                         created_count += 1
                         analysis_post_ids.append(post.id)
                         send_dashboard_update(
                             "new_post",
                             {
                                 "source": source.name,
-                                "content_preview": content[:100] + ("..." if len(content) > 100 else ""),
+                                "content_preview": enriched_content[:100] + ("..." if len(enriched_content) > 100 else ""),
                                 "url": tweet_url,
                                 "post_id": post.id,
                             },
@@ -806,7 +837,19 @@ def _scrape_with_browser(source):
                         continue
 
                     try:
-                        post = Post.objects.create(source=source, content=title, url=href)
+                        # Enrich headline with article excerpt from href
+                        enriched_title = title
+                        try:
+                            fetched = extract_article_text(href)
+                            if fetched.get("success") and fetched.get("text"):
+                                excerpt = fetched["text"]
+                                if len(excerpt) > 2000:
+                                    excerpt = excerpt[:2000]
+                                enriched_title = f"{title}\n\n[Article]\n{excerpt}"
+                        except Exception:
+                            pass
+
+                        post = Post.objects.create(source=source, content=enriched_title, url=href)
                     except Exception as db_err:
                         try:
                             # Refresh or recreate the Source if missing to survive FK races
@@ -820,7 +863,7 @@ def _scrape_with_browser(source):
                                         "scraping_enabled": True,
                                     },
                                 )
-                            post = Post.objects.create(source=source_refreshed, content=title, url=href)
+                            post = Post.objects.create(source=source_refreshed, content=enriched_title, url=href)
                         except Exception as inner_err:
                             logger.error(
                                 f"DB error creating post for {getattr(source,'name','<unknown>')}: {db_err}; retry failed: {inner_err}"
@@ -1039,11 +1082,22 @@ def _scrape_api_source(source):
                     logger.debug(f"Skipping API post - similar content: {title[:50]}...")
                     continue
                 
-                # Create new post
+                # Create new post (enrich with article content if available)
                 try:
+                    enriched_content = title
+                    try:
+                        fetched = extract_article_text(url)
+                        if fetched.get("success") and fetched.get("text"):
+                            excerpt = fetched["text"]
+                            if len(excerpt) > 2000:
+                                excerpt = excerpt[:2000]
+                            enriched_content = f"{title}\n\n[Article]\n{excerpt}"
+                    except Exception:
+                        pass
+
                     post = Post.objects.create(
                         source=source,
-                        content=title,  # For Reddit, title is the content
+                        content=enriched_content,
                         url=url
                     )
                 except Exception as db_err:
@@ -1051,7 +1105,7 @@ def _scrape_api_source(source):
                         source = Source.objects.get(pk=source.pk)
                         post = Post.objects.create(
                             source=source,
-                            content=title,
+                            content=enriched_content,
                             url=url
                         )
                     except Exception:
@@ -1405,14 +1459,74 @@ Direction can be 'buy', 'sell', or 'hold'. Confidence is a float between 0 and 1
 
         # Create OpenAI client with API key passed directly
         client = openai.OpenAI(api_key=api_key)
+        # Build enriched user content by fetching article excerpts from URLs
+        user_lines = []
+        user_lines.append("You are given a news headline, and when available, short article excerpts from the linked page(s). Use only the provided text; do not speculate beyond it.")
+        user_lines.append("")
+        user_lines.append("Headline:")
+        user_lines.append(post.content or "")
+
+        # Attempt to fetch article text from the post URL
+        primary_excerpt = None
+        primary_title = None
+        primary_url = None
+        try:
+            if post.url:
+                fetch_res = extract_article_text(post.url)
+                if fetch_res.get("success") and fetch_res.get("text"):
+                    primary_excerpt = fetch_res.get("text")
+                    primary_title = fetch_res.get("title")
+                    primary_url = fetch_res.get("url") or post.url
+        except Exception:
+            pass
+
+        # Also check for any embedded URLs inside the headline/content (e.g., tweets referencing Reuters or CNBC)
+        embedded_excerpt = None
+        embedded_title = None
+        embedded_url = None
+        try:
+            urls_in_text = find_urls_in_text(post.content or "")
+            best_link = pick_best_article_url(urls_in_text)
+            if best_link:
+                # Avoid re-fetching the same URL as primary
+                if not primary_url or best_link != primary_url:
+                    emb_res = extract_article_text(best_link)
+                    if emb_res.get("success") and emb_res.get("text"):
+                        embedded_excerpt = emb_res.get("text")
+                        embedded_title = emb_res.get("title")
+                        embedded_url = emb_res.get("url") or best_link
+        except Exception:
+            pass
+
+        # Deduplicate excerpts if they are very similar
+        def _add_excerpt(label: str, title: str | None, url: str | None, text: str | None):
+            if not text:
+                return
+            user_lines.append("")
+            if url:
+                user_lines.append(f"{label} URL: {url}")
+            if title:
+                user_lines.append(f"{label} Title: {title}")
+            user_lines.append(f"{label} Excerpt:")
+            # Keep excerpts concise for token efficiency
+            excerpt = text.strip()
+            if len(excerpt) > 1800:
+                excerpt = excerpt[:1800]
+            user_lines.append(excerpt)
+
+        if primary_excerpt:
+            _add_excerpt("Primary article", primary_title, primary_url, primary_excerpt)
+        if embedded_excerpt and (not primary_excerpt or embedded_excerpt[:200] != primary_excerpt[:200]):
+            _add_excerpt("Embedded link article", embedded_title, embedded_url, embedded_excerpt)
+
+        # Final assembled content
+        user_content = "\n".join(user_lines)
+
         response = client.chat.completions.create(
             model=model,
             messages=[
                 {"role": "system", "content": prompt},
-                {"role": "user", "content": (
-                    "You are given ONLY a news headline. Do not assume details beyond the headline.\n"
-                    "Headline:" + "\n\n" + post.content
-                )},
+                {"role": "user", "content": user_content},
             ],
             response_format={"type": "json_object"},
             temperature=getattr(config, "llm_temperature", 0.1) if config else 0.1,

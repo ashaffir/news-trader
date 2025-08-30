@@ -15,6 +15,7 @@ import os
 import asyncio
 import time
 from datetime import datetime
+from core.utils import content_fetcher
 
 
 class ModelTests(TestCase):
@@ -176,8 +177,11 @@ class TaskTests(TestCase):
         self.assertFalse(Analysis.objects.filter(post=simulated_post).exists())
 
     @patch("core.tasks.openai.OpenAI")
+    @patch("core.tasks.extract_article_text")
+    @patch("core.tasks.pick_best_article_url")
+    @patch("core.tasks.find_urls_in_text")
     @patch("core.tasks.os.getenv")
-    def test_analyze_post_task(self, mock_getenv, mock_openai):
+    def test_analyze_post_task(self, mock_getenv, mock_find_urls, mock_pick_best, mock_extract, mock_openai):
         """Test the analyze_post Celery task."""
 
         # Mock environment variable and OpenAI response
@@ -193,6 +197,18 @@ class TaskTests(TestCase):
             return default
 
         mock_getenv.side_effect = mock_getenv_side_effect
+
+        # Simulate embedded link extraction returning a Reuters article
+        mock_find_urls.return_value = [
+            "https://www.reuters.com/markets/us/example-article-123"
+        ]
+        mock_pick_best.return_value = "https://www.reuters.com/markets/us/example-article-123"
+        mock_extract.side_effect = [
+            # First call: primary URL (the post URL) returns no useful article body
+            {"success": False, "url": self.post.url, "title": None, "text": None, "error": "no_text_found"},
+            # Second call: embedded Reuters link returns an excerpt
+            {"success": True, "url": "https://www.reuters.com/markets/us/example-article-123", "title": "Reuters: Market News", "text": "Apple shares rise after strong earnings and guidance."},
+        ]
 
         mock_response = MagicMock()
         mock_response.choices[0].message.content = json.dumps(
@@ -216,6 +232,11 @@ class TaskTests(TestCase):
         self.assertEqual(analysis.symbol, "AAPL")
         self.assertEqual(analysis.direction, "hold")
         self.assertEqual(analysis.confidence, 0.85)
+
+        # Ensure content enrichment helpers were invoked
+        mock_find_urls.assert_called()
+        mock_pick_best.assert_called()
+        self.assertGreaterEqual(mock_extract.call_count, 1)
 
     @patch("core.tasks.tradeapi.REST")
     @patch("core.tasks.os.getenv")
@@ -1043,6 +1064,76 @@ Direction can be 'buy', 'sell', or 'hold'. Confidence is a float between 0 and 1
                 
         except Exception as e:
             self.fail(f"Real web scraping workflow failed: {e}")
+
+
+class ScrapingEnrichmentTests(TestCase):
+    def setUp(self):
+        self.source_api = Source.objects.create(
+            name="API Source", url="https://api.example.com", scraping_method="api",
+            data_extraction_config={
+                "response_path": "data.items",
+                "content_field": "title",
+                "url_field": "url",
+                "score_field": "score",
+                "min_score": 0,
+            },
+            api_endpoint="https://api.example.com/feed",
+        )
+        self.source_rss = Source.objects.create(
+            name="RSS Source", url="https://example.com/rss.xml", scraping_method="web",
+        )
+
+    @patch("core.tasks.extract_article_text")
+    @patch("core.tasks.requests.get")
+    @patch("core.tasks.os.environ.get")
+    def test_api_scrape_enrichment(self, mock_env_get, mock_get, mock_extract):
+        mock_env_get.return_value = None
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = {
+            "data": {
+                "items": [
+                    {"title": "AAPL beats earnings", "url": "https://news.example.com/aapl-earnings", "score": 10}
+                ]
+            }
+        }
+        mock_extract.return_value = {
+            "success": True,
+            "url": "https://news.example.com/aapl-earnings",
+            "title": "AAPL beats earnings",
+            "text": "Apple reported strong quarterly results with revenue growth.",
+        }
+
+        from core.tasks import _scrape_api_source
+        _scrape_api_source(self.source_api)
+        p = Post.objects.get(url="https://news.example.com/aapl-earnings")
+        self.assertIn("[Article]", p.content)
+        self.assertIn("Apple reported strong quarterly results", p.content)
+
+    @patch("feedparser.parse")
+    @patch("core.tasks.extract_article_text")
+    def test_rss_scrape_enrichment(self, mock_extract, mock_parse):
+        feed = type("F", (), {"bozo": False, "entries": [
+            {
+                "title": "TSLA unveils new model",
+                "link": "https://news.example.com/tsla-model",
+                "summary": "Short summary",
+                "published_parsed": None,
+                "updated_parsed": None,
+            }
+        ]})
+        mock_parse.return_value = feed
+        mock_extract.return_value = {
+            "success": True,
+            "url": "https://news.example.com/tsla-model",
+            "title": "TSLA unveils new model",
+            "text": "Tesla introduced a new model with improved range and features.",
+        }
+
+        from core.tasks import _scrape_rss_feed
+        _scrape_rss_feed(self.source_rss)
+        p = Post.objects.get(url="https://news.example.com/tsla-model")
+        self.assertIn("[Article]", p.content)
+        self.assertIn("Tesla introduced a new model", p.content)
 
 
 if __name__ == "__main__":
