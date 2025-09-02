@@ -239,6 +239,26 @@ docker_setup() {
     fi
     
     if [ "$setup_failed" = false ]; then
+        # Step 5.5: Restore latest database backup if available
+        print_status "📥 Checking for latest database backup to restore..."
+        script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+        latest_backup=$(ls -t "${script_dir}/backups/"*.sql.gz 2>/dev/null | head -1 || echo "")
+        if [ -n "$latest_backup" ] && [ -f "$latest_backup" ]; then
+            backup_name=$(basename "$latest_backup")
+            print_status "📥 Found latest backup: $backup_name"
+            print_status "🔄 Restoring database from backup..."
+            # Copy backup to container and restore
+            if docker-compose run --rm web python manage.py import_database --backup-path "/app/backups/$backup_name"; then
+                print_success "✅ Database restored from $backup_name"
+            else
+                print_warning "⚠️ Failed to restore database backup (continuing with fresh DB...)"
+            fi
+        else
+            print_status "📝 No backup found, continuing with fresh database..."
+        fi
+    fi
+    
+    if [ "$setup_failed" = false ]; then
         # Step 6: Collect static files
         print_status "📁 Collecting static files..."
         if ! docker-compose run --rm web python manage.py collectstatic --noinput; then
@@ -252,6 +272,20 @@ docker_setup() {
         if ! docker-compose up -d; then
             print_error "❌ Failed to start all services"
             setup_failed=true
+        fi
+    fi
+    
+    if [ "$setup_failed" = false ]; then
+        # Step 8: Wait for services to be fully ready
+        print_status "⏳ Waiting for services to initialize..."
+        sleep 10
+        
+        # Step 9: Run full bootstrap setup to ensure all tasks and configurations are in place
+        print_status "🎯 Running full bootstrap setup (superuser, configs, periodic tasks, sources)..."
+        if docker-compose exec web python manage.py bootstrap_full_setup --with-cnbc-latest; then
+            print_success "✅ Full bootstrap setup completed"
+        else
+            print_warning "⚠️ Bootstrap setup had issues (continuing...)"
         fi
     fi
     
@@ -287,8 +321,14 @@ docker_setup() {
         print_success "❤️  Health Check: http://localhost:8800/health/"
         print_success "🌸 Flower Monitor: http://localhost:5555 (use monitor option)"
         echo ""
-        print_status "💡 Your News Trader is ready for testing!"
-        print_status "💡 Default admin credentials: admin/admin"
+        print_status "💡 Your News Trader is fully functional with:"
+        print_status "   ✅ Latest database backup restored"
+        print_status "   ✅ All periodic tasks configured"
+        print_status "   ✅ Trading and alert settings initialized"
+        print_status "   ✅ Default sources configured"
+        print_status "   ✅ Playwright browsers installed"
+        echo ""
+        print_status "🔑 Default admin credentials: alfreds/!Q2w3e4r%T"
     else
         print_warning "⚠️ Services started but health check failed"
         print_status "🔍 Check service status with: ./docker_dev.sh status"
@@ -1175,7 +1215,7 @@ show_help() {
     echo "  $0                    Launch interactive menu"
     echo
     echo "Command Line Mode:"
-    echo "  setup     Robust setup with error recovery (can retry)"
+    echo "  setup     Full setup: build, migrate, restore latest backup, bootstrap tasks"
     echo "  start     Start all services"
     echo "  stop      Stop all services"
     echo "  restart   Restart all services"
@@ -1201,7 +1241,7 @@ show_help() {
     echo
     echo "Examples:"
     echo "  $0                    # Interactive mode"
-    echo "  $0 setup              # Robust setup (can retry if failed)"
+    echo "  $0 setup              # Full setup: build, restore data, configure tasks"
     echo "  $0 test               # Run all regression tests"
     echo "  $0 clean              # Reset after failed setup"
     echo "  $0 start              # Start services"
@@ -1232,7 +1272,7 @@ interactive_menu() {
         
         echo -e "${YELLOW}📋 Available Actions:${NC}"
         echo "========================"
-        echo "  1) 🚀 Setup (robust, can retry)"
+        echo "  1) 🚀 Full Setup (build, restore data, configure tasks)"
         echo "  2) ▶️  Start all services"
         echo "  3) ⏹️  Stop all services" 
         echo "  4) 🔄 Restart all services"

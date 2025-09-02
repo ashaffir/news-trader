@@ -63,7 +63,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 ENV PLAYWRIGHT_BROWSERS_PATH=/app/.cache/ms-playwright
 RUN mkdir -p /app/.cache/ms-playwright \
     && python -m playwright install --with-deps chromium \
-    && echo "Playwright Chromium installed successfully"
+    && echo "Playwright Chromium installed successfully" \
+    && ls -la /app/.cache/ms-playwright/ || echo "Playwright cache listing failed"
 
 # Create a non-root user for security (using UID 1000 for consistency)
 RUN groupadd -r appuser -g 1000 && useradd -r -g appuser -u 1000 appuser
@@ -77,7 +78,9 @@ RUN chmod 755 /app/entrypoint.sh
 # Create directories for logs, media, and caches with proper permissions
 RUN mkdir -p /app/logs /app/staticfiles /app/media \
     && chown -R appuser:appuser /app \
-    && chmod -R 755 /app/logs /app/staticfiles /app/media /app/.cache
+    && chmod -R 755 /app/logs /app/staticfiles /app/media /app/.cache \
+    && echo "Verifying Playwright installation after permission change..." \
+    && ls -la /app/.cache/ms-playwright/chromium-*/chrome-linux/chrome || echo "Chrome executable not found after permission change"
 
 # Selenium not used; Playwright manages Chromium
 

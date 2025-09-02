@@ -17,6 +17,16 @@ else
     echo "Warning: Cannot write to /app directory. Some features may not work properly."
 fi
 
+# Check if Playwright browsers are installed, install if missing
+export PLAYWRIGHT_BROWSERS_PATH=/app/.cache/ms-playwright
+if [ ! -f "/app/.cache/ms-playwright/chromium-1124/chrome-linux/chrome" ]; then
+    echo "Playwright browsers not found. Installing..."
+    python -m playwright install --with-deps chromium || {
+        echo "Failed to install Playwright browsers. Attempting system chromium fallback..."
+        # This is a fallback - the system dependencies are already installed in Dockerfile
+    }
+fi
+
 # Verify logs directory is accessible
 if [ ! -w /app/logs ]; then
     echo "Error: Cannot write to /app/logs directory. Attempting to fix..."

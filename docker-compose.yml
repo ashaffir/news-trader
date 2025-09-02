@@ -6,6 +6,7 @@ services:
       - .:/app
       - static_volume:/app/staticfiles
       - media_volume:/app/media
+      - playwright_cache:/app/.cache/ms-playwright
     ports:
       - "8800:8000"
     env_file:
@@ -54,6 +55,7 @@ services:
       - .:/app
       - static_volume:/app/staticfiles
       - media_volume:/app/media
+      - playwright_cache:/app/.cache/ms-playwright
     environment:
       - PLAYWRIGHT_BROWSERS_PATH=/app/.cache/ms-playwright
       # CHROME_BIN/CHROME_PATH not required when using Playwright-managed Chromium
@@ -80,6 +82,7 @@ services:
       - .:/app
       - static_volume:/app/staticfiles
       - media_volume:/app/media
+      - playwright_cache:/app/.cache/ms-playwright
     env_file:
       - .env
     environment:
@@ -132,3 +135,4 @@ volumes:
   postgres_data:
   static_volume:
   media_volume:
+  playwright_cache:
