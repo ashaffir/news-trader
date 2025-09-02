@@ -49,6 +49,8 @@ urlpatterns = [
     path('api/twitter/complete-login/', views.twitter_complete_login_api, name='twitter_complete_login'),
     path('api/twitter/add-source/', views.add_twitter_source_api, name='twitter_add_source'),
     path('api/twitter/scrape-now/', views.scrape_twitter_now_api, name='twitter_scrape_now'),
+    path('api/twitter/session-health/', views.twitter_session_health_api, name='twitter_session_health'),
+    path('api/task-status/<str:task_id>/', views.task_status_api, name='task_status'),
     # Deprecated analyze-source endpoints kept temporarily (to be removed after UI consolidation)
     # path('analyze-source/', views.analyze_source_page, name='analyze_source'),
     # path('api/analyze-source/', views.analyze_source_api, name='analyze_source_api'),

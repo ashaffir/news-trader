@@ -16,6 +16,9 @@ from .utils.content_fetcher import (
     pick_best_article_url,
     extract_article_text,
 )
+import requests
+from bs4 import BeautifulSoup
+import re
 
 # Health monitoring will be defined in this file for proper Celery registration
 from django.utils import timezone
@@ -26,6 +29,82 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+
+def extract_reuters_article(url):
+    """Custom extraction function specifically for Reuters articles."""
+    result = {
+        "success": False,
+        "url": url,
+        "title": None,
+        "text": None,
+        "error": None,
+    }
+    
+    try:
+        # Use requests with proper headers
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+        }
+        
+        response = requests.get(url, headers=headers, timeout=15, allow_redirects=True)
+        
+        if response.status_code != 200:
+            result["error"] = f"http_error_{response.status_code}"
+            return result
+            
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Get title
+        title_tag = soup.find('title')
+        if title_tag:
+            result["title"] = title_tag.get_text().strip()
+        
+        # Reuters-specific extraction using their data-testid structure
+        article_body = soup.find(attrs={'data-testid': 'ArticleBody'})
+        if article_body:
+            # Look for paragraph elements with data-testid="paragraph-X"
+            paragraphs = article_body.find_all(attrs={'data-testid': lambda x: x and x.startswith('paragraph-')})
+            if paragraphs:
+                texts = []
+                for p in paragraphs:
+                    text = p.get_text().strip()
+                    # Filter out metadata and keep only substantial content
+                    if (text and len(text) > 20 and 
+                        not text.startswith('Reporting by') and
+                        not text.startswith('Editing by') and
+                        not text.startswith('Our Standards:') and
+                        not text.startswith('($1 =') and  # Currency conversion
+                        not text.startswith('Sign up') and
+                        'Purchase Licensing' not in text and
+                        'opens new tab' not in text and
+                        len(text.split()) > 3):  # Ensure real sentences
+                        texts.append(text)
+                
+                if texts:
+                    content_text = ' '.join(texts)
+                    # Clean up the text
+                    content_text = re.sub(r'\s+', ' ', content_text.strip())
+                    
+                    if len(content_text) > 50:
+                        result["text"] = content_text
+                        result["success"] = True
+                        logger.info(f"[Reuters Extract] Successfully extracted {len(content_text)} chars from {url}")
+                        return result
+        
+        # Fallback: if specific extraction didn't work, try general approach
+        if not result.get("success"):
+            result["error"] = "reuters_specific_extraction_failed"
+            logger.warning(f"[Reuters Extract] Reuters-specific extraction failed for {url}")
+            
+    except Exception as e:
+        result["error"] = f"extraction_error: {str(e)}"
+        logger.error(f"[Reuters Extract] Error extracting from {url}: {e}")
+    
+    return result
+
 
 # =============================
 # Database Backup
@@ -681,7 +760,16 @@ def _scrape_with_browser(source):
                 except Exception:
                     session = None
                 storage_state = session.storage_state if session and getattr(session, 'storage_state', None) else None
-                tweets = scrape_twitter_profile(source.url, storage_state=storage_state, max_age_hours=None, backfill=True)
+                
+                # Check if session is stale (older than 24 hours) and log warning
+                if session:
+                    from django.utils import timezone
+                    session_age = timezone.now() - session.updated_at
+                    if session_age.total_seconds() > 86400:  # 24 hours
+                        logger.warning(f"[Twitter Periodic] Session is {session_age.days} days old - may show stale content for some profiles")
+                
+                # Use same age filtering as manual scraping for consistency (7 days)
+                tweets = scrape_twitter_profile(source.url, storage_state=storage_state, max_age_hours=168, backfill=False)
                 created_count = 0
                 analysis_post_ids = []
                 for content, tweet_url, ts in tweets:
@@ -1382,6 +1470,266 @@ def scrape_posts(source_id=None, manual_test=False):
         send_dashboard_update("scraper_status", {"status": "Scraping finished: No sources processed"})
     
     logger.info(f"Scraping finished. Processed: {', '.join(scraped_sources) if scraped_sources else 'None'}")
+
+
+@shared_task(bind=True, time_limit=120)  # 2 minute timeout
+def scrape_twitter_profile_task(self, handle, url, source_id, max_age_hours=168):
+    """
+    Celery task to scrape a specific Twitter profile asynchronously.
+    
+    Args:
+        handle: Twitter handle (without @)
+        url: Full Twitter URL
+        source_id: Database ID of the source
+        max_age_hours: Maximum age of tweets to include (default: 7 days)
+    
+    Returns:
+        dict: Results with success status, counts, and details
+    """
+    logger.info(f"[Twitter Task] Starting async scrape for @{handle} (source_id: {source_id})")
+    
+    try:
+        # Get the source from database
+        source = Source.objects.get(id=source_id)
+        
+        # Get Twitter session for authentication
+        session = TwitterSession.objects.order_by('-updated_at').first()
+        storage_state = session.storage_state if session else None
+        
+        if session:
+            logger.info(f"[Twitter Task] Using stored session from {session.updated_at}")
+        else:
+            logger.warning("[Twitter Task] No Twitter session found - scraping without authentication")
+
+        # Scrape the profile
+        # Run in thread executor to avoid async/sync conflicts with Playwright
+        logger.info(f"[Twitter Task] Starting scrape for @{handle}")
+        
+        import concurrent.futures
+        import asyncio
+        
+        def run_scraper():
+            return scrape_twitter_profile(
+                url, 
+                storage_state=storage_state, 
+                max_age_hours=max_age_hours, 
+                backfill=False
+            )
+        
+        # Check if we're in an async context and handle accordingly
+        try:
+            # Try to get current event loop
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # We're in an async context, run in thread executor
+                logger.info("[Twitter Task] Running in thread executor to avoid async conflict")
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(run_scraper)
+                    tweets = future.result(timeout=90)  # 90 second timeout
+            else:
+                # Not in async context, run directly
+                tweets = run_scraper()
+        except RuntimeError:
+            # No event loop, run directly
+            tweets = run_scraper()
+        logger.info(f"[Twitter Task] Scraped {len(tweets)} tweets")
+
+        if not tweets:
+            logger.warning(f"[Twitter Task] No tweets found for @{handle}")
+            send_dashboard_update(
+                "scraper_status",
+                {
+                    "source": source.name,
+                    "status": f"No recent tweets found for @{handle}",
+                    "method": "twitter"
+                }
+            )
+            return {
+                "success": True,
+                "created": 0,
+                "count": 0,
+                "source_id": source_id,
+                "source_name": source.name,
+                "message": f"No recent tweets found for @{handle}"
+            }
+
+        # Save tweets as posts
+        created = 0
+        errors = 0
+        
+        for content, turl, ts in tweets:
+            try:
+                # Check if post already exists
+                if not Post.objects.filter(url=turl).exists():
+                    # Enrich tweet content with linked article excerpt if present
+                    enriched_content = content
+                    article_url = None
+                    try:
+                        from .utils.content_fetcher import find_urls_in_text, pick_best_article_url, extract_article_text
+                        
+                        urls_in_text = find_urls_in_text(content)
+                        best_link = pick_best_article_url(urls_in_text)
+                        if best_link:
+                            logger.info(f"[Twitter Task] Found article link in tweet: {best_link}")
+                            
+                            # Try custom Reuters extraction first for reut.rs links
+                            if 'reut.rs' in best_link or 'reuters.com' in best_link:
+                                article_data = extract_reuters_article(best_link)
+                            else:
+                                article_data = extract_article_text(best_link)
+                            
+                            article_text_raw = article_data.get('text') or ''
+                            logger.info(f"[Twitter Task] Article extraction result: success={article_data.get('success')}, "
+                                      f"text_length={len(article_text_raw)}, "
+                                      f"error={article_data.get('error')}")
+                            
+                            if article_data.get("success") and article_data.get("text"):
+                                article_text = article_data["text"].strip()
+                                article_title = article_data.get("title", "").strip()
+                                article_url = best_link
+                                
+                                # Skip if article content is too short (likely extraction failed)
+                                if len(article_text) < 100:
+                                    logger.warning(f"[Twitter Task] Article content too short ({len(article_text)} chars), skipping enhancement")
+                                else:
+                                    # Limit article content to avoid huge posts
+                                    if len(article_text) > 2000:
+                                        article_text = article_text[:2000] + "..."
+                                    
+                                    # Format enhanced content
+                                    enriched_content = f"""Tweet: {content}
+
+[Linked Article]
+Title: {article_title}
+URL: {article_url}
+
+Content:
+{article_text}"""
+                                    
+                                    logger.info(f"[Twitter Task] Enhanced tweet with {len(article_text)} chars from article: {article_title}")
+                            else:
+                                error_msg = article_data.get('error', 'Unknown error')
+                                logger.warning(f"[Twitter Task] Article extraction failed for {best_link}: {error_msg}")
+                    except Exception as e:
+                        logger.warning(f"[Twitter Task] Error enriching tweet content: {e}")
+                    
+                    post = Post.objects.create(
+                        source=source, 
+                        content=enriched_content, 
+                        url=turl, 
+                        published_at=ts
+                    )
+                    created += 1
+                    logger.debug(f"[Twitter Task] Created post: {turl}")
+                    
+                    # Send dashboard update for new post
+                    preview_content = enriched_content[:100] + ("..." if len(enriched_content) > 100 else "")
+                    if article_url:
+                        preview_content += f" [+Article: {article_url}]"
+                        
+                    send_dashboard_update(
+                        "new_post",
+                        {
+                            "source": source.name,
+                            "content_preview": preview_content,
+                            "url": turl,
+                            "post_id": post.id,
+                        },
+                    )
+                    
+                    # Trigger analysis for the new post
+                    analyze_post.delay(post.id)
+                    
+                else:
+                    logger.debug(f"[Twitter Task] Post already exists: {turl}")
+            except Exception as post_error:
+                errors += 1
+                logger.error(f"[Twitter Task] Error creating post {turl}: {post_error}")
+                continue
+
+        logger.info(f"[Twitter Task] Completed - Created: {created}, Total: {len(tweets)}, Errors: {errors}")
+        
+        # Send dashboard update
+        send_dashboard_update(
+            "scraper_status",
+            {
+                "source": source.name,
+                "status": f"Scraped {created} new tweets from @{handle}",
+                "method": "twitter",
+                "created": created,
+                "total": len(tweets)
+            }
+        )
+        
+        return {
+            "success": True,
+            "created": created,
+            "count": len(tweets),
+            "source_id": source_id,
+            "source_name": source.name,
+            "errors": errors
+        }
+        
+    except Source.DoesNotExist:
+        error_msg = f"Source with ID {source_id} not found"
+        logger.error(f"[Twitter Task] {error_msg}")
+        send_dashboard_update("scraper_error", {"source": f"@{handle}", "error": error_msg, "method": "twitter"})
+        return {"success": False, "error": error_msg}
+        
+    except Exception as e:
+        # Check if this is a timeout
+        if "time limit exceeded" in str(e).lower() or "timeout" in str(e).lower():
+            error_msg = f"Scraping @{handle} timed out - account may have anti-bot protection"
+            logger.warning(f"[Twitter Task] {error_msg}")
+        else:
+            error_msg = f"Error scraping @{handle}: {str(e)}"
+            logger.error(f"[Twitter Task] {error_msg}", exc_info=True)
+            
+        send_dashboard_update("scraper_error", {"source": f"@{handle}", "error": error_msg, "method": "twitter"})
+        return {"success": False, "error": error_msg}
+
+
+@shared_task
+def check_twitter_session_health():
+    """
+    Check if the Twitter session is stale and needs refreshing.
+    This task can be run periodically to ensure fresh sessions.
+    """
+    try:
+        from django.utils import timezone
+        
+        session = TwitterSession.objects.order_by('-updated_at').first()
+        if not session:
+            logger.warning("[Twitter Health] No Twitter session found")
+            send_dashboard_update(
+                "system_event",
+                {"message": "No Twitter session available - Twitter scraping may fail"}
+            )
+            return {"status": "no_session"}
+        
+        # Check session age
+        session_age = timezone.now() - session.updated_at
+        hours_old = session_age.total_seconds() / 3600
+        
+        logger.info(f"[Twitter Health] Session is {hours_old:.1f} hours old")
+        
+        if hours_old > 48:  # 2 days
+            logger.warning(f"[Twitter Health] Session is {hours_old:.1f} hours old - may need refresh")
+            send_dashboard_update(
+                "system_event", 
+                {"message": f"Twitter session is {int(hours_old)} hours old - consider refreshing for better results"}
+            )
+            return {"status": "stale", "hours_old": hours_old}
+        elif hours_old > 24:  # 1 day
+            logger.info(f"[Twitter Health] Session is getting older ({hours_old:.1f} hours) but still usable")
+            return {"status": "aging", "hours_old": hours_old}
+        else:
+            logger.info(f"[Twitter Health] Session is fresh ({hours_old:.1f} hours old)")
+            return {"status": "fresh", "hours_old": hours_old}
+            
+    except Exception as e:
+        logger.error(f"[Twitter Health] Error checking session: {e}")
+        return {"status": "error", "error": str(e)}
 
 
 @shared_task

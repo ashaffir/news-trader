@@ -1736,6 +1736,7 @@ def test_page_view(request):
         )  # Redirect to refresh the page and prevent form resubmission
 
     # Fetch some recent posts and analyses to display for manual triggering
+    # Order by created_at to show the most recently scraped posts from all sources
     recent_posts = Post.objects.order_by("-created_at")[:10]
     recent_analyses = Analysis.objects.order_by("-created_at")[:10]
     sources = Source.objects.all()  # Fetch all sources
@@ -1870,29 +1871,149 @@ def add_twitter_source_api(request):
 @staff_member_required
 @require_POST
 def scrape_twitter_now_api(request):
+    """API endpoint to manually scrape a Twitter profile and save tweets as posts."""
     try:
-        data = request.POST if request.content_type != 'application/json' else json.loads(request.body or '{}')
+        logger.info(f"[Twitter Scrape API] Request received - Content-Type: {request.content_type}")
+        
+        # Handle both JSON and form data
+        if request.content_type == 'application/json':
+            data = json.loads(request.body or '{}')
+        else:
+            data = request.POST
+            
         handle = (data.get('handle') or '').strip().lstrip('@')
+        logger.info(f"[Twitter Scrape API] Processing handle: '{handle}'")
+        
         if not handle:
+            logger.warning("[Twitter Scrape API] No handle provided")
             return JsonResponse({"success": False, "error": "Twitter username is required"}, status=400)
+            
+        # Validate handle format (basic validation)
+        if not handle.replace('_', '').replace('.', '').isalnum():
+            logger.warning(f"[Twitter Scrape API] Invalid handle format: '{handle}'")
+            return JsonResponse({"success": False, "error": "Invalid Twitter handle format"}, status=400)
+            
         url = f"https://x.com/{handle}"
+        logger.info(f"[Twitter Scrape API] Target URL: {url}")
 
+        # Get Twitter session for authentication
         session = TwitterSession.objects.order_by('-updated_at').first()
         storage_state = session.storage_state if session else None
-        tweets = scrape_twitter_profile(url, storage_state=storage_state, max_age_hours=None, backfill=True)
-        created = 0
-        source, _ = Source.objects.get_or_create(url=url, defaults={'name': f'@{handle}', 'scraping_enabled': True})
-        for content, turl, ts in tweets:
-            try:
-                if not Post.objects.filter(url=turl).exists():
-                    Post.objects.create(source=source, content=content, url=turl, published_at=ts)
-                    created += 1
-            except Exception:
-                continue
-        return JsonResponse({"success": True, "created": created, "count": len(tweets)})
+        
+        # For testing: optionally bypass stored session if it's causing issues
+        bypass_session = request.GET.get('bypass_session') == 'true'
+        if bypass_session:
+            logger.info(f"[Twitter Scrape API] Bypassing stored session for testing @{handle}")
+            storage_state = None
+        elif session:
+            logger.info(f"[Twitter Scrape API] Using stored session from {session.updated_at}")
+        else:
+            logger.warning("[Twitter Scrape API] No Twitter session found - scraping without authentication")
+
+        # Create or get the source first
+        source, source_created = Source.objects.get_or_create(
+            url=url, 
+            defaults={
+                'name': f'@{handle}', 
+                'scraping_enabled': True,
+                'scraping_method': 'twitter'
+            }
+        )
+        
+        if source_created:
+            logger.info(f"[Twitter Scrape API] Created new source for @{handle}")
+        else:
+            logger.info(f"[Twitter Scrape API] Using existing source for @{handle}")
+
+        # Use Celery to scrape asynchronously for better performance
+        from .tasks import scrape_twitter_profile_task
+        
+        logger.info(f"[Twitter Scrape API] Triggering async scrape task for @{handle}")
+        task_result = scrape_twitter_profile_task.delay(
+            handle=handle,
+            url=url, 
+            source_id=source.id,
+            max_age_hours=168  # 7 days
+        )
+        
+        logger.info(f"[Twitter Scrape API] Started Celery task {task_result.id} for @{handle}")
+        
+        return JsonResponse({
+            "success": True, 
+            "message": f"Scraping started for @{handle}",
+            "task_id": task_result.id,
+            "source_id": source.id,
+            "source_name": source.name,
+            "status": "processing"
+        })
+        
+    except json.JSONDecodeError as e:
+        logger.error(f"[Twitter Scrape API] JSON decode error: {e}")
+        return JsonResponse({"success": False, "error": "Invalid JSON data"}, status=400)
     except Exception as e:
-        logger.error(f"scrape_twitter_now_api error: {e}")
-        return JsonResponse({"success": False, "error": str(e)}, status=500)
+        logger.error(f"[Twitter Scrape API] Unexpected error: {e}", exc_info=True)
+        return JsonResponse({"success": False, "error": f"Server error: {str(e)}"}, status=500)
+
+
+@staff_member_required
+def task_status_api(request, task_id):
+    """API endpoint to check the status of a Celery task."""
+    try:
+        from celery.result import AsyncResult
+        
+        task_result = AsyncResult(task_id)
+        
+        response_data = {
+            "task_id": task_id,
+            "ready": task_result.ready(),
+            "successful": task_result.successful() if task_result.ready() else None,
+            "status": task_result.status,
+        }
+        
+        if task_result.ready():
+            if task_result.successful():
+                response_data["success"] = True
+                response_data["result"] = task_result.result
+            else:
+                response_data["success"] = False
+                response_data["error"] = str(task_result.result) if task_result.result else "Task failed"
+        
+        logger.debug(f"[Task Status API] Task {task_id}: {response_data}")
+        return JsonResponse(response_data)
+        
+    except Exception as e:
+        logger.error(f"[Task Status API] Error checking task {task_id}: {e}")
+        return JsonResponse({
+            "task_id": task_id,
+            "ready": True,
+            "success": False,
+            "error": f"Error checking task status: {str(e)}"
+        }, status=500)
+
+
+@staff_member_required
+def twitter_session_health_api(request):
+    """API endpoint to check Twitter session health and trigger refresh if needed."""
+    try:
+        from .tasks import check_twitter_session_health
+        
+        # Run the health check
+        result = check_twitter_session_health.delay()
+        health_status = result.get(timeout=10)  # Wait up to 10 seconds
+        
+        return JsonResponse({
+            "success": True,
+            "session_status": health_status.get("status"),
+            "hours_old": health_status.get("hours_old"),
+            "message": f"Session status: {health_status.get('status')}"
+        })
+        
+    except Exception as e:
+        logger.error(f"[Twitter Session Health API] Error: {e}")
+        return JsonResponse({
+            "success": False,
+            "error": f"Error checking session health: {str(e)}"
+        }, status=500)
 
 
 @staff_member_required
@@ -2263,7 +2384,7 @@ def public_posts_api(request):
         page = request.GET.get("page", 1)
         page_size = min(int(request.GET.get("page_size", 20)), 100)
         
-        # Filter posts
+        # Filter posts - order by created_at to show the most recently scraped posts from all sources
         posts_queryset = Post.objects.select_related("source").order_by("-created_at")
         if source_id:
             posts_queryset = posts_queryset.filter(source_id=source_id)

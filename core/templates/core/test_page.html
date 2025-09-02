@@ -534,7 +534,10 @@
                                         </button>
                                     </div>
                                 </div>
-                                <div class="small text-muted mt-1">This will scrape the specified profile and save new tweets as posts.</div>
+                                <div class="small text-muted mt-1">
+                                    This will scrape the specified profile and save new tweets as posts.<br>
+                                    <strong>Tip:</strong> Accounts like @CNN, @BBCBreaking, @nytimes work well. Some accounts (@Reuters, @Forbes) may have anti-bot protection.
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1717,28 +1720,199 @@
             const scrapeBtn = document.getElementById('scrape-twitter-now');
             if (scrapeBtn) {
                 scrapeBtn.addEventListener('click', async () => {
-                    const handle = document.getElementById('twitter-scrape-handle').value.trim();
-                    if (!handle) { alert('Enter a handle'); return; }
+                    const handleInput = document.getElementById('twitter-scrape-handle');
+                    const handle = handleInput.value.trim();
+                    
+                    if (!handle) { 
+                        showNotification('Please enter a Twitter handle', 'warning');
+                        handleInput.focus();
+                        return; 
+                    }
+                    
+                    // Store original button content
+                    const originalHTML = scrapeBtn.innerHTML;
+                    
+                    // Update button to show loading state
                     scrapeBtn.disabled = true;
+                    scrapeBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Scraping...';
+                    
+                    console.log(`[Twitter] Starting scrape for handle: ${handle}`);
+                    
                     try {
-                        const r = await fetch('/api/twitter/scrape-now/', {
+                        const response = await fetch('/api/twitter/scrape-now/', {
                             method: 'POST',
-                            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+                            headers: { 
+                                'Content-Type': 'application/json', 
+                                'X-CSRFToken': csrfToken 
+                            },
                             body: JSON.stringify({ handle })
                         });
-                        const data = await r.json();
-                        if (data.success) {
-                            showNotification(`Scraped ${data.created}/${data.count} tweets from @${handle}.`, 'success');
-                            setTimeout(refreshPostDropdown, 2000);
-                        } else {
-                            showNotification(`Error: ${data.error}`, 'danger');
+                        
+                        console.log(`[Twitter] Response status: ${response.status}`);
+                        
+                        if (!response.ok) {
+                            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                         }
-                    } catch (e) {
-                        showNotification(`Network error: ${e.message}`, 'danger');
-                    } finally {
-                        scrapeBtn.disabled = false;
+                        
+                        const data = await response.json();
+                        console.log('[Twitter] Response data:', data);
+                        
+                        if (data.success) {
+                            if (data.status === 'processing') {
+                                // Async task started - show processing state and poll for results
+                                scrapeBtn.innerHTML = '<i class="fas fa-clock"></i> Processing...';
+                                scrapeBtn.className = 'btn btn-warning w-100';
+                                
+                                showNotification(
+                                    `Scraping task started for @${handle}. Processing in background...`, 
+                                    'info'
+                                );
+                                
+                                // Poll for task completion
+                                pollTwitterScrapingTask(data.task_id, handle, scrapeBtn, originalHTML);
+                                
+                            } else {
+                                // Immediate success (shouldn't happen with new async implementation)
+                                scrapeBtn.innerHTML = '<i class="fas fa-check"></i> Success!';
+                                scrapeBtn.className = 'btn btn-success w-100';
+                                
+                                showNotification(
+                                    `Successfully scraped ${data.created || 0} new tweets from @${handle} (${data.count || 0} total found).`, 
+                                    'success'
+                                );
+                                
+                                // Refresh post dropdown after a short delay
+                                setTimeout(() => {
+                                    refreshPostDropdown();
+                                    console.log('[Twitter] Refreshed post dropdown');
+                                }, 2000);
+                                
+                                // Reset button after 3 seconds
+                                setTimeout(() => {
+                                    scrapeBtn.innerHTML = originalHTML;
+                                    scrapeBtn.className = 'btn btn-primary w-100';
+                                    scrapeBtn.disabled = false;
+                                }, 3000);
+                            }
+                            
+                        } else {
+                            throw new Error(data.error || 'Unknown error occurred');
+                        }
+                        
+                    } catch (error) {
+                        console.error('[Twitter] Scraping error:', error);
+                        
+                        // Show error state
+                        scrapeBtn.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Error';
+                        scrapeBtn.className = 'btn btn-danger w-100';
+                        
+                        showNotification(`Error scraping @${handle}: ${error.message}`, 'danger');
+                        
+                        // Reset button after 3 seconds
+                        setTimeout(() => {
+                            scrapeBtn.innerHTML = originalHTML;
+                            scrapeBtn.className = 'btn btn-primary w-100';
+                            scrapeBtn.disabled = false;
+                        }, 3000);
                     }
                 });
+            }
+            
+            // Poll for Twitter scraping task completion
+            function pollTwitterScrapingTask(taskId, handle, button, originalHTML) {
+                console.log(`[Twitter] Polling task ${taskId} for @${handle}`);
+                
+                let pollCount = 0;
+                const maxPolls = 60; // 60 polls = 60 seconds max
+                
+                const pollInterval = setInterval(async () => {
+                    pollCount++;
+                    
+                    try {
+                        const response = await fetch(`/api/task-status/${taskId}/`);
+                        const data = await response.json();
+                        
+                        console.log(`[Twitter] Poll ${pollCount}: Task status for ${taskId}:`, data);
+                        
+                        if (data.ready) {
+                            clearInterval(pollInterval);
+                            
+                            if (data.success) {
+                                // Task completed successfully
+                                button.innerHTML = '<i class="fas fa-check"></i> Success!';
+                                button.className = 'btn btn-success w-100';
+                                
+                                const result = data.result || {};
+                                showNotification(
+                                    `Successfully scraped ${result.created || 0} new tweets from @${handle} (${result.count || 0} total found).`, 
+                                    'success'
+                                );
+                                
+                                // Refresh post dropdown
+                                setTimeout(() => {
+                                    refreshPostDropdown();
+                                    console.log('[Twitter] Refreshed post dropdown after async completion');
+                                }, 1000);
+                                
+                            } else {
+                                // Task failed
+                                button.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Failed';
+                                button.className = 'btn btn-danger w-100';
+                                
+                                showNotification(
+                                    `Error scraping @${handle}: ${data.error || 'Task failed'}`, 
+                                    'danger'
+                                );
+                            }
+                            
+                            // Reset button after 3 seconds
+                            setTimeout(() => {
+                                button.innerHTML = originalHTML;
+                                button.className = 'btn btn-primary w-100';
+                                button.disabled = false;
+                            }, 3000);
+                            
+                        } else if (pollCount >= maxPolls) {
+                            // Timeout - stop polling
+                            clearInterval(pollInterval);
+                            
+                            button.innerHTML = '<i class="fas fa-clock"></i> Timeout';
+                            button.className = 'btn btn-secondary w-100';
+                            
+                            showNotification(
+                                `Scraping @${handle} timed out. Some accounts (like @Reuters, @Forbes) may have anti-bot protection. Try accounts like @CNN, @BBCBreaking, @nytimes instead.`, 
+                                'warning'
+                            );
+                            
+                            // Reset button after 5 seconds for timeout
+                            setTimeout(() => {
+                                button.innerHTML = originalHTML;
+                                button.className = 'btn btn-primary w-100';
+                                button.disabled = false;
+                            }, 5000);
+                        }
+                        
+                    } catch (error) {
+                        console.error(`[Twitter] Error polling task ${taskId}:`, error);
+                        
+                        // Continue polling unless we've hit max attempts
+                        if (pollCount >= maxPolls) {
+                            clearInterval(pollInterval);
+                            
+                            button.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Error';
+                            button.className = 'btn btn-danger w-100';
+                            
+                            showNotification(`Error checking task status for @${handle}`, 'danger');
+                            
+                            // Reset button after 3 seconds
+                            setTimeout(() => {
+                                button.innerHTML = originalHTML;
+                                button.className = 'btn btn-primary w-100';
+                                button.disabled = false;
+                            }, 3000);
+                        }
+                    }
+                }, 1000); // Poll every 1 second
             }
         }
     </script>
