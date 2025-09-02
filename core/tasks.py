@@ -759,6 +759,22 @@ def _scrape_with_browser(source):
                     session = TwitterSession.objects.order_by('-updated_at').first()
                 except Exception:
                     session = None
+                
+                # Check if no session exists
+                if not session:
+                    error_msg = f"No Twitter session found for scraping {source.name}. Twitter sources require authentication."
+                    logger.error(error_msg)
+                    send_dashboard_update(
+                        "scraper_error",
+                        {
+                            "source": source.name,
+                            "error": error_msg,
+                            "method": "twitter",
+                            "solution": "Run 'python manage.py create_twitter_session' to set up authentication"
+                        }
+                    )
+                    return  # Skip this source
+                
                 storage_state = session.storage_state if session and getattr(session, 'storage_state', None) else None
                 
                 # Check if session is stale (older than 24 hours) and log warning
@@ -1499,7 +1515,18 @@ def scrape_twitter_profile_task(self, handle, url, source_id, max_age_hours=168)
         if session:
             logger.info(f"[Twitter Task] Using stored session from {session.updated_at}")
         else:
-            logger.warning("[Twitter Task] No Twitter session found - scraping without authentication")
+            error_msg = f"No Twitter session found for @{handle}. Twitter sources require authentication."
+            logger.error(f"[Twitter Task] {error_msg}")
+            send_dashboard_update(
+                "scraper_error",
+                {
+                    "source": f"@{handle}",
+                    "error": error_msg,
+                    "method": "twitter",
+                    "solution": "Run 'python manage.py create_twitter_session' to set up authentication"
+                }
+            )
+            return {"success": False, "error": error_msg}
 
         # Scrape the profile
         # Run in thread executor to avoid async/sync conflicts with Playwright

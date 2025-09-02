@@ -71,7 +71,24 @@ docker-compose exec web python manage.py import_tracked_companies /app/full_top_
 # You can re-run the import any time to update names/metadata
 ```
 
-### 3. Access the System
+### 3. Twitter Scraping Setup (Optional)
+
+If you have Twitter/X sources configured, you need authentication:
+
+```bash
+# Check if Twitter setup is needed
+docker-compose exec web python manage.py check_twitter_setup
+
+# If Twitter sources found but no authentication:
+docker-compose exec web python manage.py create_twitter_session
+
+# Alternative: Disable Twitter sources if not needed
+# Via admin panel: Admin → Sources → Disable Twitter sources
+```
+
+**Note**: Twitter scraping requires valid credentials and may be subject to rate limits and terms of service.
+
+### 4. Access the System
 
 - **Dashboard**: http://localhost:8800/dashboard/
 - **Admin Panel**: http://localhost:8800/admin/ (admin/admin)
@@ -377,6 +394,10 @@ docker-compose logs -f celery-beat
 # Set up example sources and configuration
 python manage.py setup_example_sources
 
+# Twitter scraping setup
+python manage.py check_twitter_setup          # Check Twitter configuration
+python manage.py create_twitter_session       # Create Twitter authentication
+
 # Test Alpaca API connection
 python manage.py test_alpaca_connection
 
@@ -418,6 +439,18 @@ python manage.py cleanup_old_data --days 30
    # Check source error logs
    # Adjust scraping intervals
    # Enable/disable sources via admin
+   ```
+
+4. **Twitter Sources Not Scraping**
+   ```bash
+   # Check if Twitter authentication is set up
+   python manage.py check_twitter_setup
+   
+   # Create Twitter session if needed
+   python manage.py create_twitter_session
+   
+   # Or disable Twitter sources if not needed
+   # Admin → Sources → Set Twitter sources to disabled
    ```
 
 ### Debug Mode
