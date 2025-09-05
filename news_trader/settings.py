@@ -140,6 +140,13 @@ CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE
 
+# Sensible worker defaults (overridable by env)
+CELERY_WORKER_CONCURRENCY = int(os.getenv('CELERY_CONCURRENCY', os.cpu_count() and max(1, min(2, os.cpu_count() // 2)) or 2))
+CELERY_WORKER_MAX_TASKS_PER_CHILD = int(os.getenv('CELERY_MAX_TASKS_PER_CHILD', '100'))
+CELERY_WORKER_MAX_MEMORY_PER_CHILD = int(os.getenv('CELERY_MAX_MEMORY_PER_CHILD', '300000'))
+CELERY_TASK_TIME_LIMIT = int(os.getenv('CELERY_TASK_TIME_LIMIT', '180'))
+CELERY_TASK_SOFT_TIME_LIMIT = int(os.getenv('CELERY_TASK_SOFT_TIME_LIMIT', '150'))
+
 # API Keys from environment variables
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 ALPACA_API_KEY = os.getenv('ALPACA_API_KEY')

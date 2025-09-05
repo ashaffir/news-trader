@@ -93,7 +93,13 @@ case "$ROLE" in
     until curl -sf http://web:8000/health/ >/dev/null 2>&1; do
       sleep 2
     done
-    exec celery -A news_trader worker -l info --concurrency=4 -P threads
+    # Use prefork pool with safe defaults and recycling to prevent runaway threads/memory
+    exec celery -A news_trader worker -l info \
+      --concurrency=${CELERY_CONCURRENCY:-2} \
+      --max-tasks-per-child=${CELERY_MAX_TASKS_PER_CHILD:-100} \
+      --max-memory-per-child=${CELERY_MAX_MEMORY_PER_CHILD:-300000} \
+      --time-limit=${CELERY_TASK_TIME_LIMIT:-180} \
+      --soft-time-limit=${CELERY_TASK_SOFT_TIME_LIMIT:-150}
     ;;
   beat)
     # Wait for web health endpoint before starting

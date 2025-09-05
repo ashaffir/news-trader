@@ -97,10 +97,21 @@ start_services() {
         print_warning "Django server is already running"
     fi
     
-    # Start single Celery worker
+    # Start single Celery worker with safe limits
     if ! is_running "celery_worker"; then
         print_status "Starting Celery worker..."
-        celery -A news_trader worker -l info > "$LOGS_DIR/celery_worker.log" 2>&1 &
+        CELERY_CONCURRENCY=${CELERY_CONCURRENCY:-2} \
+        CELERY_MAX_TASKS_PER_CHILD=${CELERY_MAX_TASKS_PER_CHILD:-100} \
+        CELERY_MAX_MEMORY_PER_CHILD=${CELERY_MAX_MEMORY_PER_CHILD:-300000} \
+        CELERY_TASK_TIME_LIMIT=${CELERY_TASK_TIME_LIMIT:-180} \
+        CELERY_TASK_SOFT_TIME_LIMIT=${CELERY_TASK_SOFT_TIME_LIMIT:-150} \
+        celery -A news_trader worker -l info \
+            --concurrency=${CELERY_CONCURRENCY} \
+            --max-tasks-per-child=${CELERY_MAX_TASKS_PER_CHILD} \
+            --max-memory-per-child=${CELERY_MAX_MEMORY_PER_CHILD} \
+            --time-limit=${CELERY_TASK_TIME_LIMIT} \
+            --soft-time-limit=${CELERY_TASK_SOFT_TIME_LIMIT} \
+            > "$LOGS_DIR/celery_worker.log" 2>&1 &
         echo $! > "$PIDS_DIR/celery_worker.pid"
         print_success "Celery worker started (PID: $!)"
     else
@@ -251,7 +262,13 @@ reload_code() {
             
             sleep 1
             activate_venv
-            celery -A news_trader worker -l info > "$LOGS_DIR/celery_worker.log" 2>&1 &
+            celery -A news_trader worker -l info \
+                --concurrency=${CELERY_CONCURRENCY:-2} \
+                --max-tasks-per-child=${CELERY_MAX_TASKS_PER_CHILD:-100} \
+                --max-memory-per-child=${CELERY_MAX_MEMORY_PER_CHILD:-300000} \
+                --time-limit=${CELERY_TASK_TIME_LIMIT:-180} \
+                --soft-time-limit=${CELERY_TASK_SOFT_TIME_LIMIT:-150} \
+                > "$LOGS_DIR/celery_worker.log" 2>&1 &
             echo $! > "$PIDS_DIR/celery_worker.pid"
             print_success "Celery worker restarted (PID: $!)"
         }

@@ -62,6 +62,12 @@ services:
       - DISPLAY=:99
       - DJANGO_ALLOW_ASYNC_UNSAFE=1
       - SERVICE_ROLE=worker
+      # Safe Celery defaults (can be overridden via .env)
+      - CELERY_CONCURRENCY=${CELERY_CONCURRENCY:-2}
+      - CELERY_MAX_TASKS_PER_CHILD=${CELERY_MAX_TASKS_PER_CHILD:-100}
+      - CELERY_MAX_MEMORY_PER_CHILD=${CELERY_MAX_MEMORY_PER_CHILD:-300000}
+      - CELERY_TASK_TIME_LIMIT=${CELERY_TASK_TIME_LIMIT:-180}
+      - CELERY_TASK_SOFT_TIME_LIMIT=${CELERY_TASK_SOFT_TIME_LIMIT:-150}
     env_file:
       - .env
     depends_on:

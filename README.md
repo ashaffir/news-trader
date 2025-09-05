@@ -464,6 +464,41 @@ export LOG_LEVEL=DEBUG
 celery -A news_trader flower  # Celery monitoring UI
 ```
 
+## ⚙️ Celery Worker Stability & Tuning (Important)
+
+- Default worker pool is prefork (process-based) with safe limits to avoid thread explosions and memory leaks.
+- Tune via environment variables (Docker and local scripts read these):
+
+| Env var | Default | Purpose |
+| --- | --- | --- |
+| `CELERY_CONCURRENCY` | `2` | Max concurrent tasks (worker processes). Increase to 3–4 if the machine has headroom. |
+| `CELERY_MAX_TASKS_PER_CHILD` | `100` | Recycle workers periodically to clear leaks (Playwright, scrapers). |
+| `CELERY_MAX_MEMORY_PER_CHILD` | `300000` (KB) | Restart a worker if it exceeds ~300 MB. |
+| `CELERY_TASK_SOFT_TIME_LIMIT` | `150` (s) | Graceful timeout for long tasks. |
+| `CELERY_TASK_TIME_LIMIT` | `180` (s) | Hard kill if a task hangs. |
+
+Override in `.env` (no code changes):
+```bash
+CELERY_CONCURRENCY=3
+CELERY_MAX_TASKS_PER_CHILD=150
+CELERY_MAX_MEMORY_PER_CHILD=400000
+CELERY_TASK_SOFT_TIME_LIMIT=240
+CELERY_TASK_TIME_LIMIT=270
+```
+
+Apply changes:
+```bash
+# Docker
+docker compose down && docker compose up -d --build
+
+# Local (dev_manager)
+./dev_manager.sh stop && ./dev_manager.sh start
+```
+
+Notes:
+- htop shows many lines if “Threads” view is enabled; press `H` to hide threads. With prefork you should see 1 master + N child processes.
+- For legitimately long tasks, set per-task limits in code (example): `@app.task(soft_time_limit=300, time_limit=330)`.
+
 ## 🤝 Contributing
 
 1. Fork the repository
