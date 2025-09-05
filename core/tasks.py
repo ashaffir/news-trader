@@ -785,7 +785,29 @@ def _scrape_with_browser(source):
                         logger.warning(f"[Twitter Periodic] Session is {session_age.days} days old - may show stale content for some profiles")
                 
                 # Use same age filtering as manual scraping for consistency (7 days)
-                tweets = scrape_twitter_profile(source.url, storage_state=storage_state, max_age_hours=168, backfill=False)
+                # Ensure we don't invoke Playwright sync API inside an active asyncio loop
+                import concurrent.futures
+                import asyncio
+
+                def _run_scraper():
+                    return scrape_twitter_profile(
+                        source.url,
+                        storage_state=storage_state,
+                        max_age_hours=168,
+                        backfill=False,
+                    )
+
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        logger.info("[Twitter Periodic] Running in thread executor to avoid async conflict")
+                        with concurrent.futures.ThreadPoolExecutor() as executor:
+                            future = executor.submit(_run_scraper)
+                            tweets = future.result(timeout=90)
+                    else:
+                        tweets = _run_scraper()
+                except RuntimeError:
+                    tweets = _run_scraper()
                 created_count = 0
                 analysis_post_ids = []
                 for content, tweet_url, ts in tweets:
@@ -1760,7 +1782,7 @@ def check_twitter_session_health():
 
 
 @shared_task
-def analyze_post(post_id, manual_test=False):
+def analyze_post(post_id, manual_test=False, llm_model: str | None = None):
     """Analyze a post with an LLM."""
     logger.info(f"Analyzing post {post_id} with LLM (manual_test={manual_test}).")
 
@@ -1832,8 +1854,9 @@ Respond with a JSON object: { "symbol": "STOCK_SYMBOL", "direction": "buy", "con
 Direction can be 'buy', 'sell', or 'hold'. Confidence is a float between 0 and 1."""
         )
 
-        # Create OpenAI client with API key passed directly
-        client = openai.OpenAI(api_key=api_key)
+        # Prepare LLM params
+        temperature = getattr(config, "llm_temperature", 0.1) if config else 0.1
+        max_tokens = getattr(config, "llm_max_tokens", 1000) if config else 1000
         # Build enriched user content by fetching article excerpts from URLs
         user_lines = []
         user_lines.append("You are given a news headline, and when available, short article excerpts from the linked page(s). Use only the provided text; do not speculate beyond it.")
@@ -1897,18 +1920,32 @@ Direction can be 'buy', 'sell', or 'hold'. Confidence is a float between 0 and 1
         # Final assembled content
         user_content = "\n".join(user_lines)
 
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": prompt},
-                {"role": "user", "content": user_content},
-            ],
-            response_format={"type": "json_object"},
-            temperature=getattr(config, "llm_temperature", 0.1) if config else 0.1,
-            max_tokens=getattr(config, "llm_max_tokens", 1000) if config else 1000,
-        )
-
-        raw_response_content = response.choices[0].message.content
+        # Choose provider (LAN vs OpenAI)
+        from .utils.llm import is_lan_model, lan_chat_completion
+        if is_lan_model(model):
+            raw_response_content = lan_chat_completion(
+                model=model,
+                messages=[
+                    {"role": "system", "content": prompt},
+                    {"role": "user", "content": user_content},
+                ],
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+        else:
+            # Create OpenAI client with API key passed directly
+            client = openai.OpenAI(api_key=api_key)
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": prompt},
+                    {"role": "user", "content": user_content},
+                ],
+                response_format={"type": "json_object"},
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+            raw_response_content = response.choices[0].message.content
         llm_output = json.loads(raw_response_content)
 
         analysis = Analysis.objects.create(

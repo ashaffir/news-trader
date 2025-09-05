@@ -3,8 +3,7 @@ from typing import List, Tuple, Optional
 import logging
 from datetime import datetime, timezone, timedelta
 
-from playwright.sync_api import sync_playwright
-from .browser_manager import get_managed_browser_page
+from .browser_manager import get_managed_browser_page, get_managed_browser_context_with_state
 from .models import Post
 
 logger = logging.getLogger(__name__)
@@ -202,29 +201,11 @@ def scrape_twitter_profile(url: str, storage_state: Optional[dict] = None, max_a
 			
 			return out
 		if storage_state:
-			pw = sync_playwright().start()
-			browser = pw.chromium.launch(headless=True)
-			context = browser.new_context(
-				storage_state=storage_state,
-				user_agent=(
-					"Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-					"AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122 Safari/537.36"
-				),
-				viewport={"width": 1280, "height": 1600},
-			)
-			page = context.new_page()
-			try:
+			# Use managed browser context with provided storage_state to avoid spawning
+			# standalone Playwright instances and leaking Chrome processes
+			with get_managed_browser_context_with_state(storage_state=storage_state) as context:
+				page = context.new_page()
 				return _run(page)
-			finally:
-				try:
-					context.close()
-				except Exception:
-					pass
-				try:
-					browser.close()
-				except Exception:
-					pass
-				pw.stop()
 		else:
 			with get_managed_browser_page() as page:
 				return _run(page)

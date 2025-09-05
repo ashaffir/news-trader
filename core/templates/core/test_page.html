@@ -462,7 +462,7 @@
                             <form id="analysis-form" class="mb-3">
                                 {% csrf_token %}
                                 <div class="row">
-                                    <div class="col-md-8">
+                                    <div class="col-md-6">
                                         <select class="form-select" name="post_id" id="post-select" required>
                                             <option value="">Select a post/headline to analyze...</option>
                                             {% for post in recent_posts|slice:":20" %}
@@ -474,6 +474,7 @@
                                             {% endfor %}
                                         </select>
                                     </div>
+                                    
                                     <div class="col-md-4">
                                         <button type="submit" id="analysis-button" class="btn btn-primary w-100">
                                             <i id="analysis-icon" class="fas fa-magic"></i> 

@@ -12,6 +12,7 @@ Usage:
 """
 
 import asyncio
+import pytest
 import os
 import sys
 import logging
@@ -28,6 +29,9 @@ import django
 django.setup()
 
 from core.telegram_bot import TelegramBotService
+
+# This file is a standalone async script; skip under pytest collection by default
+pytestmark = pytest.mark.skip(reason="Standalone async script; run with `python test_telegram_resilience.py`.")
 
 # Set up logging
 logging.basicConfig(

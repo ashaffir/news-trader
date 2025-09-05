@@ -25,6 +25,7 @@ from django.core.paginator import Paginator
 from .source_llm import analyze_news_source_with_llm, build_source_kwargs_from_llm_analysis
 from django.views.decorators.http import require_POST
 from django.contrib import messages
+from django.views.decorators.csrf import csrf_exempt
 from .utils.telegram import send_telegram_message
 from .twitter_login_flow import start_login_flow, complete_login_with_code
 from .twitter_scraper import scrape_twitter_profile
@@ -39,8 +40,9 @@ def dashboard_view(request):
     # Get bot status for the dashboard
     trading_config = TradingConfig.objects.filter(is_active=True).first()
     bot_enabled = trading_config.bot_enabled if trading_config else False
+    current_llm_model = trading_config.llm_model if trading_config else "gpt-3.5-turbo"
 
-    context = {"bot_enabled": bot_enabled}
+    context = {"bot_enabled": bot_enabled, "current_llm_model": current_llm_model}
     return render(request, "core/dashboard.html", context)
 
 
@@ -110,7 +112,7 @@ def trigger_analysis_ajax(request):
                 "error": f"Post #{post_id} already has analysis"
             }, status=400)
 
-        # Trigger the analysis task with manual_test=True
+        # Trigger the analysis task with manual_test=True using default model from TradingConfig
         analyze_post.delay(post.id, manual_test=True)
         logger.info(f"AJAX triggered analyze_post task for Post ID: {post_id} (manual_test=True)")
 
@@ -364,7 +366,7 @@ def system_status_api(request):
 
         # API Status Checks
         api_status = {
-            "openai": check_openai_api(),
+            "openai": check_default_llm_connection(),
             "news_sources": check_news_sources_status(),
             "alpaca": check_alpaca_api(),
         }
@@ -515,36 +517,41 @@ def system_status_api(request):
         return JsonResponse({"error": str(e)}, status=500)
 
 
-def check_openai_api():
-    """Check if OpenAI API is accessible with real connection test."""
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        return {"status": "error", "message": "API key not configured"}
-
+def check_default_llm_connection():
+    """Check connectivity to the currently configured default LLM (OpenAI or LAN)."""
     try:
-        # Real API test - make a simple request to verify connectivity
-        import requests
-
-        headers = {"Authorization": f"Bearer {api_key}"}
-        response = requests.get(
-            "https://api.openai.com/v1/models", headers=headers, timeout=10
-        )
-
-        if response.status_code == 200:
-            return {"status": "ok", "message": "API connected and responding"}
-        elif response.status_code == 401:
-            return {"status": "error", "message": "Invalid API key"}
-        elif response.status_code == 429:
-            return {"status": "warning", "message": "Rate limit exceeded"}
+        config = TradingConfig.objects.filter(is_active=True).first()
+        model = config.llm_model if config else "gpt-3.5-turbo"
+        from .utils.llm import is_lan_model
+        if is_lan_model(model):
+            # Probe LAN endpoint quickly
+            from .utils.llm import lan_chat_completion
+            try:
+                _ = lan_chat_completion(model, [
+                    {"role": "system", "content": "ping"},
+                    {"role": "user", "content": "ping"},
+                ], temperature=0.0, max_tokens=1)
+                return {"status": "ok", "message": f"LAN reachable ({model})"}
+            except Exception as e:
+                return {"status": "error", "message": f"LAN error: {e}"}
         else:
-            return {"status": "error", "message": f"API error: {response.status_code}"}
-
-    except requests.exceptions.Timeout:
-        return {"status": "warning", "message": "Connection timeout"}
-    except requests.exceptions.ConnectionError:
-        return {"status": "error", "message": "Cannot reach OpenAI servers"}
+            # Check OpenAI
+            api_key = os.getenv("OPENAI_API_KEY")
+            if not api_key:
+                return {"status": "error", "message": "OpenAI API key not configured"}
+            import requests
+            try:
+                headers = {"Authorization": f"Bearer {api_key}"}
+                response = requests.get("https://api.openai.com/v1/models", headers=headers, timeout=8)
+                if response.status_code == 200:
+                    return {"status": "ok", "message": f"OpenAI reachable ({model})"}
+                if response.status_code == 401:
+                    return {"status": "error", "message": "Invalid OpenAI API key"}
+                return {"status": "error", "message": f"OpenAI HTTP {response.status_code}"}
+            except Exception as e:
+                return {"status": "error", "message": f"OpenAI error: {e}"}
     except Exception as e:
-        return {"status": "error", "message": f"Connection error: {str(e)}"}
+        return {"status": "error", "message": str(e)}
 
 
 def check_newsapi_api():
@@ -769,7 +776,7 @@ def check_single_connection(request, service):
     """API endpoint to check connection to a specific service."""
     try:
         if service == "openai":
-            result = check_openai_api()
+            result = check_default_llm_connection()
         elif service == "alpaca":
             result = check_alpaca_api()
         else:
@@ -787,6 +794,40 @@ def check_single_connection(request, service):
             status=500,
         )
 
+
+@staff_member_required
+@require_POST
+def set_default_llm_api(request):
+    """Set the default LLM model on the active TradingConfig."""
+    try:
+        try:
+            payload = json.loads(request.body or '{}')
+        except Exception:
+            payload = {}
+        model = (payload.get('model') or request.POST.get('model') or '').strip()
+        if not model:
+            return JsonResponse({ 'success': False, 'error': 'Model is required' }, status=400)
+
+        config = TradingConfig.objects.filter(is_active=True).first()
+        if not config:
+            config = TradingConfig.objects.create(name='Default Config', is_active=True)
+        config.llm_model = model
+        config.save(update_fields=['llm_model', 'updated_at'])
+        # Optionally persist LAN URL if provided
+        lan_url = payload.get('lan_url') or request.POST.get('lan_url')
+        if lan_url:
+            try:
+                from .models import ConfigControl
+                cc, _ = ConfigControl.objects.get_or_create(name='LAN_LLM_URL')
+                cc.value_type = ConfigControl.TYPE_STRING
+                cc.value_string = lan_url
+                cc.save()
+            except Exception:
+                pass
+
+        return JsonResponse({ 'success': True, 'model': config.llm_model })
+    except Exception as e:
+        return JsonResponse({ 'success': False, 'error': str(e) }, status=500)
 
 def sync_alpaca_positions_to_database(alpaca_positions):
     """Sync Alpaca positions with database Trade records."""

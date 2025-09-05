@@ -16,6 +16,8 @@ import asyncio
 import time
 from datetime import datetime
 from core.utils import content_fetcher
+from django.contrib.admin.views.decorators import staff_member_required
+
 
 
 class ModelTests(TestCase):
@@ -1066,6 +1068,54 @@ Direction can be 'buy', 'sell', or 'hold'. Confidence is a float between 0 and 1
             self.fail(f"Real web scraping workflow failed: {e}")
 
 
+class TwitterScraperTests(TestCase):
+    def test_scrape_uses_managed_context_with_storage_state(self):
+        from unittest import mock
+        from core import twitter_scraper
+
+        storage_state = {"cookies": []}
+
+        # Fake page object with required methods for the scraper
+        class FakePage:
+            def set_default_timeout(self, *_):
+                pass
+            def goto(self, *_ , **__):
+                pass
+            def wait_for_timeout(self, *_):
+                pass
+            def reload(self, *_ , **__):
+                pass
+            def query_selector(self, *_ , **__):
+                return None
+            def query_selector_all(self, *_ , **__):
+                return []
+            def title(self):
+                return ""
+            @property
+            def url(self):
+                return ""
+            def wait_for_selector(self, *_ , **__):
+                raise Exception("no tweets")
+            def evaluate(self, *_ , **__):
+                return None
+
+        # Fake context manager yielding an object with new_page()
+        class FakeContext:
+            def __enter__(self):
+                class Ctx:
+                    def new_page(self_inner):
+                        return FakePage()
+                return Ctx()
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        with mock.patch("core.twitter_scraper.get_managed_browser_context_with_state", return_value=FakeContext()) as mocked_ctx:
+            tweets = twitter_scraper.scrape_twitter_profile("https://x.com/someuser", storage_state=storage_state, max_age_hours=1)
+            # Should call managed context when storage_state is provided
+            mocked_ctx.assert_called_once()
+            self.assertEqual(tweets, [])
+
+
 class ScrapingEnrichmentTests(TestCase):
     def setUp(self):
         self.source_api = Source.objects.create(
@@ -1134,6 +1184,32 @@ class ScrapingEnrichmentTests(TestCase):
         p = Post.objects.get(url="https://news.example.com/tsla-model")
         self.assertIn("[Article]", p.content)
         self.assertIn("Tesla introduced a new model", p.content)
+
+
+class AjaxAnalysisTests(TestCase):
+    def setUp(self):
+        self.client = Client()
+        # Create staff user and login
+        self.user = User.objects.create_user("admin", "admin@example.com", "pass")
+        self.user.is_staff = True
+        self.user.save()
+        self.client.login(username="admin", password="pass")
+        # Minimal data
+        self.source = Source.objects.create(name="S", url="https://e.com", scraping_method="web")
+        self.post = Post.objects.create(source=self.source, content="c", url="https://e.com/x")
+
+    @patch("core.views.analyze_post.delay")
+    def test_trigger_analysis_uses_default_model_only(self, mock_delay):
+        resp = self.client.post(
+            reverse("api_trigger_analysis"),
+            {"post_id": str(self.post.id)},
+        )
+        self.assertEqual(resp.status_code, 200)
+        mock_delay.assert_called_once()
+        # Verify no llm_model override is passed
+        _, kwargs = mock_delay.call_args
+        self.assertEqual(kwargs.get("manual_test"), True)
+        self.assertIsNone(kwargs.get("llm_model"))
 
 
 if __name__ == "__main__":

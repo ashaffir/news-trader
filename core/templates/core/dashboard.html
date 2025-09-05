@@ -65,14 +65,26 @@
                     </div>
                     <div class="card-body p-4">
                         <div class="row g-4" id="api-status-row">
-                            <!-- OpenAI -->
+                            <!-- LLM (Default Model) -->
                             <div class="col-md-4">
                                 <div class="card h-100 border-0 bg-light">
                                     <div class="card-body text-center p-4">
                                         <div class="mb-3">
                                             <i class="fas fa-brain text-primary" style="font-size: 2.5rem;"></i>
                                         </div>
-                                        <h6 class="card-title mb-2">OpenAI</h6>
+                                        <h6 class="card-title mb-2">Default LLM</h6>
+                                        <div class="mb-2 small text-muted">Current: <span id="current-llm-model">{{ current_llm_model }}</span></div>
+                                        <div class="input-group mb-2">
+                                            <select id="llm-model-select" class="form-select">
+                                                <option value="gpt-3.5-turbo" {% if current_llm_model == 'gpt-3.5-turbo' %}selected{% endif %}>OpenAI: gpt-3.5-turbo</option>
+                                                <option value="ai/qwen2.5:7B-Q4_K_M" {% if current_llm_model == 'ai/qwen2.5:7B-Q4_K_M' %}selected{% endif %}>LAN: Qwen2.5 7B Q4_K_M</option>
+                                            </select>
+                                            <button class="btn btn-outline-secondary" type="button" onclick="saveDefaultLLM()">Save</button>
+                                        </div>
+                                        <div class="input-group mb-3">
+                                            <input type="text" id="lan-url-input" class="form-control" placeholder="http://10.100.102.121:8080/engines/v1/chat/completions">
+                                            <button class="btn btn-outline-secondary" type="button" onclick="prefillLAN()">Preset LAN</button>
+                                        </div>
                                         <div class="mb-3">
                                             <span class="badge bg-secondary status-badge">Unknown</span>
                                         </div>
@@ -905,6 +917,32 @@
                         message: 'Failed to check connection: ' + error.message
                     }, service);
                 });
+        }
+
+        async function saveDefaultLLM() {
+            const select = document.getElementById('llm-model-select');
+            const model = (select.value || '').trim();
+            if (!model) { alert('Please enter a model id'); return; }
+            const lanInput = document.getElementById('lan-url-input');
+            const lan_url = lanInput && lanInput.value ? lanInput.value.trim() : '';
+            const r = await fetch('/api/set-default-llm/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+                body: JSON.stringify({ model, lan_url })
+            });
+            const data = await r.json();
+            if (data.success) {
+                document.getElementById('current-llm-model').textContent = model;
+            } else {
+                alert(data.error || 'Failed to save model');
+            }
+        }
+
+        function prefillLAN() {
+            const select = document.getElementById('llm-model-select');
+            if (select) select.value = 'ai/qwen2.5:7B-Q4_K_M';
+            const url = document.getElementById('lan-url-input');
+            if (url && !url.value) url.value = 'http://10.100.102.121:8080/engines/v1/chat/completions';
         }
 
         function recheckConnection() {

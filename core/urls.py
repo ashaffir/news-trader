@@ -36,6 +36,7 @@ urlpatterns = [
     path('api/cancel-trade/', views.cancel_trade_api, name='api_cancel_trade'),
     path('api/trade-status/<int:trade_id>/', views.trade_status_api, name='api_trade_status'),
     path('api/check-connection/<str:service>/', views.check_single_connection, name='check_single_connection'),
+    path('api/set-default-llm/', views.set_default_llm_api, name='api_set_default_llm'),
     path('api/trigger-scrape/', views.trigger_scrape_api, name='api_trigger_scrape'),
     path('api/trigger-analysis/', views.trigger_analysis_ajax, name='api_trigger_analysis'),
     path('api/add-source/', views.add_source_api, name='api_add_source'),
