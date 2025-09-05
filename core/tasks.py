@@ -2704,22 +2704,26 @@ def monitor_local_stop_take_levels():
 
                 if stop_triggered:
                     logger.info(f"Stop loss triggered for trade {trade.id} ({trade.symbol}): {current_price} vs SL {trade.stop_loss_price}")
-                    trade.status = "pending_close"
-                    trade.close_reason = "stop_loss"
-                    trade.save()
-                    close_trade_manually.delay(trade.id)
-                    triggered_count += 1
+                    # Idempotency guard: avoid re-queuing and duplicate alerts if already pending for SL
+                    if not (trade.status == "pending_close" and trade.close_reason == "stop_loss"):
+                        trade.status = "pending_close"
+                        trade.close_reason = "stop_loss"
+                        trade.save(update_fields=["status", "close_reason", "updated_at"])
+                        close_trade_manually.delay(trade.id)
+                        triggered_count += 1
                 elif (
                     (use_percent_based_tp and pnl_percent is not None and 
                      pnl_percent >= float(trade.take_profit_price_percentage))
                     or should_trigger_take_profit(trade, current_price)
                 ):
                     logger.info(f"Take profit triggered for trade {trade.id} ({trade.symbol}): {current_price} vs TP {trade.take_profit_price}")
-                    trade.status = "pending_close"
-                    trade.close_reason = "take_profit"
-                    trade.save()
-                    close_trade_manually.delay(trade.id)
-                    triggered_count += 1
+                    # Idempotency guard: avoid re-queuing and duplicate alerts if already pending for TP
+                    if not (trade.status == "pending_close" and trade.close_reason == "take_profit"):
+                        trade.status = "pending_close"
+                        trade.close_reason = "take_profit"
+                        trade.save(update_fields=["status", "close_reason", "updated_at"])
+                        close_trade_manually.delay(trade.id)
+                        triggered_count += 1
                 else:
                     if not trade.take_profit_price and not trade.stop_loss_price:
                         logger.info(

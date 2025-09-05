@@ -96,3 +96,61 @@ class TelegramAlertSuppressionTests(TestCase):
 
         mock_send.assert_called_once()
 
+
+class TradeClosedAlertToggleTests(TestCase):
+    @patch("core.utils.telegram.send_telegram_message")
+    def test_trade_closed_alert_respects_order_close_toggle(self, mock_send):
+        # Alerts enabled but order_close disabled -> should NOT send
+        AlertSettings.objects.create(
+            enabled=True,
+            order_open_enabled=True,
+            order_close_enabled=False,
+        )
+        send_dashboard_update(
+            "trade_closed",
+            {
+                "trade_id": 123,
+                "symbol": "AAPL",
+                "exit_price": 200.0,
+                "realized_pnl": 10.0,
+            },
+        )
+        mock_send.assert_not_called()
+
+    @patch("core.utils.telegram.send_telegram_message")
+    def test_trade_closed_alert_respects_global_disable(self, mock_send):
+        # Global disable overrides specific toggles -> should NOT send
+        AlertSettings.objects.create(
+            enabled=False,
+            order_close_enabled=True,
+        )
+        send_dashboard_update(
+            "trade_closed",
+            {
+                "trade_id": 124,
+                "symbol": "MSFT",
+                "exit_price": 300.0,
+                "realized_pnl": 15.0,
+            },
+        )
+        mock_send.assert_not_called()
+
+    @patch("core.utils.telegram.send_telegram_message")
+    def test_trade_closed_alert_sends_when_enabled(self, mock_send):
+        # Both global and order_close enabled -> should send
+        AlertSettings.objects.create(
+            enabled=True,
+            order_close_enabled=True,
+        )
+        mock_send.return_value = True
+        send_dashboard_update(
+            "trade_closed",
+            {
+                "trade_id": 125,
+                "symbol": "GOOG",
+                "exit_price": 150.0,
+                "realized_pnl": 5.0,
+            },
+        )
+        mock_send.assert_called_once()
+
