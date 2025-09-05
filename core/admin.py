@@ -274,7 +274,7 @@ class PostAdmin(admin.ModelAdmin):
     )
     list_filter = ("source", "published_at", "created_at")
     search_fields = ("content", "url")
-    readonly_fields = ("created_at", "api_response")
+    readonly_fields = ("created_at", "api_response", "analysis_used_llm_model")
     date_hierarchy = "published_at"
 
     def source_name(self, obj):
@@ -302,6 +302,14 @@ class PostAdmin(admin.ModelAdmin):
     has_analysis.short_description = "Analysis"
     has_analysis.admin_order_field = "analysis"
 
+    def analysis_used_llm_model(self, obj):
+        try:
+            return obj.analysis.used_llm_model or "-"
+        except Analysis.DoesNotExist:
+            return "-"
+
+    analysis_used_llm_model.short_description = "LLM model used"
+
 
 @admin.register(Analysis)
 class AnalysisAdmin(admin.ModelAdmin):
@@ -311,6 +319,7 @@ class AnalysisAdmin(admin.ModelAdmin):
         "symbol",
         "direction",
         "confidence",
+        "used_llm_model",
         "has_trades",
         "created_at",
     )
@@ -329,6 +338,7 @@ class AnalysisAdmin(admin.ModelAdmin):
             {
                 "fields": (
                     "trading_config_used",
+                    "used_llm_model",
                     "sentiment_score",
                     "market_impact_score",
                 ),

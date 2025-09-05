@@ -234,6 +234,8 @@ class TaskTests(TestCase):
         self.assertEqual(analysis.symbol, "AAPL")
         self.assertEqual(analysis.direction, "hold")
         self.assertEqual(analysis.confidence, 0.85)
+        # New: ensure used_llm_model is stored from active config default
+        self.assertEqual(analysis.used_llm_model, TradingConfig.objects.filter(is_active=True).first().llm_model)
 
         # Ensure content enrichment helpers were invoked
         mock_find_urls.assert_called()
@@ -1210,6 +1212,7 @@ class AjaxAnalysisTests(TestCase):
         _, kwargs = mock_delay.call_args
         self.assertEqual(kwargs.get("manual_test"), True)
         self.assertIsNone(kwargs.get("llm_model"))
+        # Should be queued with default active config model on worker side
 
 
 class SyncAlpacaPositionsTests(TestCase):

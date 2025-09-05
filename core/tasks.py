@@ -1956,6 +1956,7 @@ Direction can be 'buy', 'sell', or 'hold'. Confidence is a float between 0 and 1
             reason=llm_output.get("reason", "No reason provided by LLM."),
             raw_llm_response=raw_response_content,
             trading_config_used=config,
+            used_llm_model=model,
         )
         logger.info(
             f"Analysis complete for post {post.id}: Symbol={analysis.symbol}, Direction={analysis.direction}, Confidence={analysis.confidence}"

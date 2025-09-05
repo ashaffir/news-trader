@@ -249,6 +249,14 @@ class Analysis(models.Model):
     reason = models.TextField()
     raw_llm_response = models.JSONField(null=True, blank=True)
 
+    # Traceability: record which LLM model produced this analysis
+    used_llm_model = models.CharField(
+        max_length=200,
+        null=True,
+        blank=True,
+        help_text="LLM model identifier used when creating this analysis",
+    )
+
     # Enhanced analysis fields
     trading_config_used = models.ForeignKey(
         TradingConfig,
