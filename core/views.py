@@ -875,14 +875,14 @@ def sync_alpaca_positions_to_database(alpaca_positions):
             if tc:
                 existing_trade = (
                     Trade.objects
-                    .filter(tracked_company=tc, status__in(["open", "pending", "pending_close"]))
+                    .filter(tracked_company=tc, status__in=["open", "pending", "pending_close"])
                     .order_by("-created_at")
                     .first()
                 )
             else:
                 existing_trade = (
                     Trade.objects
-                    .filter(symbol=symbol, status__in(["open", "pending", "pending_close"]))
+                    .filter(symbol=symbol, status__in=["open", "pending", "pending_close"])
                     .order_by("-created_at")
                     .first()
                 )
