@@ -1212,6 +1212,39 @@ class AjaxAnalysisTests(TestCase):
         self.assertIsNone(kwargs.get("llm_model"))
 
 
+class SyncAlpacaPositionsTests(TestCase):
+    def setUp(self):
+        TradingConfig.objects.create(name="Cfg", is_active=True)
+        TrackedCompany.objects.get_or_create(symbol="AVGO", defaults={"name": "Broadcom"})
+
+    def test_sync_uses_stable_position_id_and_no_duplicates(self):
+        from core.views import sync_alpaca_positions_to_database
+
+        # One open Alpaca position
+        alpaca_positions = [
+            {
+                "symbol": "AVGO",
+                "qty": "1",
+                "market_value": "350.00",
+                "avg_entry_price": "300.00",
+                "unrealized_pl": "50.00",
+            }
+        ]
+
+        # First sync should create a single Trade
+        sync_alpaca_positions_to_database(alpaca_positions)
+        self.assertEqual(Trade.objects.filter(symbol="AVGO").count(), 1)
+        trade = Trade.objects.get(symbol="AVGO")
+        self.assertEqual(trade.alpaca_order_id, "position_AVGO")
+        self.assertEqual(trade.status, "open")
+
+        # Second sync should update the same Trade, not create a new one
+        sync_alpaca_positions_to_database(alpaca_positions)
+        self.assertEqual(Trade.objects.filter(symbol="AVGO").count(), 1)
+        trade.refresh_from_db()
+        self.assertEqual(trade.alpaca_order_id, "position_AVGO")
+
+
 if __name__ == "__main__":
     import unittest
 

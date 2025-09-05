@@ -844,6 +844,9 @@ def sync_alpaca_positions_to_database(alpaca_positions):
         direction = "buy" if float(position["qty"]) > 0 else "sell"
         quantity = abs(float(position["qty"]))
 
+        # Use a stable identifier for this live Alpaca position to avoid duplicates
+        stable_position_id = f"position_{symbol}"
+
         # Prefer Alpaca's average entry price; fallback to market_value/qty
         qty = float(position["qty"])
         market_value = float(position["market_value"])
@@ -857,31 +860,38 @@ def sync_alpaca_positions_to_database(alpaca_positions):
 
         unrealized_pnl = float(position.get("unrealized_pl", 0))
 
-        # Check if a non-closed record exists (open, pending, pending_close) to avoid duplicates
-        # Prefer tracked_company when available
-        from .models import TrackedCompany
-        tc = TrackedCompany.objects.filter(symbol__iexact=symbol).first()
-        if tc:
-            existing_trade = (
-                Trade.objects
-                .filter(tracked_company=tc, status__in=["open", "pending", "pending_close"]) 
-                .order_by("-created_at")
-                .first()
-            )
-        else:
-            existing_trade = (
-                Trade.objects
-                .filter(symbol=symbol, status__in=["open", "pending", "pending_close"]) 
-                .order_by("-created_at")
-                .first()
-            )
+        # Prefer a record explicitly linked to the live Alpaca position id
+        existing_trade = (
+            Trade.objects
+            .filter(alpaca_order_id=stable_position_id)
+            .order_by("-created_at")
+            .first()
+        )
+
+        # Fallback: any non-closed record for the symbol (preferring tracked_company)
+        if not existing_trade:
+            from .models import TrackedCompany
+            tc = TrackedCompany.objects.filter(symbol__iexact=symbol).first()
+            if tc:
+                existing_trade = (
+                    Trade.objects
+                    .filter(tracked_company=tc, status__in(["open", "pending", "pending_close"]))
+                    .order_by("-created_at")
+                    .first()
+                )
+            else:
+                existing_trade = (
+                    Trade.objects
+                    .filter(symbol=symbol, status__in(["open", "pending", "pending_close"]))
+                    .order_by("-created_at")
+                    .first()
+                )
 
         if not existing_trade:
-            # Create new trade record
-            # Try to find recent analysis for this symbol
+            # Create new trade record tied to the stable position id
             analysis = Analysis.objects.filter(symbol=symbol).order_by('-created_at').first()
 
-            # Resolve tracked_company for FK if exists
+            from .models import TrackedCompany
             tc = TrackedCompany.objects.filter(symbol__iexact=symbol).first()
             trade = Trade.objects.create(
                 analysis=analysis,
@@ -891,25 +901,29 @@ def sync_alpaca_positions_to_database(alpaca_positions):
                 quantity=quantity,
                 entry_price=entry_price,
                 status="open",
-                alpaca_order_id=f"sync_{symbol}_{int(timezone.now().timestamp())}",
+                alpaca_order_id=stable_position_id,
                 opened_at=timezone.now(),
                 unrealized_pnl=unrealized_pnl,
-                # Ensure defaults in case model-level save() is bypassed
                 take_profit_price_percentage=10.0,
                 stop_loss_price_percentage=2.0,
             )
-            logger.debug(f"Created new trade record for {symbol}")
+            logger.debug(f"Created new trade record for {symbol} with stable id {stable_position_id}")
         else:
             # Update existing trade with current Alpaca data (keep its status, including pending_close)
+            if existing_trade.status == "closed":
+                # If Alpaca shows an open position but our record is closed, reopen it
+                existing_trade.status = "open"
+                existing_trade.opened_at = existing_trade.opened_at or timezone.now()
             existing_trade.quantity = quantity
             existing_trade.unrealized_pnl = unrealized_pnl
             existing_trade.updated_at = timezone.now()
+            if not existing_trade.alpaca_order_id:
+                existing_trade.alpaca_order_id = stable_position_id
 
             # Ensure DB TP/SL dollar values are synced to the latest entry when percentages are set
             try:
                 if entry_price and entry_price > 0 and abs((existing_trade.entry_price or 0) - entry_price) > 1e-6:
                     existing_trade.entry_price = entry_price
-                    # Recompute TP/SL prices from stored percentages to keep celery comparisons correct
                     if getattr(existing_trade, "take_profit_price_percentage", None) is not None:
                         tp_pct = float(existing_trade.take_profit_price_percentage)
                         if direction == "buy":
