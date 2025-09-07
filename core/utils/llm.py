@@ -44,7 +44,7 @@ def lan_chat_completion(
     if not url:
         url = os.getenv(
             "LAN_LLM_URL",
-            "http://10.100.102.121:8080/engines/v1/chat/completions",
+            "http://10.100.102.121:8080/api/generate",
         )
 
     payload: Dict[str, Any] = {

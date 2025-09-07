@@ -82,7 +82,7 @@
                                             <button class="btn btn-outline-secondary" type="button" onclick="saveDefaultLLM()">Save</button>
                                         </div>
                                         <div class="input-group mb-3">
-                                            <input type="text" id="lan-url-input" class="form-control" placeholder="http://10.100.102.121:8080/engines/v1/chat/completions">
+                                            <input type="text" id="lan-url-input" class="form-control" placeholder="http://10.100.102.121:8080/api/generate">
                                             <button class="btn btn-outline-secondary" type="button" onclick="prefillLAN()">Preset LAN</button>
                                         </div>
                                         <div class="mb-3">
@@ -942,7 +942,7 @@
             const select = document.getElementById('llm-model-select');
             if (select) select.value = 'ai/qwen2.5:7B-Q4_K_M';
             const url = document.getElementById('lan-url-input');
-            if (url && !url.value) url.value = 'http://10.100.102.121:8080/engines/v1/chat/completions';
+            if (url && !url.value) url.value = 'http://10.100.102.121:8080/api/generate';
         }
 
         function recheckConnection() {
