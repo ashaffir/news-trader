@@ -13,7 +13,7 @@ def is_lan_model(model_name: str) -> bool:
     """Return True if model name looks like a local engine identifier.
 
     Heuristics:
-    - Contains a slash (e.g., "ai/qwen2.5:7B-Q4_K_M")
+    - Contains a slash (e.g., "qwen2.5:7b")
     - Starts with "lan:" prefix
     """
     if not model_name:

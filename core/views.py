@@ -42,6 +42,8 @@ def dashboard_view(request):
     bot_enabled = trading_config.bot_enabled if trading_config else False
     current_llm_model = trading_config.llm_model if trading_config else "gpt-3.5-turbo"
 
+    logger.info(f"Bot enabled: {bot_enabled}, Current LLM model: {current_llm_model}")
+    
     context = {"bot_enabled": bot_enabled, "current_llm_model": current_llm_model}
     return render(request, "core/dashboard.html", context)
 

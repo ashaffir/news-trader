@@ -77,7 +77,7 @@
                                         <div class="input-group mb-2">
                                             <select id="llm-model-select" class="form-select">
                                                 <option value="gpt-3.5-turbo" {% if current_llm_model == 'gpt-3.5-turbo' %}selected{% endif %}>OpenAI: gpt-3.5-turbo</option>
-                                                <option value="ai/qwen2.5:7B-Q4_K_M" {% if current_llm_model == 'ai/qwen2.5:7B-Q4_K_M' %}selected{% endif %}>LAN: Qwen2.5 7B Q4_K_M</option>
+                                                <option value="qwen2.5:7b" {% if current_llm_model == 'qwen2.5:7b' %}selected{% endif %}>LAN: qwen2.5:7b</option>
                                             </select>
                                             <button class="btn btn-outline-secondary" type="button" onclick="saveDefaultLLM()">Save</button>
                                         </div>
@@ -940,7 +940,7 @@
 
         function prefillLAN() {
             const select = document.getElementById('llm-model-select');
-            if (select) select.value = 'ai/qwen2.5:7B-Q4_K_M';
+            if (select) select.value = 'qwen2.5:7b';
             const url = document.getElementById('lan-url-input');
             if (url && !url.value) url.value = 'http://10.100.102.121:8080/api/generate';
         }
