@@ -50,6 +50,11 @@ class Command(BaseCommand):
             minute='30', hour='2', day_of_week='6,0', day_of_month='*', month_of_year='*'
         )
 
+        # Friday pre-close at 19:55 UTC (market close ~20:00 UTC)
+        friday_preclose_1955_cron, _ = CrontabSchedule.objects.get_or_create(
+            minute='55', hour='19', day_of_week='5', day_of_month='*', month_of_year='*'
+        )
+
         # Create periodic tasks
         tasks = [
             {
@@ -117,6 +122,12 @@ class Command(BaseCommand):
                 'task': 'core.tasks.disable_bot_on_weekends',
                 'crontab': weekend_230_cron,
                 'description': 'Automatically disable trading bot on Saturdays and Sundays'
+            },
+            {
+                'name': 'weekend_shutoff',
+                'task': 'core.tasks.weekend_shutoff',
+                'crontab': friday_preclose_1955_cron,
+                'description': 'Pre-weekend: cancel open orders, close trades, disable bot (Fri 19:55 UTC)'
             },
             {
                 'name': 'Enforce Bot Autostart',

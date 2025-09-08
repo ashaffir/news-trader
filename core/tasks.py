@@ -3400,6 +3400,112 @@ def close_all_trades_manually():
 
 
 # =============================================================================
+# WEEKEND SHUTOFF TASK
+# =============================================================================
+
+@shared_task
+def weekend_shutoff():
+    """Pre-weekend safety: cancel open orders, close all trades, disable bot.
+
+    This task is intended to run shortly before markets close on Fridays.
+    It performs best-effort broker order cancellation (if Alpaca credentials
+    are configured), initiates closing of all open trades, and disables the
+    trading bot to prevent new entries over the weekend.
+    """
+    summary = {
+        "cancel_orders_attempted": False,
+        "cancel_orders_errors": [],
+        "close_all_dispatched": False,
+        "bot_disabled": False,
+    }
+
+    # 1) Best-effort: cancel all open orders at the broker
+    try:
+        import os as _os
+        import requests as _requests
+
+        api_key = _os.getenv("ALPACA_API_KEY")
+        secret_key = _os.getenv("ALPACA_SECRET_KEY")
+        base_url = _os.getenv("ALPACA_BASE_URL", "https://paper-api.alpaca.markets")
+
+        if api_key and secret_key:
+            summary["cancel_orders_attempted"] = True
+            headers = {
+                "APCA-API-KEY-ID": api_key,
+                "APCA-API-SECRET-KEY": secret_key,
+            }
+            try:
+                resp = _requests.get(f"{base_url}/v2/orders", params={"status": "open"}, headers=headers, timeout=10)
+                resp.raise_for_status()
+                orders = resp.json() or []
+            except Exception as e:
+                logger.warning("Weekend shutoff: failed to list open orders: %s", e)
+                summary["cancel_orders_errors"].append(str(e))
+                orders = []
+
+            for order in orders:
+                try:
+                    oid = order.get("id")
+                    symbol = order.get("symbol")
+                    if not oid:
+                        continue
+                    del_resp = _requests.delete(f"{base_url}/v2/orders/{oid}", headers=headers, timeout=10)
+                    if del_resp.status_code != 204:
+                        logger.info("Weekend shutoff: failed to cancel %s (%s): %s", symbol, oid, del_resp.text)
+                except Exception as e:
+                    summary["cancel_orders_errors"].append(str(e))
+                    logger.info("Weekend shutoff: error cancelling order: %s", e)
+    except Exception as e:
+        # Do not fail the overall task on broker cancel issues
+        logger.info("Weekend shutoff: broker cancel step skipped/failed: %s", e)
+
+    # 2) Initiate closing all open trades (async)
+    try:
+        close_all_trades_manually.delay()
+        summary["close_all_dispatched"] = True
+    except Exception as e:
+        logger.error("Weekend shutoff: failed to dispatch close_all_trades_manually: %s", e)
+
+    # 3) Disable the bot to prevent new entries
+    try:
+        config = TradingConfig.objects.filter(is_active=True).first()
+        if config and config.bot_enabled:
+            config.bot_enabled = False
+            config.save(update_fields=["bot_enabled"])
+            summary["bot_disabled"] = True
+
+            try:
+                ActivityLog.objects.create(
+                    activity_type="system_event",
+                    message="Weekend shutoff executed: bot disabled and closures dispatched",
+                    data={"action": "weekend_shutoff", "timestamp": timezone.now().isoformat()},
+                )
+            except Exception as log_err:
+                logger.warning("Weekend shutoff: failed to record ActivityLog: %s", log_err)
+        elif config:
+            # Already disabled; still log a lightweight event
+            try:
+                ActivityLog.objects.create(
+                    activity_type="system_event",
+                    message="Weekend shutoff: bot already disabled",
+                    data={"action": "weekend_shutoff_noop", "timestamp": timezone.now().isoformat()},
+                )
+            except Exception:
+                pass
+    except Exception as e:
+        logger.error("Weekend shutoff: failed to disable bot: %s", e)
+
+    # 4) Notify dashboard
+    try:
+        send_dashboard_update("weekend_shutoff", summary)
+    except Exception:
+        pass
+
+    logger.info("Weekend shutoff completed: %s", summary)
+    return summary
+
+
+# =============================================================================
 # HEALTH MONITORING TASKS
 # =============================================================================
 
