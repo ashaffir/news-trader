@@ -14,12 +14,13 @@ def is_lan_model(model_name: str) -> bool:
     """Return True if model name looks like a local engine identifier.
 
     Heuristics:
-    - Contains a slash (e.g., "qwen2.5:7b")
+    - Contains a slash (e.g., "llama/7b")
+    - Contains a colon (e.g., "qwen2.5:7b")
     - Starts with "lan:" prefix
     """
     if not model_name:
         return False
-    return "/" in model_name or model_name.startswith("lan:")
+    return "/" in model_name or ":" in model_name or model_name.startswith("lan:")
 
 
 def _resolve_llm_root_url() -> Optional[str]:
