@@ -1935,6 +1935,8 @@ Direction can be 'buy', 'sell', or 'hold'. Confidence is a float between 0 and 1
         else:
             # Create OpenAI client with API key passed directly
             client = openai.OpenAI(api_key=api_key)
+            from .utils.llm import post_llm_metrics
+            start_time = __import__("time").monotonic()
             response = client.chat.completions.create(
                 model=model,
                 messages=[
@@ -1946,6 +1948,22 @@ Direction can be 'buy', 'sell', or 'hold'. Confidence is a float between 0 and 1
                 max_tokens=max_tokens,
             )
             raw_response_content = response.choices[0].message.content
+            try:
+                elapsed_ms = (__import__("time").monotonic() - start_time) * 1000.0
+                usage = getattr(response, "usage", None)
+                prompt_tokens = getattr(usage, "prompt_tokens", None) if usage else None
+                completion_tokens = getattr(usage, "completion_tokens", None) if usage else None
+                total_tokens = getattr(usage, "total_tokens", None) if usage else None
+                post_llm_metrics(
+                    prompt_tokens=prompt_tokens,
+                    generated_tokens=completion_tokens,
+                    total_tokens=total_tokens,
+                    model=model,
+                    provider="openai",
+                    latency_ms=elapsed_ms,
+                )
+            except Exception:
+                pass
         llm_output = json.loads(raw_response_content)
 
         analysis = Analysis.objects.create(

@@ -916,11 +916,11 @@ class ExternalIntegrationTests(TestCase):
             # Test OpenAI analysis
             api_key = os.getenv("OPENAI_API_KEY")
             client = openai.OpenAI(api_key=api_key)
-            
+
             prompt = """You are a financial analyst. Analyze the given text for potential financial impact on a stock. 
 Respond with a JSON object: { "symbol": "STOCK_SYMBOL", "direction": "buy", "confidence": 0.87, "reason": "Explanation" }. 
 Direction can be 'buy', 'sell', or 'hold'. Confidence is a float between 0 and 1."""
-            
+
             response = client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[
@@ -951,6 +951,13 @@ Direction can be 'buy', 'sell', or 'hold'. Confidence is a float between 0 and 1
             self.assertIn("direction", llm_output)
             self.assertIn("confidence", llm_output)
             self.assertIsInstance(llm_output["confidence"], (int, float))
+
+            # Optional: verify usage fields exist when available
+            usage = getattr(response, "usage", None)
+            if usage is not None:
+                _ = getattr(usage, "prompt_tokens", None)
+                _ = getattr(usage, "completion_tokens", None)
+                _ = getattr(usage, "total_tokens", None)
             
             # Test Alpaca API connection (but don't submit real orders)
             alpaca_api_key = os.getenv("ALPACA_API_KEY")

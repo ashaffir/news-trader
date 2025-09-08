@@ -158,6 +158,10 @@ NEWSAPI_KEY = os.getenv('NEWSAPI_KEY')
 ALPHAVANTAGE_API_KEY = os.getenv('ALPHAVANTAGE_API_KEY')
 REDDIT_USER_AGENT = os.getenv('REDDIT_USER_AGENT', 'news-trader/1.0')
 
+# LLM Server Root (for metrics tracking)
+# Example: http://10.100.102.121:8000
+LLM_ROOT_URL = os.getenv('LLM_ROOT_URL')
+
 # Telegram Bot Configuration
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 TELEGRAM_AUTHORIZED_CHATS = os.getenv('TELEGRAM_AUTHORIZED_CHATS', os.getenv('TELEGRAM_CHAT_ID', ''))

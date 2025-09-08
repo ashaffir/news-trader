@@ -151,6 +151,8 @@ def analyze_news_source_with_llm(url: str) -> Dict[str, Any]:
     # Use the same OpenAI client pattern used elsewhere for consistency
     client = openai.OpenAI(api_key=api_key)
     try:
+        from .utils.llm import post_llm_metrics
+        start_time = __import__("time").monotonic()
         resp = client.chat.completions.create(
             model=os.getenv("SOURCE_LLM_MODEL", os.getenv("DEFAULT_LLM_MODEL", "gpt-4o-mini")),
             messages=messages,
@@ -159,6 +161,22 @@ def analyze_news_source_with_llm(url: str) -> Dict[str, Any]:
             max_tokens=int(os.getenv("SOURCE_LLM_MAX_TOKENS", "1200")),
         )
         content = resp.choices[0].message.content
+        try:
+            elapsed_ms = (__import__("time").monotonic() - start_time) * 1000.0
+            usage = getattr(resp, "usage", None)
+            prompt_tokens = getattr(usage, "prompt_tokens", None) if usage else None
+            completion_tokens = getattr(usage, "completion_tokens", None) if usage else None
+            total_tokens = getattr(usage, "total_tokens", None) if usage else None
+            post_llm_metrics(
+                prompt_tokens=prompt_tokens,
+                generated_tokens=completion_tokens,
+                total_tokens=total_tokens,
+                model=os.getenv("SOURCE_LLM_MODEL", os.getenv("DEFAULT_LLM_MODEL", "gpt-4o-mini")),
+                provider="openai",
+                latency_ms=elapsed_ms,
+            )
+        except Exception:
+            pass
         parsed = json.loads(content)
     except Exception as e:
         logger.error(f"LLM analysis failed for {url}: {e}")
