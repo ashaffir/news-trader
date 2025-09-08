@@ -947,36 +947,77 @@ def sync_alpaca_positions_to_database(alpaca_positions):
                     pass
         else:
             # Update existing trade with current Alpaca data (keep its status, including pending_close)
+            # If this record is closed but there is another active trade for the same company/symbol,
+            # update that active trade instead of reopening the closed one to avoid unique constraint violations.
             if existing_trade.status == "closed":
-                # If Alpaca shows an open position but our record is closed, reopen it
-                existing_trade.status = "open"
-                existing_trade.opened_at = existing_trade.opened_at or timezone.now()
-            existing_trade.quantity = quantity
-            existing_trade.unrealized_pnl = unrealized_pnl
-            existing_trade.updated_at = timezone.now()
-            if not existing_trade.alpaca_order_id:
-                existing_trade.alpaca_order_id = stable_position_id
+                from .models import TrackedCompany
+                tc = None
+                try:
+                    tc = TrackedCompany.objects.filter(symbol__iexact=symbol).first()
+                except Exception:
+                    tc = None
+
+                active_trade = None
+                if tc:
+                    active_trade = (
+                        Trade.objects
+                        .filter(tracked_company=tc, status__in=["open", "pending", "pending_close"]) 
+                        .order_by('-created_at')
+                        .first()
+                    )
+                if not active_trade:
+                    active_trade = (
+                        Trade.objects
+                        .filter(symbol=symbol, status__in=["open", "pending", "pending_close"]) 
+                        .order_by('-created_at')
+                        .first()
+                    )
+
+                if active_trade:
+                    # Re-target updates to the active trade
+                    target_trade = active_trade
+                    # Ensure the stable alpaca id is set on the active trade
+                    if not target_trade.alpaca_order_id:
+                        try:
+                            target_trade.alpaca_order_id = stable_position_id
+                            target_trade.save(update_fields=["alpaca_order_id"]) 
+                        except Exception:
+                            pass
+                else:
+                    # Safe to reopen the closed record if no other active trade exists
+                    existing_trade.status = "open"
+                    existing_trade.opened_at = existing_trade.opened_at or timezone.now()
+                    target_trade = existing_trade
+            else:
+                target_trade = existing_trade
+
+            # Apply live data updates to the selected target trade
+            target_trade.quantity = quantity
+            target_trade.unrealized_pnl = unrealized_pnl
+            target_trade.updated_at = timezone.now()
+            if not target_trade.alpaca_order_id:
+                target_trade.alpaca_order_id = stable_position_id
 
             # Ensure DB TP/SL dollar values are synced to the latest entry when percentages are set
             try:
-                if entry_price and entry_price > 0 and abs((existing_trade.entry_price or 0) - entry_price) > 1e-6:
-                    existing_trade.entry_price = entry_price
-                    if getattr(existing_trade, "take_profit_price_percentage", None) is not None:
-                        tp_pct = float(existing_trade.take_profit_price_percentage)
+                if entry_price and entry_price > 0 and abs((target_trade.entry_price or 0) - entry_price) > 1e-6:
+                    target_trade.entry_price = entry_price
+                    if getattr(target_trade, "take_profit_price_percentage", None) is not None:
+                        tp_pct = float(target_trade.take_profit_price_percentage)
                         if direction == "buy":
-                            existing_trade.take_profit_price = entry_price * (1 + tp_pct / 100.0)
+                            target_trade.take_profit_price = entry_price * (1 + tp_pct / 100.0)
                         else:
-                            existing_trade.take_profit_price = entry_price * (1 - tp_pct / 100.0)
-                    if getattr(existing_trade, "stop_loss_price_percentage", None) is not None:
-                        sl_pct = float(existing_trade.stop_loss_price_percentage)
+                            target_trade.take_profit_price = entry_price * (1 - tp_pct / 100.0)
+                    if getattr(target_trade, "stop_loss_price_percentage", None) is not None:
+                        sl_pct = float(target_trade.stop_loss_price_percentage)
                         if direction == "buy":
-                            existing_trade.stop_loss_price = entry_price * (1 - sl_pct / 100.0)
+                            target_trade.stop_loss_price = entry_price * (1 - sl_pct / 100.0)
                         else:
-                            existing_trade.stop_loss_price = entry_price * (1 + sl_pct / 100.0)
+                            target_trade.stop_loss_price = entry_price * (1 + sl_pct / 100.0)
             except Exception:
                 pass
 
-            existing_trade.save()
+            target_trade.save()
             logger.debug(f"Updated trade record for {symbol}")
 
     # Close database trades that no longer exist in Alpaca (cover open and pending_close)

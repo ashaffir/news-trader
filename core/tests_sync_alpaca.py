@@ -62,4 +62,47 @@ class TradeSyncTests(TestCase):
         self.assertEqual(int(trade.quantity), 8)
         self.assertAlmostEqual(float(trade.unrealized_pnl), 70.0)
 
+    def test_sync_closed_record_does_not_reopen_if_active_exists(self):
+        # Create a closed trade for MSFT
+        tc = TrackedCompany.objects.get(symbol="MSFT")
+        closed = Trade.objects.create(
+            symbol="MSFT",
+            tracked_company=tc,
+            status="closed",
+            quantity=5,
+            entry_price=90.0,
+            closed_at=None,
+        )
+        # Create an active open trade for MSFT
+        active = Trade.objects.create(
+            symbol="MSFT",
+            tracked_company=tc,
+            status="open",
+            quantity=9,
+            entry_price=95.0,
+            alpaca_order_id=None,
+        )
+
+        # Incoming live position
+        positions = [
+            {
+                "symbol": "MSFT",
+                "qty": "9",
+                "market_value": "900",
+                "avg_entry_price": "100",
+                "unrealized_pl": "60",
+            }
+        ]
+
+        sync_alpaca_positions_to_database(positions)
+
+        # Closed one should remain closed
+        closed.refresh_from_db()
+        self.assertEqual(closed.status, "closed")
+
+        # Active one should be updated and have stable alpaca id set
+        active.refresh_from_db()
+        self.assertEqual(int(active.quantity), 9)
+        self.assertEqual(active.alpaca_order_id, "position_MSFT")
+
 
