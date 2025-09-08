@@ -890,26 +890,61 @@ def sync_alpaca_positions_to_database(alpaca_positions):
                 )
 
         if not existing_trade:
-            # Create new trade record tied to the stable position id
+            # Create new trade record tied to the stable position id, guard against race duplicates
             analysis = Analysis.objects.filter(symbol=symbol).order_by('-created_at').first()
 
             from .models import TrackedCompany
             tc = TrackedCompany.objects.filter(symbol__iexact=symbol).first()
-            trade = Trade.objects.create(
-                analysis=analysis,
-                symbol=symbol,
-                tracked_company=tc,
-                direction=direction,
-                quantity=quantity,
-                entry_price=entry_price,
-                status="open",
-                alpaca_order_id=stable_position_id,
-                opened_at=timezone.now(),
-                unrealized_pnl=unrealized_pnl,
-                take_profit_price_percentage=10.0,
-                stop_loss_price_percentage=2.0,
-            )
-            logger.debug(f"Created new trade record for {symbol} with stable id {stable_position_id}")
+
+            # Attempt create; on IntegrityError fetch the concurrently created one
+            try:
+                from django.db import IntegrityError
+                trade = Trade.objects.create(
+                    analysis=analysis,
+                    symbol=symbol,
+                    tracked_company=tc,
+                    direction=direction,
+                    quantity=quantity,
+                    entry_price=entry_price,
+                    status="open",
+                    alpaca_order_id=stable_position_id,
+                    opened_at=timezone.now(),
+                    unrealized_pnl=unrealized_pnl,
+                    take_profit_price_percentage=10.0,
+                    stop_loss_price_percentage=2.0,
+                )
+                logger.debug(f"Created new trade record for {symbol} with stable id {stable_position_id}")
+            except IntegrityError:
+                # Another request created the active trade concurrently. Retrieve it now.
+                trade = (
+                    Trade.objects
+                    .filter(alpaca_order_id=stable_position_id)
+                    .order_by('-created_at')
+                    .first()
+                )
+                if not trade:
+                    # Fallback by tracked company if stable id was not yet set on the other record
+                    if tc:
+                        trade = (
+                            Trade.objects
+                            .filter(tracked_company=tc, status__in=["open", "pending", "pending_close"]) 
+                            .order_by('-created_at')
+                            .first()
+                        )
+                    else:
+                        trade = (
+                            Trade.objects
+                            .filter(symbol=symbol, status__in=["open", "pending", "pending_close"]) 
+                            .order_by('-created_at')
+                            .first()
+                        )
+                # If we found it and alpaca_order_id not set, set it for stability
+                try:
+                    if trade and not trade.alpaca_order_id:
+                        trade.alpaca_order_id = stable_position_id
+                        trade.save(update_fields=["alpaca_order_id"]) 
+                except Exception:
+                    pass
         else:
             # Update existing trade with current Alpaca data (keep its status, including pending_close)
             if existing_trade.status == "closed":
