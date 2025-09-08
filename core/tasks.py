@@ -1931,6 +1931,7 @@ Direction can be 'buy', 'sell', or 'hold'. Confidence is a float between 0 and 1
                 ],
                 temperature=temperature,
                 max_tokens=max_tokens,
+                response_format={"type": "json_object"},
             )
         else:
             # Create OpenAI client with API key passed directly
