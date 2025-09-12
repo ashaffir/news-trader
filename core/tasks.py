@@ -2879,9 +2879,25 @@ def close_trade_manually(trade_id):
                     else:
                         pnl = (float(trade.entry_price) - float(exit_price)) * float(trade.quantity)
 
+                    # Fetch and calculate fees from Alpaca
+                    try:
+                        from core.utils.alpaca_fees import fetch_trade_fees
+                        close_time = timezone.now()
+                        fees = fetch_trade_fees(
+                            symbol=trade.symbol,
+                            trade_time=close_time,
+                            quantity=trade.quantity,
+                            side=trade.direction
+                        )
+                        logger.info(f"Fetched fees for {trade.symbol}: ${fees:.4f}")
+                    except Exception as fee_error:
+                        logger.warning(f"Error fetching fees for {trade.symbol}: {fee_error}")
+                        fees = 0.0
+
                     trade.status = "closed"
                     trade.exit_price = exit_price
                     trade.realized_pnl = pnl
+                    trade.commission = fees
                     # Only set to manual if no close reason was already set
                     if not trade.close_reason:
                         trade.close_reason = "manual"
@@ -2906,9 +2922,26 @@ def close_trade_manually(trade_id):
                         pnl = (market_price - float(trade.entry_price)) * float(trade.quantity)
                     else:
                         pnl = (float(trade.entry_price) - market_price) * float(trade.quantity)
+                    
+                    # Fetch and calculate fees from Alpaca (fallback case)
+                    try:
+                        from core.utils.alpaca_fees import fetch_trade_fees
+                        close_time = timezone.now()
+                        fees = fetch_trade_fees(
+                            symbol=trade.symbol,
+                            trade_time=close_time,
+                            quantity=trade.quantity,
+                            side=trade.direction
+                        )
+                        logger.info(f"Fetched fees for {trade.symbol} (fallback): ${fees:.4f}")
+                    except Exception as fee_error:
+                        logger.warning(f"Error fetching fees for {trade.symbol} (fallback): {fee_error}")
+                        fees = 0.0
+                    
                     trade.status = "closed"
                     trade.exit_price = market_price
                     trade.realized_pnl = pnl
+                    trade.commission = fees
                     # Only set to manual if no close reason was already set
                     if not trade.close_reason:
                         trade.close_reason = "manual"
@@ -2919,6 +2952,7 @@ def close_trade_manually(trade_id):
                 trade.status = "closed"
                 trade.exit_price = trade.entry_price
                 trade.realized_pnl = 0.0
+                trade.commission = 0.0  # No API access to fetch fees
                 # Only set to manual if no close reason was already set
                 if not trade.close_reason:
                     trade.close_reason = "manual"
@@ -2929,6 +2963,7 @@ def close_trade_manually(trade_id):
             trade.status = "closed"
             trade.exit_price = trade.entry_price
             trade.realized_pnl = 0.0
+            trade.commission = 0.0  # No API access to fetch fees
             # Only set to manual if no close reason was already set
             if not trade.close_reason:
                 trade.close_reason = "manual"
@@ -3248,9 +3283,26 @@ def update_trade_status():
                         pnl = (exit_price - (t.entry_price or 0)) * (t.quantity or 0)
                     else:
                         pnl = ((t.entry_price or 0) - exit_price) * (t.quantity or 0)
+                    
+                    # Fetch and calculate fees from Alpaca (position disappeared)
+                    try:
+                        from core.utils.alpaca_fees import fetch_trade_fees
+                        close_time = timezone.now()
+                        fees = fetch_trade_fees(
+                            symbol=t.symbol,
+                            trade_time=close_time,
+                            quantity=t.quantity,
+                            side=t.direction
+                        )
+                        logger.info(f"Fetched fees for {t.symbol} (position disappeared): ${fees:.4f}")
+                    except Exception as fee_error:
+                        logger.warning(f"Error fetching fees for {t.symbol} (position disappeared): {fee_error}")
+                        fees = 0.0
+                    
                     t.status = "closed"
                     t.exit_price = exit_price
                     t.realized_pnl = pnl
+                    t.commission = fees
                     t.closed_at = timezone.now()
                     if not t.close_reason:
                         t.close_reason = "market_close"

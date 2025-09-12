@@ -1342,10 +1342,26 @@ def manual_close_trade_view(request):
                     else:
                         pnl = (trade_record.entry_price - exit_price) * trade_record.quantity
 
+                    # Fetch and calculate fees from Alpaca
+                    try:
+                        from core.utils.alpaca_fees import fetch_trade_fees
+                        close_time = timezone.now()
+                        fees = fetch_trade_fees(
+                            symbol=symbol,
+                            trade_time=close_time,
+                            quantity=trade_record.quantity,
+                            side=trade_record.direction
+                        )
+                        logger.info(f"Fetched fees for {symbol}: ${fees:.4f}")
+                    except Exception as fee_error:
+                        logger.warning(f"Error fetching fees for {symbol}: {fee_error}")
+                        fees = 0.0
+
                     # Update trade record with closure information
                     trade_record.status = "closed"
                     trade_record.exit_price = exit_price
                     trade_record.realized_pnl = pnl
+                    trade_record.commission = fees
                     trade_record.close_reason = "manual"
                     trade_record.closed_at = timezone.now()
                     trade_record.save()
