@@ -167,6 +167,7 @@
     loadSource();
     loadModel();
     loadScatter();
+    loadMonthlyPnl();
   }
 
   document.addEventListener('DOMContentLoaded', function(){
@@ -191,6 +192,35 @@
       type: 'scatter',
       data: { datasets: [{ label: 'PnL by Duration (min)', data: ddata.points, parsing: { xAxisKey: 'x', yAxisKey: 'y' }, backgroundColor: 'rgba(40,167,69,0.6)' }] },
       options: { scales: { x: { title: { display: true, text: 'Minutes' } } } }
+    });
+  }
+
+  async function loadMonthlyPnl(){
+    const qp = buildParams();
+    const url = '/stats/api/pnl-by-month?' + qp + '&projection_months=3';
+    const d = await (await fetch(url)).json();
+    const datasets = [
+      { label: 'Monthly PnL (Adj.)', data: d.pnl, borderColor: '#0d6efd', backgroundColor: 'rgba(13,110,253,0.2)', fill: true }
+    ];
+    if (d.projection_labels && d.projection_labels.length) {
+      // Create a dataset aligned to labels + projections with null gaps then projection values
+      const baseLen = d.labels.length;
+      const projData = new Array(baseLen).fill(null).concat(d.projection);
+      const allLabels = d.labels.concat(d.projection_labels);
+      ensureChart('chart-monthly-pnl', {
+        type: 'line',
+        data: { labels: allLabels, datasets: [
+          { label: 'Monthly PnL (Adj.)', data: d.pnl.concat(new Array(d.projection.length).fill(null)), borderColor: '#0d6efd', backgroundColor: 'rgba(13,110,253,0.15)', fill: true },
+          { label: 'Projection', data: projData, borderColor: '#ffc107', borderDash: [6,4], pointRadius: 0 }
+        ]},
+        options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+      });
+      return;
+    }
+    ensureChart('chart-monthly-pnl', {
+      type: 'line',
+      data: { labels: d.labels, datasets },
+      options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
     });
   }
 })();

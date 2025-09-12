@@ -76,6 +76,14 @@ class StatsAPITests(TestCase):
         scatter2 = self.client.get('/stats/api/analysis/duration-pnl-scatter').json()
         self.assertIn('points', scatter2)
 
+        # Monthly PnL endpoint basic shape
+        monthly = self.client.get('/stats/api/pnl-by-month').json()
+        self.assertIn('labels', monthly)
+        self.assertIn('pnl', monthly)
+        # projection fields present
+        self.assertIn('projection_labels', monthly)
+        self.assertIn('projection', monthly)
+
     def test_navbar_bot_badge_reflects_state(self):
         """Stats page should receive bot_enabled for navbar indicator."""
         # Bot disabled

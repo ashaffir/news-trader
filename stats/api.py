@@ -8,6 +8,7 @@ from django.contrib.auth.decorators import login_required
 
 from core.models import Trade
 from django.db.models import F
+from datetime import timedelta
 
 
 def _parse_dt(value: str | None):
@@ -456,4 +457,97 @@ def duration_pnl_scatter_api(request):
         except Exception:
             continue
     return JsonResponse({ 'points': points })
+
+
+@login_required
+@require_GET
+def pnl_by_month_api(request):
+    """Monthly commission-adjusted PnL and simple projection for up to 12 months.
+
+    Projection: linear extrapolation based on average monthly PnL of available months
+    within the requested date range. We cap output to 12 months max for clarity.
+    """
+    qs = _filtered_trades(request).filter(status='closed', realized_pnl__isnull=False)
+    # Determine month buckets between start and end (or last 12 months if not provided)
+    start = _parse_dt(request.GET.get('start'))
+    end = _parse_dt(request.GET.get('end'))
+    now = timezone.now()
+    if not end:
+        end = now
+    if not start:
+        # default to last 12 months inclusive
+        start = (end.replace(day=1) - timedelta(days=365))
+
+    # Build list of YYYY-MM labels between start and end (cap at 24 to avoid runaway)
+    def month_key(dt):
+        return f"{dt.year:04d}-{dt.month:02d}"
+
+    # Move to first day of month for start
+    try:
+        start_month = start.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    except Exception:
+        start_month = start
+    try:
+        end_month = end.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    except Exception:
+        end_month = end
+
+    months = []
+    cur = start_month
+    safeguard = 0
+    while cur <= end_month and safeguard < 36:
+        months.append(month_key(cur))
+        # advance one month safely
+        if cur.month == 12:
+            cur = cur.replace(year=cur.year + 1, month=1)
+        else:
+            cur = cur.replace(month=cur.month + 1)
+        safeguard += 1
+
+    # Aggregate PnL by month label
+    by_month = { m: 0.0 for m in months }
+    for t in qs:
+        dt = (t.closed_at or t.created_at) or None
+        if not dt:
+            continue
+        k = month_key(dt)
+        if k in by_month:
+            by_month[k] += _commission_adjusted_realized_pnl(t)
+
+    labels_all = months[-12:] if len(months) > 12 else months
+    pnl_vals = [ round(by_month[m], 4) for m in labels_all ]
+
+    # Simple projection: next 1-3 months based on average of available months (non-zero count)
+    projection_months = int(request.GET.get('projection_months', '3') or '3')
+    projection_months = max(0, min(projection_months, 6))
+    avg = 0.0
+    cnt = 0
+    for v in pnl_vals:
+        avg += v
+        cnt += 1
+    avg = (avg / cnt) if cnt else 0.0
+
+    proj_labels = []
+    proj_values = []
+    if projection_months > 0 and labels_all:
+        # derive next month after last label
+        last_label = labels_all[-1]
+        year = int(last_label.split('-')[0])
+        month = int(last_label.split('-')[1])
+        for i in range(projection_months):
+            if month == 12:
+                year += 1
+                month = 1
+            else:
+                month += 1
+            proj_labels.append(f"{year:04d}-{month:02d}")
+            proj_values.append(round(avg, 4))
+
+    return JsonResponse({
+        'labels': labels_all,
+        'pnl': pnl_vals,
+        'projection_labels': proj_labels,
+        'projection': proj_values,
+        'avg_monthly_pnl': round(avg, 4),
+    })
 
