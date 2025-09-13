@@ -55,6 +55,11 @@ class Command(BaseCommand):
             minute='55', hour='19', day_of_week='5', day_of_month='*', month_of_year='*'
         )
 
+        # Monthly cleanup on the 1st day of each month at 03:00 UTC
+        monthly_0300_cron, _ = CrontabSchedule.objects.get_or_create(
+            minute='0', hour='3', day_of_week='*', day_of_month='1', month_of_year='*'
+        )
+
         # Create periodic tasks
         tasks = [
             {
@@ -134,6 +139,12 @@ class Command(BaseCommand):
                 'task': 'core.tasks.enforce_bot_autostart',
                 'interval': interval_2_minutes,
                 'description': 'Enable/disable bot automatically based on market hours when autostart is enabled'
+            },
+            {
+                'name': 'Monthly Old Data Cleanup',
+                'task': 'core.tasks.cleanup_old_data',
+                'crontab': monthly_0300_cron,
+                'description': 'Clean up old posts and API responses based on posts_retention_days config (PRESERVES posts with trades - monthly on 1st at 03:00 UTC)'
             },
 
         ]

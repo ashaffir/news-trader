@@ -3,7 +3,7 @@ from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.utils import timezone
 
-from core.models import TradingConfig, AlertSettings, Source
+from core.models import TradingConfig, AlertSettings, Source, ConfigControl
 
 
 class Command(BaseCommand):
@@ -110,7 +110,36 @@ class Command(BaseCommand):
         )
         self.stdout.write(self.style.SUCCESS("✅ AlertSettings ready"))
 
-        # 4) Create CNBC Latest as default source if requested
+        # 4) Ensure ConfigControl entries for data retention
+        config_entries = [
+            {
+                "name": "posts_retention_days",
+                "value_type": ConfigControl.TYPE_INTEGER,
+                "value_int": 30,
+                "description": "Number of days to retain posts and API responses (default: 30 days = monthly cleanup)"
+            },
+            {
+                "name": "activitylog_retention_days", 
+                "value_type": ConfigControl.TYPE_INTEGER,
+                "value_int": 30,
+                "description": "Number of days to retain ActivityLog entries (default: 30 days)"
+            },
+        ]
+        
+        for entry in config_entries:
+            config_obj, created = ConfigControl.objects.get_or_create(
+                name=entry["name"],
+                defaults={
+                    "value_type": entry["value_type"],
+                    "value_int": entry["value_int"],
+                }
+            )
+            if created:
+                self.stdout.write(self.style.SUCCESS(f"✅ Created ConfigControl: {entry['name']} = {entry['value_int']}"))
+            else:
+                self.stdout.write(self.style.SUCCESS(f"✅ ConfigControl exists: {entry['name']} = {config_obj.value}"))
+
+        # 5) Create CNBC Latest as default source if requested
         if options.get("with_cnbc_latest"):
             try:
                 cnbc_source, created = Source.objects.get_or_create(
@@ -132,7 +161,7 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.ERROR(f"❌ Failed to ensure CNBC Latest source: {e}"))
                 raise
 
-        # 5) Register periodic tasks (via existing command)
+        # 6) Register periodic tasks (via existing command)
         try:
             from django.core.management import call_command
 
@@ -142,7 +171,7 @@ class Command(BaseCommand):
             self.stdout.write(self.style.ERROR(f"❌ Failed to set up periodic tasks: {e}"))
             raise
 
-        # 6) Optional: small sanity ping
+        # 7) Optional: small sanity ping
         _ = timezone.now()
 
         self.stdout.write(self.style.SUCCESS("🎉 Full bootstrap completed"))

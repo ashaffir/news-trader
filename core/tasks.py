@@ -294,6 +294,69 @@ def prune_activity_log(max_age_days: int | None = None):
             pass
         return {"status": "error", "error": str(e)}
 
+
+# =============================
+# Old Data Cleanup
+# =============================
+
+@shared_task
+def cleanup_old_data(retention_days: int | None = None):
+    """Clean up old posts and API responses from the database.
+    
+    IMPORTANT: This PRESERVES posts that have associated trades to maintain financial records.
+    Only deletes posts with no analysis or analysis with no trades.
+    
+    Retention can be configured via posts_retention_days ConfigControl (default 30).
+    """
+    try:
+        from django.core.management import call_command
+        from io import StringIO
+        
+        if retention_days is None:
+            from .utils.config import get_config_value
+            retention_days = get_config_value("posts_retention_days", 30)
+            try:
+                retention_days = int(retention_days)
+            except Exception:
+                retention_days = 30
+
+        # Use StringIO to capture command output
+        out = StringIO()
+        call_command('cleanup_old_data', '--days', str(retention_days), stdout=out)
+        output = out.getvalue()
+        
+        logger.info(f"Old data cleanup completed: {retention_days} days retention")
+        logger.info(f"Command output: {output}")
+        
+        return {"status": "success", "retention_days": retention_days, "output": output}
+        
+    except Exception as e:
+        logger.error(f"Old data cleanup failed: {e}")
+        
+        try:
+            ActivityLog.objects.create(
+                activity_type="system_event",
+                message="Old data cleanup failed",
+                data={
+                    "error": str(e),
+                    "retention_days": retention_days if 'retention_days' in locals() else 'unknown',
+                },
+            )
+        except Exception:
+            # avoid cascading errors if DB is inaccessible
+            pass
+            
+        try:
+            # Send system error alert via Telegram if enabled
+            from .utils.telegram import send_system_error_alert
+            send_system_error_alert(f"Old data cleanup failed: {e}")
+        except Exception:
+            # Avoid secondary exceptions from alert path
+            logger.exception("Failed to send system error alert for cleanup failure")
+            
+        return {"status": "error", "error": str(e)}
+
+
 def _is_async_context() -> bool:
     try:
         asyncio.get_running_loop()
