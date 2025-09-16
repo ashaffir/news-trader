@@ -467,65 +467,100 @@ def pnl_by_month_api(request):
     Projection: linear extrapolation based on average monthly PnL of available months
     within the requested date range. We cap output to 12 months max for clarity.
     """
-    qs = _filtered_trades(request).filter(status='closed', realized_pnl__isnull=False)
-    # Determine month buckets between start and end (or last 12 months if not provided)
+    # Start with closed, realized trades only
+    qs = Trade.objects.filter(status='closed', realized_pnl__isnull=False, closed_at__isnull=False)
+
+    # Determine month buckets between start and end (defaults to last 12 closed months)
     start = _parse_dt(request.GET.get('start'))
     end = _parse_dt(request.GET.get('end'))
     now = timezone.now()
     if not end:
         end = now
-    if not start:
-        # default to last 12 months inclusive
-        start = (end.replace(day=1) - timedelta(days=365))
 
-    # Build list of YYYY-MM labels between start and end (cap at 24 to avoid runaway)
     def month_key(dt):
         return f"{dt.year:04d}-{dt.month:02d}"
 
-    # Move to first day of month for start
-    try:
-        start_month = start.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    except Exception:
-        start_month = start
+    # Normalize to month starts
     try:
         end_month = end.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     except Exception:
         end_month = end
 
-    months = []
-    cur = start_month
-    safeguard = 0
-    while cur <= end_month and safeguard < 36:
-        months.append(month_key(cur))
-        # advance one month safely
-        if cur.month == 12:
-            cur = cur.replace(year=cur.year + 1, month=1)
-        else:
-            cur = cur.replace(month=cur.month + 1)
-        safeguard += 1
+    if not start:
+        # Last 12 months inclusive, in chronological order
+        months = []
+        ey, em = end_month.year, end_month.month
+        for delta in range(11, -1, -1):
+            y = ey
+            m = em - delta
+            while m <= 0:
+                y -= 1
+                m += 12
+            months.append(f"{y:04d}-{m:02d}")
+    else:
+        try:
+            start_month = start.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        except Exception:
+            start_month = start
+        months = []
+        cur = start_month
+        safeguard = 0
+        while cur <= end_month and safeguard < 36:
+            months.append(month_key(cur))
+            if cur.month == 12:
+                cur = cur.replace(year=cur.year + 1, month=1)
+            else:
+                cur = cur.replace(month=cur.month + 1)
+            safeguard += 1
+        # Trim to last 12 if user gave large range
+        if len(months) > 12:
+            months = months[-12:]
 
-    # Aggregate PnL by month label
-    by_month = { m: 0.0 for m in months }
+    # Apply date filter on closed_at within span
+    span_start_str = months[0] + "-01"
+    # compute next month start for span end bound
+    last_year = int(months[-1].split('-')[0])
+    last_month = int(months[-1].split('-')[1])
+    if last_month == 12:
+        span_end_year = last_year + 1
+        span_end_month = 1
+    else:
+        span_end_year = last_year
+        span_end_month = last_month + 1
+    span_end_str = f"{span_end_year:04d}-{span_end_month:02d}-01"
+
+    try:
+        span_start = datetime.fromisoformat(span_start_str)
+        span_end = datetime.fromisoformat(span_end_str)
+        qs = qs.filter(closed_at__gte=span_start, closed_at__lt=span_end)
+    except Exception:
+        pass
+
+    # Aggregate PnL and counts by close month
+    by_month_sum = { m: 0.0 for m in months }
+    by_month_count = { m: 0 for m in months }
     for t in qs:
-        dt = (t.closed_at or t.created_at) or None
+        dt = t.closed_at
         if not dt:
             continue
         k = month_key(dt)
-        if k in by_month:
-            by_month[k] += _commission_adjusted_realized_pnl(t)
+        if k in by_month_sum:
+            pnl = _commission_adjusted_realized_pnl(t)
+            by_month_sum[k] += pnl
+            by_month_count[k] += 1
 
-    labels_all = months[-12:] if len(months) > 12 else months
-    pnl_vals = [ round(by_month[m], 4) for m in labels_all ]
+    labels_all = months
+    pnl_vals = [ round(by_month_sum[m], 4) for m in labels_all ]
 
-    # Simple projection: next 1-3 months based on average of available months (non-zero count)
+    # Projection: average of complete months only (exclude current partial month if end is within current month)
     projection_months = int(request.GET.get('projection_months', '3') or '3')
     projection_months = max(0, min(projection_months, 6))
-    avg = 0.0
-    cnt = 0
-    for v in pnl_vals:
-        avg += v
-        cnt += 1
-    avg = (avg / cnt) if cnt else 0.0
+    treat_partial = (end.year == now.year and end.month == now.month)
+    months_for_avg = [m for m in labels_all if (not treat_partial or m != month_key(end)) and by_month_count[m] > 0]
+    if not months_for_avg:
+        # Fallback: include any months with data (e.g., only current month has trades)
+        months_for_avg = [m for m in labels_all if by_month_count[m] > 0]
+    avg = sum(by_month_sum[m] for m in months_for_avg) / float(len(months_for_avg)) if months_for_avg else 0.0
 
     proj_labels = []
     proj_values = []
@@ -534,7 +569,7 @@ def pnl_by_month_api(request):
         last_label = labels_all[-1]
         year = int(last_label.split('-')[0])
         month = int(last_label.split('-')[1])
-        for i in range(projection_months):
+        for _ in range(projection_months):
             if month == 12:
                 year += 1
                 month = 1
