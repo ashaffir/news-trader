@@ -30,7 +30,6 @@ def find_urls_in_text(text: str) -> List[str]:
             ordered.append(u)
     return ordered
 
-
 def _is_probable_article_url(url: str) -> bool:
     """Heuristic: identify if URL likely points to a news article."""
     try:
@@ -41,6 +40,24 @@ def _is_probable_article_url(url: str) -> bool:
         # Exclude social status links
         if any(s in netloc for s in ("twitter.com", "x.com", "t.co")) and "/status/" in path:
             return False
+        
+        # Known news shortener domains (always point to articles)
+        news_shorteners = [
+            "reut.rs",           # Reuters
+            "nyti.ms",           # New York Times
+            "wapo.st",           # Washington Post
+            "on.wsj.com",        # Wall Street Journal
+            "bloom.bg",          # Bloomberg
+            "cnn.it",            # CNN
+            "abcn.ws",           # ABC News
+            "cbsn.ws",           # CBS News
+            "nbcnews.to",        # NBC News
+            "politi.co",         # Politico
+            "apne.ws",           # Associated Press
+        ]
+        if any(shortener in netloc for shortener in news_shorteners):
+            return True
+        
         # Include common article patterns
         article_markers = [
             "/news/",

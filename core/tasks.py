@@ -883,7 +883,11 @@ def _scrape_with_browser(source):
                             urls_in_text = find_urls_in_text(content)
                             best_link = pick_best_article_url(urls_in_text)
                             if best_link:
-                                emb = extract_article_text(best_link)
+                                # Prefer Reuters-specific extraction when applicable
+                                if 'reut.rs' in best_link or 'reuters.com' in best_link:
+                                    emb = extract_reuters_article(best_link)
+                                else:
+                                    emb = extract_article_text(best_link)
                                 if emb.get("success") and emb.get("text"):
                                     excerpt = emb["text"]
                                     if len(excerpt) > 1500:
