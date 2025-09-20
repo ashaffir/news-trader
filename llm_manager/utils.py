@@ -147,7 +147,7 @@ def lan_chat_completion(
             payload["response_format"] = response_format
 
     start_time = time.monotonic()
-    resp = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=60)
+    resp = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=120)
     resp.raise_for_status()
     elapsed_ms = (time.monotonic() - start_time) * 1000.0
     data = resp.json()
