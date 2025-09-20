@@ -1080,7 +1080,7 @@ Direction can be 'buy', 'sell', or 'hold'. Confidence is a float between 0 and 1
 class TwitterScraperTests(TestCase):
     def test_scrape_uses_managed_context_with_storage_state(self):
         from unittest import mock
-        from core import twitter_scraper
+        from scraper import twitter_scraper
 
         storage_state = {"cookies": []}
 
@@ -1118,7 +1118,7 @@ class TwitterScraperTests(TestCase):
             def __exit__(self, exc_type, exc, tb):
                 return False
 
-        with mock.patch("core.twitter_scraper.get_managed_browser_context_with_state", return_value=FakeContext()) as mocked_ctx:
+        with mock.patch("scraper.twitter_scraper.get_managed_browser_context_with_state", return_value=FakeContext()) as mocked_ctx:
             tweets = twitter_scraper.scrape_twitter_profile("https://x.com/someuser", storage_state=storage_state, max_age_hours=1)
             # Should call managed context when storage_state is provided
             mocked_ctx.assert_called_once()

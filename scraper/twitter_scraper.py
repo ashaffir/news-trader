@@ -2,17 +2,31 @@ import logging
 from typing import List, Tuple, Optional
 import logging
 from datetime import datetime, timezone, timedelta
+import re
 
-from .browser_manager import get_managed_browser_page, get_managed_browser_context_with_state
-from .models import Post
+from scraper.services.context import get_managed_browser_page, get_managed_browser_context_with_state
+from core.models import Post
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_tweet_text(text: str) -> str:
+	"""Normalize tweet text by fixing URL splits and cleaning whitespace."""
+	if not text:
+		return text
+	# Remove zero-width/directional marks Twitter inserts
+	text = re.sub(r'[\u200B-\u200D\uFEFF\u2066-\u2069]', '', text)
+	# Join protocol split across lines/spaces
+	text = re.sub(r'(https?://)\s+([^\s]+)', r'\1\2', text)
+	# Collapse remaining whitespace
+	text = re.sub(r'\s+', ' ', text).strip()
+	return text
 
 
 def _parse_tweet_card(card) -> Optional[Tuple[str, str, datetime, bool]]:
 	try:
 		content_el = card.query_selector('div[data-testid="tweetText"]') or card.query_selector('div[lang]')
-		content = content_el.inner_text().strip() if content_el else None
+		content = _normalize_tweet_text(content_el.inner_text().strip()) if content_el else None
 		# Find status link
 		link_el = card.query_selector('a[href*="/status/"][role="link"]') or card.query_selector('a[href*="/status/"]')
 		href = link_el.get_attribute('href') if link_el else None
@@ -212,5 +226,3 @@ def scrape_twitter_profile(url: str, storage_state: Optional[dict] = None, max_a
 	except Exception as e:
 		logger.warning(f"Twitter profile scrape failed for {url}: {e}")
 		return []
-
-

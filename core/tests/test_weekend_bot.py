@@ -3,8 +3,8 @@ from django.utils import timezone
 import datetime as dt
 from unittest.mock import patch
 
-from .models import TradingConfig, ActivityLog
-from .tasks import disable_bot_on_weekends, weekend_shutoff
+from core.models import TradingConfig, ActivityLog
+from core.tasks import disable_bot_on_weekends, weekend_shutoff
 
 
 class WeekendDisableBotTests(TestCase):

@@ -30,45 +30,47 @@ ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1,0.0.0.0,web').sp
 
 # Application definition
 INSTALLED_APPS = [
-    'django.contrib.admin',
-    'django.contrib.auth',
-    'django.contrib.contenttypes',
-    'django.contrib.sessions',
-    'django.contrib.messages',
-    'django.contrib.staticfiles',
-    'rest_framework',
-    'django_celery_beat',
-    'core',
-    'stats',
+	'django.contrib.admin',
+	'django.contrib.auth',
+	'django.contrib.contenttypes',
+	'django.contrib.sessions',
+	'django.contrib.messages',
+	'django.contrib.staticfiles',
+	'rest_framework',
+	'django_celery_beat',
+	'telegram_bot',
+	'core',
+	'stats',
+	'scraper',
 ]
 
 MIDDLEWARE = [
-    'django.middleware.security.SecurityMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware',
-    'django.contrib.sessions.middleware.SessionMiddleware',
-    'django.middleware.common.CommonMiddleware',
-    'django.middleware.csrf.CsrfViewMiddleware',
-    'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'django.contrib.messages.middleware.MessageMiddleware',
-    'django.middleware.clickjacking.XFrameOptionsMiddleware',
+	'django.middleware.security.SecurityMiddleware',
+	'whitenoise.middleware.WhiteNoiseMiddleware',
+	'django.contrib.sessions.middleware.SessionMiddleware',
+	'django.middleware.common.CommonMiddleware',
+	'django.middleware.csrf.CsrfViewMiddleware',
+	'django.contrib.auth.middleware.AuthenticationMiddleware',
+	'django.contrib.messages.middleware.MessageMiddleware',
+	'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
 ROOT_URLCONF = 'news_trader.urls'
 
 TEMPLATES = [
-    {
-        'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
-        'APP_DIRS': True,
-        'OPTIONS': {
-            'context_processors': [
-                'django.template.context_processors.debug',
-                'django.template.context_processors.request',
-                'django.contrib.auth.context_processors.auth',
-                'django.contrib.messages.context_processors.messages',
-            ],
-        },
-    },
+	{
+		'BACKEND': 'django.template.backends.django.DjangoTemplates',
+		'DIRS': [],
+		'APP_DIRS': True,
+		'OPTIONS': {
+			'context_processors': [
+				'django.template.context_processors.debug',
+				'django.template.context_processors.request',
+				'django.contrib.auth.context_processors.auth',
+				'django.contrib.messages.context_processors.messages',
+			],
+		},
+	},
 ]
 
 WSGI_APPLICATION = 'news_trader.wsgi.application'
@@ -76,34 +78,34 @@ WSGI_APPLICATION = 'news_trader.wsgi.application'
 # Database configuration - supports both local and Docker setups
 DATABASE_URL = os.getenv('DATABASE_URL')
 if DATABASE_URL:
-    # Parse DATABASE_URL for Docker/production
-    import dj_database_url
-    DATABASES = {
-        'default': dj_database_url.parse(DATABASE_URL)
-    }
+	# Parse DATABASE_URL for Docker/production
+	import dj_database_url
+	DATABASES = {
+		'default': dj_database_url.parse(DATABASE_URL)
+	}
 else:
-    # Default SQLite for development
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': BASE_DIR / 'db.sqlite3',
-        }
-    }
+	# Default SQLite for development
+	DATABASES = {
+		'default': {
+			'ENGINE': 'django.db.backends.sqlite3',
+			'NAME': BASE_DIR / 'db.sqlite3',
+		}
+	}
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
-    {
-        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
-    },
+	{
+		'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
+	},
+	{
+		'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+	},
+	{
+		'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
+	},
+	{
+		'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
+	},
 ]
 
 # Internationalization
@@ -116,7 +118,7 @@ USE_TZ = True
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_DIRS = [
-    BASE_DIR / 'static',
+	BASE_DIR / 'static',
 ]
 
 # Ensure staticfiles directory exists for Docker deployment
@@ -168,18 +170,18 @@ TELEGRAM_AUTHORIZED_CHATS = os.getenv('TELEGRAM_AUTHORIZED_CHATS', os.getenv('TE
 
 # REST Framework
 REST_FRAMEWORK = {
-    'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.IsAuthenticated',
-    ],
-    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
-    'PAGE_SIZE': 50
+	'DEFAULT_PERMISSION_CLASSES': [
+		'rest_framework.permissions.IsAuthenticated',
+	],
+	'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+	'PAGE_SIZE': 50
 }
 
 # Ensure logs directory exists for Docker deployment and determine file logging capability
 LOGS_DIR = BASE_DIR / 'logs'
 
 def _env_truthy(value: str) -> bool:
-    return value.lower() in ('1', 'true', 'yes', 'on')
+	return value.lower() in ('1', 'true', 'yes', 'on')
 
 # Retention for rotating file handler
 LOG_RETENTION_DAYS = int(os.getenv('LOG_RETENTION_DAYS', '14'))
@@ -191,67 +193,67 @@ _can_write_log_file = False
 _log_file_path = LOGS_DIR / 'django.log'
 
 if _file_logging_enabled:
-    try:
-        LOGS_DIR.mkdir(parents=True, exist_ok=True)
-        # Probe writability by touching the file
-        with open(_log_file_path, 'a', encoding='utf-8'):
-            pass
-        _can_write_log_file = True
-    except Exception:
-        _can_write_log_file = False
+	try:
+		LOGS_DIR.mkdir(parents=True, exist_ok=True)
+		# Probe writability by touching the file
+		with open(_log_file_path, 'a', encoding='utf-8'):
+			pass
+		_can_write_log_file = True
+	except Exception:
+		_can_write_log_file = False
 
 # Compose logging configuration with safe fallback to console-only
 _handlers = {
-    'console': {
-        'level': 'INFO',
-        'class': 'logging.StreamHandler',
-        'formatter': 'simple',
-    }
+	'console': {
+		'level': 'INFO',
+		'class': 'logging.StreamHandler',
+		'formatter': 'simple',
+	}
 }
 
 if _can_write_log_file:
-    _handlers['file'] = {
-        'level': 'INFO',
-        'class': 'logging.handlers.TimedRotatingFileHandler',
-        'filename': str(_log_file_path),
-        'formatter': 'verbose',
-        'when': 'midnight',
-        'interval': 1,
-        'backupCount': LOG_RETENTION_DAYS,
-        'utc': True,
-        'encoding': 'utf-8',
-    }
+	_handlers['file'] = {
+		'level': 'INFO',
+		'class': 'logging.handlers.TimedRotatingFileHandler',
+		'filename': str(_log_file_path),
+		'formatter': 'verbose',
+		'when': 'midnight',
+		'interval': 1,
+		'backupCount': LOG_RETENTION_DAYS,
+		'utc': True,
+		'encoding': 'utf-8',
+	}
 
 _root_handlers = ['console'] + (['file'] if 'file' in _handlers else [])
 
 LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'formatters': {
-        'verbose': {
-            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
-            'style': '{',
-        },
-        'simple': {
-            'format': '{levelname} {message}',
-            'style': '{',
-        },
-    },
-    'handlers': _handlers,
-    'root': {
-        'handlers': _root_handlers,
-        'level': 'INFO',
-    },
-    'loggers': {
-        'django': {
-            'handlers': _root_handlers,
-            'level': 'INFO',
-            'propagate': False,
-        },
-        'core': {
-            'handlers': _root_handlers,
-            'level': 'INFO',
-            'propagate': False,
-        },
-    },
+	'version': 1,
+	'disable_existing_loggers': False,
+	'formatters': {
+		'verbose': {
+			'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+			'style': '{',
+		},
+		'simple': {
+			'format': '{levelname} {message}',
+			'style': '{',
+		},
+	},
+	'handlers': _handlers,
+	'root': {
+		'handlers': _root_handlers,
+		'level': 'INFO',
+	},
+	'loggers': {
+		'django': {
+			'handlers': _root_handlers,
+			'level': 'INFO',
+			'propagate': False,
+		},
+		'core': {
+			'handlers': _root_handlers,
+			'level': 'INFO',
+			'propagate': False,
+		},
+	},
 }

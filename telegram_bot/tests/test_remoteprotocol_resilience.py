@@ -28,7 +28,7 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'news_trader.settings')
 import django
 django.setup()
 
-from core.telegram_bot import TelegramBotService
+from telegram_bot.bot import TelegramBotService
 
 # This file is a standalone async script; skip under pytest collection by default
 pytestmark = pytest.mark.skip(reason="Standalone async script; run with `python test_telegram_remoteprotocol_resilience.py`.")

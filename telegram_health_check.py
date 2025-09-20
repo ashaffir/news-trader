@@ -23,7 +23,7 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'news_trader.settings')
 import django
 django.setup()
 
-from core.telegram_bot import get_bot_service
+from telegram_bot.bot import get_bot_service
 
 # Suppress verbose logging for health checks
 logging.getLogger('httpx').setLevel(logging.WARNING)

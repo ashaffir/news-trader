@@ -131,7 +131,7 @@ telegram-bot:
 Send this command to your bot and check the logs:
 ```bash
 # In Django shell
-from core.telegram_bot import TelegramBotService
+from telegram_bot.bot import TelegramBotService
 bot = TelegramBotService()
 print(f"Authorized chats: {bot.authorized_chat_ids}")
 ```

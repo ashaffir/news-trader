@@ -10,7 +10,7 @@ import asyncio
 from pathlib import Path
 
 from .models import Source, ApiResponse, Post, Analysis, Trade, TradingConfig, ActivityLog, AlertSettings, TwitterSession
-from .twitter_scraper import scrape_twitter_profile
+from scraper.twitter_scraper import scrape_twitter_profile
 from .utils.content_fetcher import (
     find_urls_in_text,
     pick_best_article_url,
@@ -2056,7 +2056,13 @@ Direction can be 'buy', 'sell', or 'hold'. Confidence is a float between 0 and 1
 
             if trading_allowed and daily_limit_ok:
                 trade_executed_flag = True
-                execute_trade.delay(analysis.id)
+                # Delegate trade execution to trader app
+                try:
+                    from trader.tasks.trades import execute_trade as trader_execute_trade
+                    trader_execute_trade.delay(analysis.id)
+                except Exception:
+                    # Fallback to local task to avoid breakage if trader app is unavailable
+                    execute_trade.delay(analysis.id)
             else:
                 logger.info(
                     f"Trade not executed for analysis {analysis.id}: Trading={reason}, Daily={daily_reason}"
@@ -4036,7 +4042,7 @@ def run_telegram_bot_task(self):
         logger.info("Starting Telegram bot task...")
         
         # Import here to avoid circular imports
-        from .telegram_bot import start_telegram_bot, stop_telegram_bot
+        from telegram_bot.bot import start_telegram_bot, stop_telegram_bot
         
         async def run_bot():
             """Run the bot in async context with health monitoring."""
@@ -4044,7 +4050,7 @@ def run_telegram_bot_task(self):
             health_monitor_task = None
             try:
                 # Import bot service to access health monitoring
-                from .telegram_bot import get_bot_service
+                from telegram_bot.bot import get_bot_service
                 
                 application = await start_telegram_bot()
                 if application:

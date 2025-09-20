@@ -28,7 +28,7 @@ from django.contrib import messages
 from django.views.decorators.csrf import csrf_exempt
 from .utils.telegram import send_telegram_message
 from .twitter_login_flow import start_login_flow, complete_login_with_code
-from .twitter_scraper import scrape_twitter_profile
+from scraper.twitter_scraper import scrape_twitter_profile
 import time
 
 logger = logging.getLogger(__name__)

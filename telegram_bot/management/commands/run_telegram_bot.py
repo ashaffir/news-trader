@@ -10,7 +10,7 @@ This command starts the Telegram bot with polling to handle incoming messages.
 import asyncio
 import logging
 from django.core.management.base import BaseCommand
-from core.telegram_bot import start_telegram_bot, stop_telegram_bot
+from telegram_bot.bot import start_telegram_bot, stop_telegram_bot
 
 logger = logging.getLogger(__name__)
 
@@ -57,3 +57,5 @@ class Command(BaseCommand):
         finally:
             await stop_telegram_bot()
             self.stdout.write(self.style.SUCCESS('Telegram bot stopped'))
+
+
