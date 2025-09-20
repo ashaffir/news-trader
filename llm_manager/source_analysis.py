@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 import requests
 import openai
 
-from llm_manager.utils import post_llm_metrics
+from llm_manager.utils import post_llm_metrics, extract_json_from_response
 from llm_manager.source_prompt import (
     _is_url_public_http,
     _fetch_page_sample,
@@ -37,6 +37,8 @@ def analyze_news_source_with_llm(url: str) -> Dict[str, Any]:
             max_tokens=int(os.getenv("SOURCE_LLM_MAX_TOKENS", "1200")),
         )
         content = resp.choices[0].message.content
+        # Clean potential extra commentary around JSON
+        content = extract_json_from_response(content or "")
         try:
             elapsed_ms = (__import__("time").monotonic() - start_time) * 1000.0
             usage = getattr(resp, "usage", None)

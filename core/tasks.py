@@ -2032,7 +2032,10 @@ Direction can be 'buy', 'sell', or 'hold'. Confidence is a float between 0 and 1
                 )
             except Exception:
                 pass
-        llm_output = json.loads(raw_response_content)
+        # Clean potential extra commentary around JSON
+        from .utils.llm import extract_json_from_response
+        cleaned_json_text = extract_json_from_response(raw_response_content or "")
+        llm_output = json.loads(cleaned_json_text)
 
         analysis = Analysis.objects.create(
             post=post,

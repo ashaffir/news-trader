@@ -4,5 +4,6 @@ from llm_manager.utils import (  # noqa: F401
     is_lan_model,
     post_llm_metrics,
     lan_chat_completion,
+    extract_json_from_response,
 )
 

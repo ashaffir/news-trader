@@ -2,6 +2,8 @@ import os
 import time
 import requests
 from typing import List, Dict, Any, Optional
+import json
+import re
 
 try:
     # Local import guard to avoid circular imports during migrations/tests
@@ -205,10 +207,71 @@ def lan_chat_completion(
     return content
 
 
+def extract_json_from_response(content: str) -> str:
+    """Return a best-effort JSON string extracted from an LLM response.
+
+    Handles extra commentary (e.g., "Thinking..."), markdown fences, and
+    stray text before/after the JSON. If a valid JSON object cannot be
+    isolated, returns the original content unmodified.
+    """
+    try:
+        # 1) Strip common reasoning prefaces
+        cleaned = re.sub(r"(?is)(thinking\.\.\.|done thinking\.)", "", content or "")
+        cleaned = re.sub(r"(?is)(we need to respond.*?)(?=\{)", "", cleaned)
+
+        # 2) Trim anything before the first '{'
+        start_idx = cleaned.find('{')
+        if start_idx > 0:
+            cleaned = cleaned[start_idx:]
+
+        # 3) Direct parse attempt
+        try:
+            json.loads(cleaned)
+            return cleaned
+        except json.JSONDecodeError:
+            pass
+
+        # 4) Search common fenced/code patterns
+        patterns = [
+            r"```json\s*(.*?)\s*```",
+            r"```\s*(.*?)\s*```",
+            r"(\{.*\})",      # greedy
+            r"(\{.*?\})",     # non-greedy
+        ]
+        for pattern in patterns:
+            matches = re.findall(pattern, cleaned, re.DOTALL)
+            for match in matches:
+                if isinstance(match, tuple):
+                    match = match[0]
+                try:
+                    json.loads(match)
+                    return match
+                except json.JSONDecodeError:
+                    continue
+
+        # 5) Fallback: substring between first '{' and last '}'
+        first = cleaned.find('{')
+        last = cleaned.rfind('}')
+        if first != -1 and last != -1 and last > first:
+            candidate = cleaned[first:last + 1]
+            try:
+                json.loads(candidate)
+                return candidate
+            except json.JSONDecodeError:
+                pass
+
+        # 6) Give up
+        return cleaned
+    except Exception:
+        # Defensive: never raise from cleaner
+        return content or ""
+
+
 __all__ = [
     "is_lan_model",
     "post_llm_metrics",
     "lan_chat_completion",
+    "extract_json_from_response",
 ]
 
 
