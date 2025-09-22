@@ -1986,10 +1986,17 @@ Direction can be 'buy', 'sell', or 'hold'. Confidence is a float between 0 and 1
 
         # Final assembled content
         user_content = "\n".join(user_lines)
+        # Keep using TradingConfig-provided prompt; only add schema for LAN chat formatting
+        try:
+            from llm_manager.post_prompt import analysis_json_schema
+            json_schema = analysis_json_schema()
+        except Exception:
+            json_schema = None
 
         # Choose provider (LAN vs OpenAI)
         from .utils.llm import is_lan_model, lan_chat_completion
         if is_lan_model(model):
+            # Prefer chat endpoint with schema when available, keeping original prompt
             raw_response_content = lan_chat_completion(
                 model=model,
                 messages=[
@@ -1999,6 +2006,8 @@ Direction can be 'buy', 'sell', or 'hold'. Confidence is a float between 0 and 1
                 temperature=temperature,
                 max_tokens=max_tokens,
                 response_format={"type": "json_object"},
+                use_chat_endpoint=True,
+                json_schema=json_schema,
             )
         else:
             # Create OpenAI client with API key passed directly

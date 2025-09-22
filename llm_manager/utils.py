@@ -92,10 +92,17 @@ def lan_chat_completion(
     max_tokens: int = 512,
     base_url: Optional[str] = None,
     response_format: Optional[Dict[str, Any]] = None,
+    use_chat_endpoint: bool | None = None,
+    json_schema: Optional[Dict[str, Any]] = None,
 ) -> str:
-    """Call a LAN LLM endpoint that follows an OpenAI-like chat.completions API and return content string.
+    """Call a LAN LLM endpoint and return the assistant content string.
 
-    The endpoint is expected to accept JSON with fields: model, messages, temperature, max_tokens.
+    Behavior:
+    - If base_url or resolved URL ends with /api/generate (or contains /generate), use the generate endpoint
+      and combine messages into a single prompt string.
+    - Otherwise, prefer the Ollama-style /api/chat endpoint with { messages, format, options }.
+    - When using chat, if json_schema is provided, pass it under "format"; otherwise, if response_format
+      indicates a JSON object, pass format="json". This mirrors llm_manager.reference.test_model.
     """
     # Resolve base URL precedence: explicit arg > ConfigControl > env > default
     url = base_url
@@ -112,8 +119,12 @@ def lan_chat_completion(
             "http://10.100.102.121:8080/api/generate",
         )
 
-    # Decide endpoint style: OpenAI-like chat.completions vs generate-style
-    is_generate_endpoint = str(url).endswith("/api/generate") or "/generate" in str(url)
+    # Decide endpoint style: generate vs chat
+    inferred_generate = str(url).endswith("/api/generate") or "/generate" in str(url)
+    if use_chat_endpoint is None:
+        is_generate_endpoint = inferred_generate
+    else:
+        is_generate_endpoint = not use_chat_endpoint and inferred_generate
 
     if is_generate_endpoint:
         # Combine messages into a single prompt string
@@ -139,23 +150,47 @@ def lan_chat_completion(
             "max_tokens": int(max_tokens),
         }
     else:
-        payload: Dict[str, Any] = {
+        # Prefer Ollama chat-style API
+        # Map to /api/chat semantics, including optional JSON schema formatting
+        # Determine format field
+        format_field: Any = None
+        if json_schema is not None:
+            format_field = json_schema
+        elif isinstance(response_format, dict) and response_format.get("type") == "json_object":
+            format_field = "json"
+
+        payload = {
             "model": model,
             "messages": messages,
-            "temperature": float(temperature),
-            "max_tokens": int(max_tokens),
+            "stream": False,
+            "options": {
+                "temperature": float(temperature),
+                "num_ctx": 4096,
+                "num_predict": int(max_tokens),
+            },
         }
-        if response_format is not None:
-            payload["response_format"] = response_format
+        if format_field is not None:
+            payload["format"] = format_field
+        # If base_url points to the root or /api, ensure we call /api/chat
+        if not str(url).endswith("/api/chat"):
+            url = str(url).rstrip("/")
+            if url.endswith("/api"):
+                url = f"{url}/chat"
+            else:
+                url = f"{url}/api/chat"
 
     start_time = time.monotonic()
     resp = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=120)
     resp.raise_for_status()
     elapsed_ms = (time.monotonic() - start_time) * 1000.0
     data = resp.json()
-    # Support both OpenAI-like and generate-style JSON
+    # Support both chat and generate response shapes
     content: str
-    if isinstance(data, dict) and "choices" in data:
+    if isinstance(data, dict) and "message" in data:
+        # Ollama chat style
+        content = (data.get("message") or {}).get("content", "")
+    elif isinstance(data, dict) and "choices" in data:
+        # OpenAI-like generate proxies
         content = data["choices"][0]["message"]["content"]
     elif isinstance(data, dict) and "response" in data:
         content = data["response"]
