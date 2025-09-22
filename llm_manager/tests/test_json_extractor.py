@@ -72,3 +72,35 @@ def test_chat_endpoint_payload_build(monkeypatch):
     assert posted["url"].endswith("/api/chat")
     assert posted["json"].get("format") == analysis_json_schema()
     assert content.strip().startswith("{")
+
+
+def test_generate_base_normalizes_to_chat(monkeypatch):
+    posted = {}
+
+    class FakeResp:
+        def __init__(self, status_code=200, data=None):
+            self.status_code = status_code
+            self._data = data or {}
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise RuntimeError("err")
+        def json(self):
+            return {"message": {"content": "{\n  \"symbol\": \"N/A\"\n}"}}
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        posted["url"] = url
+        posted["json"] = json
+        if not url.endswith("/api/chat"):
+            raise AssertionError("Expected normalized /api/chat URL, got: " + url)
+        return FakeResp(200)
+
+    # Base URL that ends with /api/generate (common for non-chat servers)
+    monkeypatch.setenv("LAN_LLM_URL", "http://lan.local/api/generate")
+    monkeypatch.setattr("core.utils.llm.requests.post", fake_post)
+
+    _ = lan_chat_completion(
+        model="qwen2.5:7b",
+        messages=[{"role": "user", "content": "hi"}],
+        use_chat_endpoint=True,
+    )
+    assert posted["url"].endswith("/api/chat")

@@ -171,13 +171,26 @@ def lan_chat_completion(
         }
         if format_field is not None:
             payload["format"] = format_field
-        # If base_url points to the root or /api, ensure we call /api/chat
-        if not str(url).endswith("/api/chat"):
-            url = str(url).rstrip("/")
-            if url.endswith("/api"):
-                url = f"{url}/chat"
-            else:
-                url = f"{url}/api/chat"
+        # If base_url points to /api/generate (or any *generate* variant), normalize to /api/chat
+        # This avoids constructing paths like "/api/generate/api/chat" when callers request chat.
+        if True:
+            # Always operate on a trimmed string copy
+            _u = str(url).rstrip("/")
+            if _u.endswith("/api/generate"):
+                url = f"{_u[:-len('/api/generate')]}/api/chat"
+            elif _u.endswith("/generate"):
+                url = f"{_u[:-len('/generate')]}/chat"
+            elif "/generate" in _u:
+                # Conservative fallback: replace the last occurrence of "/generate" with "/chat"
+                last = _u.rfind("/generate")
+                base = _u[:last]
+                url = f"{base}/chat"
+            elif not _u.endswith("/api/chat"):
+                # If base_url points to the root or /api, ensure we call /api/chat
+                if _u.endswith("/api"):
+                    url = f"{_u}/chat"
+                else:
+                    url = f"{_u}/api/chat"
 
     start_time = time.monotonic()
     resp = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=120)
