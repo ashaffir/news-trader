@@ -319,6 +319,7 @@ class AnalysisAdmin(admin.ModelAdmin):
         "symbol",
         "direction",
         "confidence",
+        "max_hold_display",
         "used_llm_model",
         "has_trades",
         "created_at",
@@ -339,8 +340,7 @@ class AnalysisAdmin(admin.ModelAdmin):
                 "fields": (
                     "trading_config_used",
                     "used_llm_model",
-                    "sentiment_score",
-                    "market_impact_score",
+                    "max_holding_time_hours",
                 ),
                 "classes": ("collapse",),
             },
@@ -360,6 +360,17 @@ class AnalysisAdmin(admin.ModelAdmin):
         return obj.post.id
 
     post_id.short_description = "Post ID"
+
+    def max_hold_display(self, obj):
+        try:
+            v = obj.max_holding_time_hours
+            if v is None:
+                return "-"
+            return f"{float(v):.2f}h"
+        except Exception:
+            return "-"
+
+    max_hold_display.short_description = "Max Hold (h)"
 
     def has_trades(self, obj):
         count = obj.trades.count()
@@ -400,7 +411,7 @@ class TradeAdmin(admin.ModelAdmin):
     fieldsets = (
         (
             "Trade Details",
-            {"fields": ("analysis", "tracked_company", "symbol", "direction", "quantity", "status")},
+            {"fields": ("analysis", "tracked_company", "symbol", "direction", "quantity", "status", "max_holding_time_hours")},
         ),
         (
             "Pricing",

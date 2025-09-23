@@ -168,8 +168,7 @@ def get_post_analysis_ajax(request, post_id):
             "confidence": round(analysis.confidence, 3),
             "confidence_percentage": round(analysis.confidence * 100, 1),
             "reason": analysis.reason,
-            "sentiment_score": round(analysis.sentiment_score, 3) if analysis.sentiment_score else None,
-            "market_impact_score": round(analysis.market_impact_score, 3) if analysis.market_impact_score else None,
+            "max_holding_time_hours": analysis.max_holding_time_hours,
             "trading_config_used": analysis.trading_config_used.name if analysis.trading_config_used else "Default",
             "analysis_created_at": analysis.created_at.strftime("%Y-%m-%d %H:%M:%S"),
             "raw_llm_response": analysis.raw_llm_response

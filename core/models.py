@@ -274,11 +274,12 @@ class Analysis(models.Model):
         blank=True,
         help_text="Trading config used for this analysis",
     )
-    sentiment_score = models.FloatField(
-        null=True, blank=True, help_text="Sentiment score from -1 to 1"
-    )
-    market_impact_score = models.FloatField(
-        null=True, blank=True, help_text="Predicted market impact score"
+
+    # Per-analysis max holding time computed by LLM (in hours)
+    max_holding_time_hours = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Maximum holding time in hours suggested by LLM for this analysis",
     )
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -306,6 +307,7 @@ class Trade(models.Model):
         ("time_limit", "Time Limit"),
         ("market_close", "Market Close"),
         ("market_consensus_lost", "Market Consensus Lost"),
+        ("stale", "Stale - Time Limit Reached"),
     ]
 
     analysis = models.ForeignKey(
@@ -335,6 +337,13 @@ class Trade(models.Model):
     take_profit_price_percentage = models.FloatField(null=True, blank=True)
     close_reason = models.CharField(
         max_length=25, choices=CLOSE_REASON_CHOICES, blank=True, null=True
+    )
+
+    # Per-trade max holding time override in hours (from linked analysis)
+    max_holding_time_hours = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Per-trade maximum holding time in hours; if set, overrides global config",
     )
 
     # Position adjustment tracking

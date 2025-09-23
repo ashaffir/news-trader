@@ -2072,6 +2072,14 @@ Direction can be 'buy', 'sell', or 'hold'. Confidence is a float between 0 and 1
         cleaned_json_text = extract_json_from_response(raw_response_content or "")
         llm_output = json.loads(cleaned_json_text)
 
+        # Extract per-analysis holding time if provided
+        try:
+            scores_obj = llm_output.get("scores") or {}
+            llm_max_hold = scores_obj.get("max_holding_time_hours")
+            llm_max_hold = float(llm_max_hold) if llm_max_hold is not None else None
+        except Exception:
+            llm_max_hold = None
+
         analysis = Analysis.objects.create(
             post=post,
             symbol=llm_output.get("symbol", "UNKNOWN"),
@@ -2081,6 +2089,7 @@ Direction can be 'buy', 'sell', or 'hold'. Confidence is a float between 0 and 1
             raw_llm_response=raw_response_content,
             trading_config_used=config,
             used_llm_model=model,
+            max_holding_time_hours=llm_max_hold,
         )
         logger.info(
             f"Analysis complete for post {post.id}: Symbol={analysis.symbol}, Direction={analysis.direction}, Confidence={analysis.confidence}"
@@ -2513,6 +2522,7 @@ def create_new_trade(analysis_id):
                     original_take_profit_price=take_profit_price,
                     take_profit_price_percentage=10.0 if config is None else (config.take_profit_percentage or 10.0),
                     stop_loss_price_percentage=2.0 if config is None else (config.stop_loss_percentage or 2.0),
+                    max_holding_time_hours=getattr(analysis, "max_holding_time_hours", None),
                 )
             except IntegrityError:
                 # Another worker created the active trade concurrently; return it instead
@@ -2679,7 +2689,11 @@ def close_trade_due_to_conflict(trade_id, conflicting_analysis_id):
 
 @shared_task
 def close_expired_positions():
-    """Close positions that have exceeded the maximum hold time."""
+    """Close positions that have exceeded their holding time limit.
+
+    Uses per-trade `max_holding_time_hours` when available; otherwise falls
+    back to the global `TradingConfig.max_position_hold_time_hours`.
+    """
     # Wrap DB access to avoid async context errors
     config = get_active_trading_config()
     if not config:
@@ -2687,9 +2701,19 @@ def close_expired_positions():
         return
 
     def _fetch_expired():
-        cutoff_time = timezone.now() - timedelta(hours=config.max_position_hold_time_hours)
-        qs = Trade.objects.filter(status__in=["open", "pending_close"], opened_at__lt=cutoff_time)
-        return list(qs)
+        now = timezone.now()
+        expired: list[Trade] = []
+        # Evaluate in python so we can mix per-trade and global windows safely across DBs
+        for trade in Trade.objects.filter(status__in=["open", "pending_close"], opened_at__isnull=False):
+            try:
+                hours_limit = trade.max_holding_time_hours if trade.max_holding_time_hours is not None else float(config.max_position_hold_time_hours)
+                if trade.opened_at < (now - timedelta(hours=hours_limit)):
+                    expired.append(trade)
+            except Exception:
+                # If anything goes wrong, default to using config window
+                if trade.opened_at < (now - timedelta(hours=config.max_position_hold_time_hours)):
+                    expired.append(trade)
+        return expired
 
     expired_trades = _run_db_call_in_thread(_fetch_expired) if _is_async_context() else _fetch_expired()
     expired_count = len(expired_trades)
@@ -2697,7 +2721,7 @@ def close_expired_positions():
         logger.info("No expired positions found.")
         return
 
-    logger.info(f"Found {expired_count} expired positions to close (older than {config.max_position_hold_time_hours} hours)")
+    logger.info(f"Found {expired_count} expired positions to close (per-trade or default {config.max_position_hold_time_hours}h)")
 
     closed_count = 0
     failed_count = 0
@@ -2706,7 +2730,8 @@ def close_expired_positions():
         try:
             # Set close reason and status, then initiate close
             trade.status = "pending_close"
-            trade.close_reason = "time_limit"
+            # Mark as stale to distinguish from global time limit
+            trade.close_reason = "stale"
             # Persist in a DB-safe way if needed
             if _is_async_context():
                 _run_db_call_in_thread(lambda: trade.save())

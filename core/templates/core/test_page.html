@@ -1015,21 +1015,7 @@
                                     <p class="mt-1">${analysis.reason}</p>
                                 </div>
                                 
-                                ${analysis.sentiment_score !== null ? `
-                                <div class="mb-2">
-                                    <strong>Sentiment Score:</strong> 
-                                    <span class="${analysis.sentiment_score > 0 ? 'text-success' : analysis.sentiment_score < 0 ? 'text-danger' : 'text-secondary'}">
-                                        ${analysis.sentiment_score}
-                                    </span>
-                                </div>
-                                ` : ''}
                                 
-                                ${analysis.market_impact_score !== null ? `
-                                <div class="mb-2">
-                                    <strong>Market Impact:</strong> 
-                                    <span class="text-info">${analysis.market_impact_score}</span>
-                                </div>
-                                ` : ''}
                                 
                                 <small class="text-muted">
                                     Config: ${analysis.trading_config_used} | 
