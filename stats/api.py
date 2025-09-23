@@ -586,3 +586,29 @@ def pnl_by_month_api(request):
         'avg_monthly_pnl': round(avg, 4),
     })
 
+
+@login_required
+@require_GET
+def close_reasons_api(request):
+    """Aggregate closed trades by close_reason with counts, win rate, and pnl.
+
+    Returns a list of { reason, count, wins, win_rate, total_pnl_adjusted } sorted by count desc.
+    """
+    qs = _filtered_trades(request).filter(status='closed', realized_pnl__isnull=False)
+    from collections import defaultdict
+    agg = defaultdict(lambda: { 'reason': '', 'count': 0, 'wins': 0, 'total_pnl_adjusted': 0.0 })
+    for t in qs:
+        reason = getattr(t, 'close_reason', '') or '(Unknown)'
+        pnl = _commission_adjusted_realized_pnl(t)
+        a = agg[reason]
+        a['reason'] = reason
+        a['count'] += 1
+        if pnl > 0:
+            a['wins'] += 1
+        a['total_pnl_adjusted'] += pnl
+    items = []
+    for v in agg.values():
+        v['win_rate'] = round((v['wins']/v['count'])*100.0, 2) if v['count'] else 0.0
+        items.append(v)
+    items.sort(key=lambda x: x['count'], reverse=True)
+    return JsonResponse({ 'items': items })

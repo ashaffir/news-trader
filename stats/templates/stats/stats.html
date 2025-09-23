@@ -49,6 +49,7 @@
     <div class="col-md-2"><div class="metric-card"><div class="text-muted small">Trades</div><div id="kpi-trades" class="fs-4">-</div></div></div>
   </div>
 
+  <!-- Row 1: Equity + Daily/Direction -->
   <div class="row g-3">
     <div class="col-lg-8">
       <div class="chart-card">
@@ -68,6 +69,25 @@
     </div>
   </div>
 
+  <!-- Row 2: Monthly PnL + Close Reasons -->
+  <div class="row g-3 mt-1">
+    <div class="col-lg-8">
+      <div class="chart-card">
+        <div class="d-flex justify-content-between align-items-center">
+          <div class="fw-semibold mb-2">Monthly PnL (Adj.) & Projection</div>
+        </div>
+        <canvas id="chart-monthly-pnl" height="90"></canvas>
+      </div>
+    </div>
+    <div class="col-lg-4">
+      <div class="chart-card">
+        <div class="fw-semibold mb-2">Close Reasons</div>
+        <canvas id="chart-close-reasons" height="140"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Row 3: Top Symbols + Heatmap -->
   <div class="row g-3 mt-1">
     <div class="col-lg-6">
       <div class="chart-card">
@@ -79,6 +99,22 @@
       <div class="chart-card">
         <div class="fw-semibold mb-2">Trades Heatmap (Weekday x Hour)</div>
         <canvas id="chart-heatmap" height="150"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Row 4: Confidence & Duration Scatters -->
+  <div class="row g-3 mt-1">
+    <div class="col-lg-6">
+      <div class="chart-card">
+        <div class="fw-semibold mb-2">Scatter: Confidence vs PnL</div>
+        <canvas id="chart-scatter-conf" height="170"></canvas>
+      </div>
+    </div>
+    <div class="col-lg-6">
+      <div class="chart-card">
+        <div class="fw-semibold mb-2">Scatter: Duration vs PnL</div>
+        <canvas id="chart-scatter-dur" height="170"></canvas>
       </div>
     </div>
   </div>

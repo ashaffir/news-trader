@@ -84,6 +84,18 @@ class StatsAPITests(TestCase):
         self.assertIn('projection_labels', monthly)
         self.assertIn('projection', monthly)
 
+    def test_close_reasons_endpoint(self):
+        now = timezone.now()
+        # Two closed trades with different reasons
+        Trade.objects.create(symbol='AAPL', direction='buy', quantity=1, entry_price=100, status='closed', realized_pnl=10.0, commission=1.0, close_reason='take_profit', created_at=now, opened_at=now, closed_at=now)
+        Trade.objects.create(symbol='MSFT', direction='sell', quantity=1, entry_price=100, status='closed', realized_pnl=-5.0, commission=1.0, close_reason='stop_loss', created_at=now, opened_at=now, closed_at=now)
+        resp = self.client.get('/stats/api/close-reasons')
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertIn('items', data)
+        reasons = { item['reason'] for item in data['items'] }
+        self.assertTrue({'take_profit','stop_loss'}.issubset(reasons))
+
     def test_navbar_bot_badge_reflects_state(self):
         """Stats page should receive bot_enabled for navbar indicator."""
         # Bot disabled

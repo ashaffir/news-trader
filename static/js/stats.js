@@ -97,8 +97,70 @@
     });
   }
 
+  async function loadMonthly() {
+    const res = await fetch(`/stats/api/pnl-by-month?${buildQuery()}`);
+    const data = await res.json();
+    const ctx = qv('chart-monthly-pnl').getContext('2d');
+    state.charts.monthly?.destroy();
+    const labels = data.labels.concat(data.projection_labels || []);
+    const values = data.pnl.concat((data.projection || []).map(v => v));
+    const bg = labels.map((_, i) => i < data.labels.length ? 'rgba(13,110,253,0.6)' : 'rgba(13,110,253,0.2)');
+    state.charts.monthly = new Chart(ctx, {
+      type: 'bar',
+      data: { labels, datasets: [ { label: 'Monthly PnL (adj.)', data: values, backgroundColor: bg } ] },
+      options: { scales: { y: { title: { text: 'USD', display: true } } }, plugins: { legend: { display: false } } }
+    });
+  }
+
+  async function loadCloseReasons() {
+    const res = await fetch(`/stats/api/close-reasons?${buildQuery()}`);
+    const data = await res.json();
+    const labels = data.items.map(i => i.reason);
+    const counts = data.items.map(i => i.count);
+    const winRates = data.items.map(i => i.win_rate);
+    const ctx = qv('chart-close-reasons').getContext('2d');
+    state.charts.closeReasons?.destroy();
+    state.charts.closeReasons = new Chart(ctx, {
+      type: 'bar',
+      data: { labels, datasets: [
+        { label: 'Count', data: counts, backgroundColor: 'rgba(108,117,125,0.6)' },
+        { label: 'Win Rate %', data: winRates, type: 'line', borderColor: '#198754', yAxisID: 'y1' }
+      ]},
+      options: { responsive: true, interaction: { mode: 'index', intersect: false }, scales: { y: { title: { text: 'Count', display: true } }, y1: { position: 'right', title: { text: '%', display: true }, min: 0, max: 100 } } }
+    });
+  }
+
+  async function loadScatterConfidence() {
+    const res = await fetch(`/stats/api/analysis/confidence-pnl-scatter?${buildQuery()}`);
+    const data = await res.json();
+    const ctx = qv('chart-scatter-conf').getContext('2d');
+    state.charts.scatterConf?.destroy();
+    state.charts.scatterConf = new Chart(ctx, {
+      type: 'scatter',
+      data: { datasets: [{ label: 'Trades', data: data.points, parsing: { xAxisKey: 'x', yAxisKey: 'y' }, pointBackgroundColor: '#0d6efd', pointRadius: 3 }] },
+      options: { scales: { x: { title: { text: 'Confidence', display: true }, min: 0.5, max: 1.0 }, y: { title: { text: 'PnL (USD, adj.)', display: true } } } }
+    });
+  }
+
+  async function loadScatterDuration() {
+    const res = await fetch(`/stats/api/analysis/duration-pnl-scatter?${buildQuery()}`);
+    const data = await res.json();
+    const ctx = qv('chart-scatter-dur').getContext('2d');
+    state.charts.scatterDur?.destroy();
+    state.charts.scatterDur = new Chart(ctx, {
+      type: 'scatter',
+      data: { datasets: [{ label: 'Trades', data: data.points, parsing: { xAxisKey: 'x', yAxisKey: 'y' }, pointBackgroundColor: '#6c757d', pointRadius: 3 }] },
+      options: { scales: { x: { title: { text: 'Duration (min)', display: true } }, y: { title: { text: 'PnL (USD, adj.)', display: true } } } }
+    });
+  }
+
   async function refreshAll() {
-    await Promise.all([loadSummary(), loadEquity(), loadDaily(), loadDirection(), loadSymbols(), loadHeatmap()]);
+    await Promise.all([
+      loadSummary(), loadEquity(), loadDaily(), loadDirection(),
+      loadMonthly(), loadCloseReasons(),
+      loadSymbols(), loadHeatmap(),
+      loadScatterConfidence(), loadScatterDuration()
+    ]);
   }
 
   function init() {
