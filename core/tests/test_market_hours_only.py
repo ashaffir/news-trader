@@ -35,13 +35,13 @@ class MarketHoursOnlyEnforcementTests(TestCase):
             reason="Test",
         )
 
-    @patch("core.tasks.is_market_open_now", return_value=False)
+    @patch("core.tasks.is_market_open_broker_aware", return_value=False)
     def test_is_trading_allowed_blocks_when_market_closed(self, _mock_open):
         allowed, reason = is_trading_allowed()
         self.assertFalse(allowed)
         self.assertIn("Market is closed", reason)
 
-    @patch("core.tasks.is_market_open_now", return_value=False)
+    @patch("core.tasks.is_market_open_broker_aware", return_value=False)
     def test_create_new_trade_aborts_when_market_closed(self, _mock_open):
         # Should not create a Trade when market is closed
         create_new_trade(self.analysis.id)

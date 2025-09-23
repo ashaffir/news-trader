@@ -1428,10 +1428,10 @@ def is_trading_allowed():
     if not config or not config.trading_enabled:
         return False, "Trading is disabled in configuration"
 
-    # Enforce market-hours-only constraint when enabled
+    # Enforce market-hours-only constraint when enabled (broker-aware)
     try:
         if getattr(config, "market_hours_only", False):
-            if not is_market_open_now():
+            if not is_market_open_broker_aware():
                 return False, "Market is closed (market_hours_only)"
     except Exception:
         # On error determining market hours, be conservative and deny
@@ -1459,12 +1459,67 @@ def is_market_open_now(now_utc: Optional[datetime] = None) -> bool:
         return False
 
 
+def is_market_open_broker_aware(now_utc: Optional[datetime] = None) -> bool:
+    """Determine market open state using Alpaca clock when available.
+
+    Falls back to the UTC heuristic in is_market_open_now when Alpaca creds are
+    not configured or the broker call fails.
+    """
+    try:
+        from trader.services.alpaca import get_alpaca_client
+        api = get_alpaca_client()
+        if api is not None:
+            clock = api.get_clock()
+            return bool(getattr(clock, "is_open", False))
+    except Exception:
+        # Fall back to heuristic on any broker error
+        pass
+
+    return is_market_open_now(now_utc)
+
+
 def minutes_until_market_close(now_utc: Optional[datetime] = None) -> Optional[int]:
     """Return minutes until market close (heuristic) or None on error.
 
     Uses the same UTC heuristic window as is_market_open_now: Mon-Fri 13:30-20:00.
     Ignores holidays. Returns 0 if already past close on a weekday.
     """
+    # Try to use Alpaca clock first for DST/holiday-aware timing
+    try:
+        from trader.services.alpaca import get_alpaca_client
+        api = get_alpaca_client()
+        if api is not None:
+            clock = api.get_clock()
+            is_open = bool(getattr(clock, "is_open", False))
+            if not is_open:
+                return None
+
+            # next_close is an ISO string (UTC). Parse robustly.
+            next_close_raw = getattr(clock, "next_close", None)
+            if not next_close_raw:
+                return None
+            try:
+                # Support both 'Z' and '+00:00' endings
+                from datetime import datetime as _dt
+                if isinstance(next_close_raw, str):
+                    next_close_dt = _dt.fromisoformat(next_close_raw.replace("Z", "+00:00"))
+                else:
+                    # Some SDKs may return datetime already
+                    next_close_dt = next_close_raw
+            except Exception:
+                return None
+
+            now = now_utc or timezone.now()
+            # Ensure timezone-aware in UTC
+            if next_close_dt.tzinfo is None:
+                next_close_dt = next_close_dt.replace(tzinfo=timezone.utc)
+            delta = (next_close_dt - now).total_seconds() / 60.0
+            return max(0, int(delta))
+    except Exception:
+        # Ignore broker errors and fall back to heuristic
+        pass
+
+    # Fall back to the heuristic UTC window
     try:
         if now_utc is None:
             now_utc = timezone.now()
@@ -4180,22 +4235,8 @@ def enforce_bot_autostart():
         if not config or not getattr(config, "autostart", False):
             return {"changed": False, "reason": "autostart_disabled_or_no_config"}
 
-        # Determine market status
-        market_open = None
-        try:
-            ALPACA_API_KEY = os.getenv("ALPACA_API_KEY")
-            ALPACA_SECRET_KEY = os.getenv("ALPACA_SECRET_KEY")
-            ALPACA_BASE_URL = os.getenv("ALPACA_BASE_URL", "https://paper-api.alpaca.markets")
-            if ALPACA_API_KEY and ALPACA_SECRET_KEY:
-                import alpaca_trade_api as tradeapi
-                api = tradeapi.REST(ALPACA_API_KEY, ALPACA_SECRET_KEY, base_url=ALPACA_BASE_URL)
-                clock = api.get_clock()
-                market_open = bool(getattr(clock, "is_open", False))
-        except Exception:
-            market_open = None
-
-        if market_open is None:
-            market_open = is_market_open_now()
+        # Determine market status using shared helper
+        market_open = is_market_open_broker_aware()
 
         changed = False
         if market_open and not config.bot_enabled:
