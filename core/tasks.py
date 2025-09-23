@@ -1428,7 +1428,14 @@ def is_trading_allowed():
     if not config or not config.trading_enabled:
         return False, "Trading is disabled in configuration"
 
-    # Market-hours-only constraint removed per requirements
+    # Enforce market-hours-only constraint when enabled
+    try:
+        if getattr(config, "market_hours_only", False):
+            if not is_market_open_now():
+                return False, "Market is closed (market_hours_only)"
+    except Exception:
+        # On error determining market hours, be conservative and deny
+        return False, "Market hours check failed"
 
     return True, "Trading allowed"
 
@@ -2298,6 +2305,24 @@ def create_new_trade(analysis_id):
     config = get_active_trading_config()
 
     logger.info(f"Creating new trade for analysis {analysis_id}: {analysis.symbol} {analysis.direction}")
+
+    # Hard gate: disallow opening trades when market is closed and config enforces market hours
+    allowed, reason = is_trading_allowed()
+    if not allowed:
+        logger.warning(f"Trade creation rejected outside allowed window: {reason}")
+        try:
+            send_dashboard_update(
+                "trade_rejected",
+                {
+                    "analysis_id": analysis.id,
+                    "symbol": analysis.symbol,
+                    "reason": reason,
+                    "tag": "Rejected",
+                },
+            )
+        except Exception:
+            pass
+        return
 
     ALPACA_API_KEY = os.getenv("ALPACA_API_KEY")
     ALPACA_SECRET_KEY = os.getenv("ALPACA_SECRET_KEY")
