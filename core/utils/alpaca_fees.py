@@ -8,7 +8,7 @@ account activities API and calculate the total fees associated with a trade.
 import os
 import logging
 from typing import Optional, List, Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone as dt_timezone
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
@@ -57,7 +57,7 @@ def fetch_trade_fees(symbol: str, trade_time: datetime, quantity: float, side: s
     try:
         # Convert Django timezone-aware datetime to naive UTC for API
         if timezone.is_aware(trade_time):
-            trade_time_utc = trade_time.astimezone(timezone.utc).replace(tzinfo=None)
+            trade_time_utc = trade_time.astimezone(dt_timezone.utc).replace(tzinfo=None)
         else:
             trade_time_utc = trade_time
             
@@ -190,9 +190,9 @@ def fetch_fees_for_trade_period(symbol: str, start_time: datetime, end_time: dat
     try:
         # Convert to UTC naive datetime
         if timezone.is_aware(start_time):
-            start_time = start_time.astimezone(timezone.utc).replace(tzinfo=None)
+            start_time = start_time.astimezone(dt_timezone.utc).replace(tzinfo=None)
         if timezone.is_aware(end_time):
-            end_time = end_time.astimezone(timezone.utc).replace(tzinfo=None)
+            end_time = end_time.astimezone(dt_timezone.utc).replace(tzinfo=None)
         
         activities = []
         for method_name in ['get_activities', 'list_activities', 'get_account_activities']:
