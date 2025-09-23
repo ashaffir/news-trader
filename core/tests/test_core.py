@@ -132,6 +132,8 @@ class TaskTests(TestCase):
             trailing_stop_enabled=True,
             trailing_stop_distance_percentage=1.0,
             trailing_stop_activation_profit_percentage=0.0,
+            default_position_size=150.0,
+            max_position_size=100.0,
         )
         # Ensure tracked companies exist for symbols used in task tests
         TrackedCompany.objects.get_or_create(symbol="AAPL", defaults={"name": "Apple"})
@@ -268,7 +270,7 @@ class TaskTests(TestCase):
         mock_api.submit_order.return_value = mock_order
 
         mock_ticker = MagicMock()
-        mock_ticker.price = 150.0
+        mock_ticker.price = 50.0
         mock_api.get_latest_trade.return_value = mock_ticker
 
         mock_tradeapi.return_value = mock_api
@@ -281,6 +283,93 @@ class TaskTests(TestCase):
         self.assertEqual(trade.symbol, "AAPL")
         self.assertEqual(trade.direction, "buy")
         self.assertEqual(trade.alpaca_order_id, "order-123")
+        # With default_position_size=150 and max_position_size=100 at $50/share -> qty should be 2 (<= $100)
+        self.assertEqual(trade.quantity, 2)
+
+    @patch("core.tasks.tradeapi.REST")
+    @patch("core.tasks.os.getenv")
+    def test_manual_trade_respects_max_position_size(self, mock_getenv, mock_tradeapi):
+        analysis_symbol = "AAPL"
+        # Mock env and API
+        mock_getenv.side_effect = lambda key, default=None: {
+            "ALPACA_API_KEY": "fake-key",
+            "ALPACA_SECRET_KEY": "fake-secret",
+            "ALPACA_BASE_URL": "https://paper-api.alpaca.markets",
+        }.get(key, default)
+
+        api = MagicMock()
+        mock_tradeapi.return_value = api
+        ticker_entry = MagicMock(); ticker_entry.price = 40.0
+        api.get_latest_trade.return_value = ticker_entry
+        order = MagicMock(); order.id = "ord2"; api.submit_order.return_value = order
+
+        from core.tasks import create_manual_test_trade
+        # Provide position_size greater than max (200 > 100) -> should cap to 100 -> qty at $40 = 2
+        result = create_manual_test_trade(analysis_symbol, "buy", position_size=200.0)
+        self.assertTrue(result["success"]) 
+        trade = Trade.objects.get(alpaca_order_id="ord2")
+        self.assertEqual(trade.quantity, 2)
+
+    @patch("core.tasks.tradeapi.REST")
+    @patch("core.tasks.os.getenv")
+    def test_auto_trade_rejected_when_price_exceeds_cap(self, mock_getenv, mock_tradeapi):
+        """Test that auto trade is rejected when current price > max_position_size"""
+        analysis = Analysis.objects.create(
+            post=self.post,
+            symbol="AAPL",
+            direction="buy",
+            confidence=0.85,
+            reason="Test rejection",
+        )
+
+        # Mock env and API - price $150 > max $100
+        mock_getenv.side_effect = lambda key, default=None: {
+            "ALPACA_API_KEY": "fake-key",
+            "ALPACA_SECRET_KEY": "fake-secret",
+            "ALPACA_BASE_URL": "https://paper-api.alpaca.markets",
+        }.get(key, default)
+
+        api = MagicMock()
+        mock_tradeapi.return_value = api
+        ticker_entry = MagicMock(); ticker_entry.price = 150.0  # > max_position_size 100
+        api.get_latest_trade.return_value = ticker_entry
+
+        from core.tasks import create_new_trade
+        create_new_trade(analysis.id)
+        
+        # Should not submit any order
+        api.submit_order.assert_not_called()
+        # Should not create any trade record
+        self.assertEqual(Trade.objects.filter(analysis=analysis).count(), 0)
+
+    @patch("core.tasks.tradeapi.REST")
+    @patch("core.tasks.os.getenv")
+    def test_manual_trade_rejected_when_price_exceeds_cap(self, mock_getenv, mock_tradeapi):
+        """Test that manual trade is rejected when current price > max_position_size"""
+        analysis_symbol = "AAPL"
+        
+        # Mock env and API - price $150 > max $100
+        mock_getenv.side_effect = lambda key, default=None: {
+            "ALPACA_API_KEY": "fake-key",
+            "ALPACA_SECRET_KEY": "fake-secret",
+            "ALPACA_BASE_URL": "https://paper-api.alpaca.markets",
+        }.get(key, default)
+
+        api = MagicMock()
+        mock_tradeapi.return_value = api
+        ticker_entry = MagicMock(); ticker_entry.price = 150.0  # > max_position_size 100
+        api.get_latest_trade.return_value = ticker_entry
+
+        from core.tasks import create_manual_test_trade
+        result = create_manual_test_trade(analysis_symbol, "buy", quantity=1)
+        
+        # Should return failure
+        self.assertFalse(result["success"])
+        self.assertIn("exceeds max position size", result["error"])
+        # Should not submit any order
+        api.submit_order.assert_not_called()
+        # Should not create any trade record
+        self.assertEqual(Trade.objects.filter(symbol=analysis_symbol).count(), 0)
 
     @patch("core.tasks.tradeapi.REST")
     @patch("core.tasks.os.getenv")

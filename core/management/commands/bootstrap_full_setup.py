@@ -68,7 +68,7 @@ class Command(BaseCommand):
             bot_enabled=False,
             trading_enabled=True,
             default_position_size=100.0,
-            max_position_size=1000.0,
+            max_position_size=100.0,
             stop_loss_percentage=5.0,
             take_profit_percentage=10.0,
             min_confidence_threshold=0.7,

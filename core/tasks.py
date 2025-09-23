@@ -2334,13 +2334,44 @@ def create_new_trade(analysis_id):
                 )
                 return
 
-        # Determine position size
+        # Determine position size and enforce max per-position size
         position_size = config.default_position_size if config else 100.0
+        try:
+            if config and getattr(config, "max_position_size", None):
+                max_pos = float(config.max_position_size)
+                if position_size > max_pos:
+                    logger.warning(
+                        f"Capping position size from {position_size:.2f} to max {max_pos:.2f}"
+                    )
+                    position_size = max_pos
+        except Exception:
+            pass
 
         # Get current stock price for quantity calculation
         try:
             ticker = api.get_latest_trade(analysis.symbol)
             current_price = ticker.price
+            
+            # Reject if one share exceeds max position size
+            if config and getattr(config, "max_position_size", None):
+                max_pos = float(config.max_position_size)
+                if current_price > max_pos:
+                    logger.warning(
+                        f"Rejected trade for {analysis.symbol}: price ${current_price:.2f} exceeds max position size ${max_pos:.2f}"
+                    )
+                    send_dashboard_update(
+                        "trade_rejected",
+                        {
+                            "analysis_id": analysis.id,
+                            "symbol": analysis.symbol,
+                            "reason": f"Price ${current_price:.2f} exceeds max position size ${max_pos:.2f}",
+                            "current_price": current_price,
+                            "max_position_size": max_pos,
+                            "tag": "Rejected",
+                        },
+                    )
+                    return
+            
             quantity = int(position_size / current_price)
             if quantity < 1:
                 quantity = 1
@@ -3131,6 +3162,17 @@ def create_manual_test_trade(symbol, direction, quantity=None, position_size=Non
         config = None
 
     if config:
+        # Enforce max position size for manual trades
+        try:
+            max_pos = getattr(config, "max_position_size", None)
+            if max_pos:
+                max_pos = float(max_pos)
+                if position_size is not None and float(position_size) > max_pos:
+                    position_size = float(max_pos)
+                # If only quantity provided, we will cap after fetching price
+        except Exception:
+            pass
+
         concurrent_count = get_effective_concurrent_open_trades_count()
         if config.max_concurrent_open_trades and concurrent_count >= config.max_concurrent_open_trades:
             send_dashboard_update(
@@ -3182,12 +3224,55 @@ def create_manual_test_trade(symbol, direction, quantity=None, position_size=Non
             ticker = api.get_latest_trade(symbol)
             current_price = ticker.price
             
+            # Reject if one share exceeds max position size
+            if config and getattr(config, "max_position_size", None):
+                max_pos = float(config.max_position_size)
+                if current_price > max_pos:
+                    logger.warning(
+                        f"Rejected manual trade for {symbol}: price ${current_price:.2f} exceeds max position size ${max_pos:.2f}"
+                    )
+                    send_dashboard_update(
+                        "trade_rejected",
+                        {
+                            "symbol": symbol,
+                            "reason": f"Price ${current_price:.2f} exceeds max position size ${max_pos:.2f}",
+                            "current_price": current_price,
+                            "max_position_size": max_pos,
+                            "tag": "Rejected",
+                        },
+                    )
+                    return {"success": False, "error": f"Price ${current_price:.2f} exceeds max position size ${max_pos:.2f}"}
+            
             # Calculate quantity if position_size is provided, otherwise use quantity directly
             if position_size and not quantity:
-                quantity = max(1, int(position_size / current_price))
+                quantity = max(1, int(float(position_size) / float(current_price)))
             elif not quantity:
                 quantity = 1  # Default to 1 share
                 
+            # If only quantity was provided, enforce max dollar size by capping shares
+            if config and getattr(config, "max_position_size", None):
+                try:
+                    max_pos = float(config.max_position_size)
+                    estimated_value = float(quantity) * float(current_price)
+                    if estimated_value > max_pos and float(current_price) > 0:
+                        capped_qty = int(max_pos // float(current_price))
+                        if capped_qty < 1:
+                            # Cannot buy even 1 share within the cap
+                            send_dashboard_update(
+                                "trade_rejected",
+                                {
+                                    "symbol": symbol,
+                                    "reason": f"Cannot buy 1 share within max position size ${max_pos:.2f} (price: ${current_price:.2f})",
+                                    "current_price": current_price,
+                                    "max_position_size": max_pos,
+                                    "tag": "Rejected",
+                                },
+                            )
+                            return {"success": False, "error": f"Cannot buy 1 share within max position size ${max_pos:.2f}"}
+                        quantity = capped_qty
+                except Exception:
+                    pass
+
         except Exception as e:
             logger.warning(f"Could not get current price for {symbol}: {e}. Using quantity 1.")
             quantity = quantity or 1

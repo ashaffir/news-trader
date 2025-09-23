@@ -12,7 +12,7 @@ class TradingConfig(models.Model):
         default=100.0, help_text="Default position size in dollars"
     )
     max_position_size = models.FloatField(
-        default=1000.0, help_text="Maximum position size in dollars"
+        default=100.0, help_text="Maximum position size in dollars"
     )
     position_sizing_method = models.CharField(
         max_length=20,
