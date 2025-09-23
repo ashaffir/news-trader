@@ -1,11 +1,21 @@
 from django.contrib import admin
 from django.utils.html import format_html
-from django.urls import reverse
+from django.urls import reverse, path
 from django.utils.safestring import mark_safe
 from .models import Source, Post, Analysis, Trade, TradingConfig, ApiResponse, AlertSettings, TrackedCompany, ActivityLog, ConfigControl
 from django.utils import timezone
 from datetime import timedelta
 import json
+from django.shortcuts import render, redirect
+from django.contrib import messages
+from django.utils.translation import gettext_lazy as _
+
+from .forms import TrackedCompanyImportForm
+from .utils.tracked_company_import import (
+    import_tracked_companies_from_file,
+    import_tracked_companies_from_text,
+    CSVFormatError,
+)
 
 
 @admin.register(TradingConfig)
@@ -571,6 +581,54 @@ class TrackedCompanyAdmin(admin.ModelAdmin):
         ("Company", {"fields": ("symbol", "name", "sector", "industry", "market", "is_active")}),
         ("Timestamps", {"fields": ("created_at", "updated_at"), "classes": ("collapse",)}),
     )
+
+    change_list_template = "admin/core/trackedcompany/change_list.html"
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path(
+                "import-companies/",
+                self.admin_site.admin_view(self.import_companies_view),
+                name="core_trackedcompany_import",
+            )
+        ]
+        return custom_urls + urls
+
+    def import_companies_view(self, request):
+        if request.method == "POST":
+            form = TrackedCompanyImportForm(request.POST, request.FILES)
+            if form.is_valid():
+                f = form.cleaned_data["csv_file"]
+                deactivate_missing = bool(form.cleaned_data.get("deactivate_missing"))
+                try:
+                    # Ensure text mode for CSV parser
+                    content = f.read()
+                    if isinstance(content, bytes):
+                        content = content.decode("utf-8", errors="replace")
+                    result = import_tracked_companies_from_text(
+                        content, deactivate_missing=deactivate_missing
+                    )
+                except CSVFormatError as e:
+                    messages.error(request, _(f"CSV error: {e}"))
+                except Exception as e:
+                    messages.error(request, _(f"Import failed: {e}"))
+                else:
+                    messages.success(
+                        request,
+                        _(f"Import complete. Created: {result['created']}, Updated: {result['updated']}, Deactivated: {result['deactivated']}")
+                    )
+                    return redirect("admin:core_trackedcompany_changelist")
+        else:
+            form = TrackedCompanyImportForm()
+
+        context = {
+            **self.admin_site.each_context(request),
+            "title": _("Import Tracked Companies from CSV"),
+            "form": form,
+            "opts": self.model._meta,
+        }
+        return render(request, "admin/core/trackedcompany/import_form.html", context)
 
 
 @admin.register(ConfigControl)

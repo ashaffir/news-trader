@@ -4,6 +4,9 @@ from django.utils import timezone
 from core.models import TrackedCompany, Trade, Analysis, Post, Source
 import tempfile
 import os
+from django.urls import reverse
+from django.contrib.auth import get_user_model
+from django.core.files.uploadedfile import SimpleUploadedFile
 
 
 class TrackedCompanyTests(TestCase):
@@ -74,5 +77,46 @@ AAPL,Apple Inc (Updated),Consumer Electronics,Information Technology,USA
         call_command("reconcile_trades_tracked_companies", verbosity=0)
         trade.refresh_from_db()
         self.assertEqual(trade.tracked_company_id, tc.id)
+
+    def test_admin_import_view_creates_updates_and_deactivates(self):
+        # Create superuser and login
+        User = get_user_model()
+        admin = User.objects.create_superuser("admin", "admin@example.com", "pass")
+        self.client.login(username="admin", password="pass")
+
+        # Initial companies
+        TrackedCompany.objects.create(symbol="AAPL", name="Apple Inc.")
+        TrackedCompany.objects.create(symbol="MSFT", name="Microsoft")
+
+        url = reverse("admin:core_trackedcompany_import")
+
+        # Upload CSV with AAPL (updated) and GOOG, and deactivate missing (MSFT should deactivate)
+        csv_content = (
+            "symbol,name,industry,sector,market\n"
+            "AAPL,Apple Inc Updated,Consumer Electronics,Information Technology,USA\n"
+            "GOOG,Alphabet Inc,Internet,Communication Services,USA\n"
+        )
+        uploaded = SimpleUploadedFile("companies.csv", csv_content.encode("utf-8"), content_type="text/csv")
+        resp = self.client.post(url, {"csv_file": uploaded, "deactivate_missing": "on"}, follow=True)
+        self.assertEqual(resp.status_code, 200)
+
+        aapl = TrackedCompany.objects.get(symbol="AAPL")
+        goog = TrackedCompany.objects.get(symbol="GOOG")
+        msft = TrackedCompany.objects.get(symbol="MSFT")
+        self.assertEqual(aapl.name, "Apple Inc Updated")
+        self.assertTrue(goog.is_active)
+        self.assertFalse(msft.is_active)
+
+    def test_admin_import_view_rejects_bad_headers(self):
+        User = get_user_model()
+        admin = User.objects.create_superuser("admin", "admin@example.com", "pass")
+        self.client.login(username="admin", password="pass")
+        url = reverse("admin:core_trackedcompany_import")
+        csv_content = "symbol,name\nAAPL,Apple Inc\n"
+        uploaded = SimpleUploadedFile("companies.csv", csv_content.encode("utf-8"), content_type="text/csv")
+        resp = self.client.post(url, {"csv_file": uploaded}, follow=True)
+        self.assertEqual(resp.status_code, 200)
+        # Should show error message in response content
+        self.assertContains(resp, "Missing required CSV headers")
 
 
