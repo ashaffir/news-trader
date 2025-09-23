@@ -141,6 +141,12 @@ class Command(BaseCommand):
                 'description': 'Enable/disable bot automatically based on market hours when autostart is enabled'
             },
             {
+                'name': 'Intraday Pre-Close Enforcement',
+                'task': 'core.tasks.enforce_intraday_preclose',
+                'interval': interval_2_minutes,
+                'description': 'If intraday trading enabled, close all positions before market close'
+            },
+            {
                 'name': 'Monthly Old Data Cleanup',
                 'task': 'core.tasks.cleanup_old_data',
                 'crontab': monthly_0300_cron,

@@ -112,6 +112,15 @@ Direction can be 'buy', 'sell', or 'hold'. Confidence is a float between 0 and 1
     market_hours_only = models.BooleanField(
         default=True, help_text="Only trade during market hours"
     )
+    intraday_trading = models.BooleanField(
+        default=False,
+        help_text="If enabled, close all open positions shortly before market close",
+    )
+    intraday_close_minutes_before = models.IntegerField(
+        default=30,
+        validators=[MinValueValidator(1), MaxValueValidator(180)],
+        help_text="Minutes before market close to start closing positions (intraday)",
+    )
 
     # Bot control
     bot_enabled = models.BooleanField(

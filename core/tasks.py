@@ -1459,6 +1459,25 @@ def is_market_open_now(now_utc: Optional[datetime] = None) -> bool:
         return False
 
 
+def minutes_until_market_close(now_utc: Optional[datetime] = None) -> Optional[int]:
+    """Return minutes until market close (heuristic) or None on error.
+
+    Uses the same UTC heuristic window as is_market_open_now: Mon-Fri 13:30-20:00.
+    Ignores holidays. Returns 0 if already past close on a weekday.
+    """
+    try:
+        if now_utc is None:
+            now_utc = timezone.now()
+        weekday = now_utc.weekday()
+        if weekday >= 5:
+            return None
+        minutes = now_utc.hour * 60 + now_utc.minute
+        close_min = 20 * 60
+        return max(0, close_min - minutes)
+    except Exception:
+        return None
+
+
 def check_daily_trade_limit():
     """Check if daily trade limit has been reached."""
     config = get_active_trading_config()
@@ -3663,6 +3682,47 @@ def close_all_trades_manually():
         logger.error(error_msg)
         send_dashboard_update("trades_error", {"error": error_msg})
         return {"status": "error", "message": error_msg, "closed_count": 0}
+
+
+# =============================================================================
+# INTRADAY PRE-CLOSE ENFORCEMENT
+# =============================================================================
+
+@shared_task
+def enforce_intraday_preclose():
+    """If intraday trading is enabled, close all positions before market close.
+
+    Trigger this task periodically (e.g., every 2 minutes) via django-celery-beat.
+    When within intraday_close_minutes_before of the close window, dispatch
+    close_all_trades_manually.
+    """
+    try:
+        config = TradingConfig.objects.filter(is_active=True).first()
+        if not config or not getattr(config, "intraday_trading", False):
+            return {"status": "noop", "reason": "intraday_disabled_or_no_config"}
+
+        # Only act on weekdays; determine minutes until close
+        minutes_left = minutes_until_market_close()
+        if minutes_left is None:
+            return {"status": "noop", "reason": "weekend_or_time_error"}
+
+        threshold = max(1, int(getattr(config, "intraday_close_minutes_before", 30)))
+        if minutes_left <= threshold:
+            try:
+                close_all_trades_manually.delay()
+                ActivityLog.objects.create(
+                    activity_type="system_event",
+                    message=f"Intraday pre-close: dispatched close_all with {minutes_left}m remaining",
+                )
+                return {"status": "dispatched", "minutes_left": minutes_left}
+            except Exception as e:
+                logger.error("enforce_intraday_preclose failed to dispatch: %s", e)
+                return {"status": "error", "error": str(e)}
+
+        return {"status": "noop", "minutes_left": minutes_left, "threshold": threshold}
+    except Exception as e:
+        logger.error("enforce_intraday_preclose failed: %s", e)
+        return {"status": "error", "error": str(e)}
 
 
 # =============================================================================

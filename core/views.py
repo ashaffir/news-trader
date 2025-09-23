@@ -281,6 +281,8 @@ def toggle_bot_status(request):
                 max_daily_trades=10,
                 llm_model="gpt-3.5-turbo",
                 market_hours_only=True,
+                    intraday_trading=False,
+                    intraday_close_minutes_before=30,
             )
 
         # Toggle the bot status
