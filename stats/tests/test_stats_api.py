@@ -33,6 +33,10 @@ class StatsAPITests(TestCase):
         self.assertEqual(len(eq['labels']), 2)
         daily = self.client.get('/stats/api/pnl-by-day').json()
         self.assertEqual(len(daily['labels']), 2)
+        # Daily projection fields should exist
+        self.assertIn('projection_labels', daily)
+        self.assertIn('projection', daily)
+        self.assertIn('avg_daily_pnl', daily)
 
     def test_analysis_endpoints_basic_shapes(self):
         now = timezone.now()

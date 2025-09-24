@@ -97,8 +97,19 @@
     });
   }
 
+  function getHorizonParams() {
+    const horizon = parseInt(qv('proj-horizon')?.value || '3', 10);
+    const isDaily = qv('proj-daily')?.classList.contains('active');
+    if (isDaily) {
+      const days = Math.max(0, Math.min(14, isNaN(horizon) ? 7 : horizon));
+      return `projection_days=${days}`;
+    }
+    const months = Math.max(0, Math.min(6, isNaN(horizon) ? 3 : horizon));
+    return `projection_months=${months}`;
+  }
+
   async function loadMonthly() {
-    const res = await fetch(`/stats/api/pnl-by-month?${buildQuery()}`);
+    const res = await fetch(`/stats/api/pnl-by-month?${buildQuery()}&${getHorizonParams()}`);
     const data = await res.json();
     const ctx = qv('chart-monthly-pnl').getContext('2d');
     state.charts.monthly?.destroy();
@@ -109,6 +120,21 @@
       type: 'bar',
       data: { labels, datasets: [ { label: 'Monthly PnL (adj.)', data: values, backgroundColor: bg } ] },
       options: { scales: { y: { title: { text: 'USD', display: true } } }, plugins: { legend: { display: false } } }
+    });
+  }
+
+  async function loadDailyProjection() {
+    const res = await fetch(`/stats/api/pnl-by-day?${buildQuery()}&${getHorizonParams()}`);
+    const data = await res.json();
+    const ctx = qv('chart-daily-pnl').getContext('2d');
+    state.charts.dailyProjection?.destroy();
+    const labels = data.labels.concat(data.projection_labels || []);
+    const values = data.pnl.concat((data.projection || []).map(v => v));
+    const bg = labels.map((_, i) => i < data.labels.length ? 'rgba(25,135,84,0.6)' : 'rgba(25,135,84,0.2)');
+    state.charts.dailyProjection = new Chart(ctx, {
+      type: 'bar',
+      data: { labels, datasets: [ { label: 'Daily PnL (adj.)', data: values, backgroundColor: bg }, { label: '7D MA', type: 'line', data: data.ma7.concat(new Array((data.projection||[]).length).fill(null)), borderColor: '#6c757d' } ] },
+      options: { scales: { y: { title: { text: 'USD', display: true } } }, plugins: { legend: { position: 'bottom' } } }
     });
   }
 
@@ -155,9 +181,11 @@
   }
 
   async function refreshAll() {
+    const isDaily = qv('proj-daily')?.classList.contains('active');
+    const projLoader = isDaily ? loadDailyProjection() : loadMonthly();
     await Promise.all([
       loadSummary(), loadEquity(), loadDaily(), loadDirection(),
-      loadMonthly(), loadCloseReasons(),
+      projLoader, loadCloseReasons(),
       loadSymbols(), loadHeatmap(),
       loadScatterConfidence(), loadScatterDuration()
     ]);
@@ -169,6 +197,35 @@
     // Ensure system-wide by default: clear any autofilled symbol
     const symInput = qv('filter-symbol');
     if (symInput) symInput.value = '';
+    // Toggle between monthly and daily projection chart
+    const btnMonthly = qv('proj-monthly');
+    const btnDaily = qv('proj-daily');
+    if (btnMonthly && btnDaily) {
+      btnMonthly.addEventListener('click', () => {
+        btnMonthly.classList.add('active');
+        btnDaily.classList.remove('active');
+        qv('chart-monthly-pnl').style.display = '';
+        qv('chart-daily-pnl').style.display = 'none';
+        const lab = qv('proj-horizon-label'); if (lab) lab.textContent = 'Months';
+        const input = qv('proj-horizon');
+        if (input) { input.setAttribute('max','6'); if (parseInt(input.value||'0',10) > 6) input.value = '3'; }
+      });
+      btnDaily.addEventListener('click', () => {
+        btnDaily.classList.add('active');
+        btnMonthly.classList.remove('active');
+        qv('chart-monthly-pnl').style.display = 'none';
+        qv('chart-daily-pnl').style.display = '';
+        const lab = qv('proj-horizon-label'); if (lab) lab.textContent = 'Days';
+        const input = qv('proj-horizon');
+        if (input) { input.setAttribute('max','14'); if (parseInt(input.value||'0',10) > 14) input.value = '7'; }
+      });
+    }
+    const applyH = qv('proj-apply');
+    if (applyH) applyH.addEventListener('click', () => {
+      const isDaily = qv('proj-daily')?.classList.contains('active');
+      if (isDaily) { loadDailyProjection(); }
+      else { loadMonthly(); }
+    });
     refreshAll();
   }
 

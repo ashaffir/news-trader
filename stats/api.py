@@ -147,7 +147,33 @@ def pnl_by_day_api(request):
     for i in range(len(pnl)):
         w = pnl[max(0, i-6):i+1]
         ma7.append(sum(w)/len(w))
-    return JsonResponse({ 'labels': labels, 'pnl': pnl, 'ma7': ma7 })
+
+    # Projection (daily): average daily PnL across available days, project forward
+    proj_days = int(request.GET.get('projection_days', '7') or '7')
+    proj_days = max(0, min(proj_days, 14))
+    avg_daily = (sum(pnl)/len(pnl)) if pnl else 0.0
+    proj_labels = []
+    proj_values = []
+    if proj_days > 0 and labels:
+        try:
+            last = datetime.fromisoformat(labels[-1])
+        except Exception:
+            last = (timezone.now()).date()
+            last = datetime(year=last.year, month=last.month, day=last.day)
+        cur = last
+        for _ in range(proj_days):
+            cur = cur + timedelta(days=1)
+            proj_labels.append(cur.date().isoformat())
+            proj_values.append(round(avg_daily, 4))
+
+    return JsonResponse({
+        'labels': labels,
+        'pnl': pnl,
+        'ma7': ma7,
+        'projection_labels': proj_labels,
+        'projection': proj_values,
+        'avg_daily_pnl': round(avg_daily, 4),
+    })
 
 
 @login_required

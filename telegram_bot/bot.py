@@ -51,6 +51,13 @@ except Exception:  # pragma: no cover - if request backend changes, continue wit
     HTTPVersion = None  # type: ignore
 
 from telegram_bot.utils import send_telegram_message
+from telegram_bot.formatters import (
+    format_open_trades,
+    format_trade_detail,
+    format_config,
+    format_activity,
+)
+from core.models import ConfigControl  # typed key-value store for small flags
 
 logger = logging.getLogger(__name__)
 
@@ -217,6 +224,13 @@ Available commands:
 • `/disable` - Disable trading bot
 • `/pnl` - Get P&L summary (today and total)
 • `/trades` - Get recent trades report
+• `/open_trades` - List open positions with unrealized P&L
+• `/trade <id|symbol>` - Detailed trade view with inline Close/Refresh
+• `/close <id|symbol>` - Request manual close for a trade
+• `/config` - Show active configuration and 30d stats
+• `/health` - Check system health (DB/Redis/Broker)
+• `/activity [n]` - Show recent activity log entries
+• `/cutoff` - Kill switch: disable bot and autostart
 • `/alerts_on` - Enable notifications
 • `/alerts_off` - Disable notifications
 • `/help` - Show this help message
@@ -292,7 +306,9 @@ Use the commands to control your trading bot remotely!
                     InlineKeyboardButton("🟢 Enable Bot" if not (config and config.bot_enabled) else "🔴 Disable Bot", 
                                        callback_data="toggle_bot"),
                     InlineKeyboardButton("🔔 Alerts On" if not (alerts and alerts.enabled) else "🔕 Alerts Off", 
-                                       callback_data="toggle_alerts")
+                                       callback_data="toggle_alerts"),
+                    InlineKeyboardButton("🛑 Cutoff", callback_data="cutoff"),
+                    InlineKeyboardButton("♻️ Restore", callback_data="restore")
                 ],
                 [
                     InlineKeyboardButton("📊 P&L Report", callback_data="pnl_report"),
@@ -306,6 +322,179 @@ Use the commands to control your trading bot remotely!
         except Exception as e:
             logger.error(f"Error in status command: {e}")
             await update.message.reply_text(f"❌ Error getting status: {str(e)}")
+
+    async def open_trades_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /open_trades - list active positions with details."""
+        if not self.is_authorized(update.effective_chat.id):
+            await update.message.reply_text("❌ Unauthorized access.")
+            return
+        try:
+            from core.models import Trade
+            open_trades = await sync_to_async(
+                lambda: list(Trade.objects.filter(status__in=["open", "pending_close"]).order_by("-opened_at", "-created_at"))
+            )()
+            text = format_open_trades(open_trades)
+            await (update.message or update.callback_query.message).reply_text(text)
+        except Exception as e:
+            logger.error(f"Error in open_trades: {e}")
+            await (update.message or update.callback_query.message).reply_text(f"❌ Error: {e}")
+
+    async def trade_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /trade <id|symbol> - show a single trade."""
+        if not self.is_authorized(update.effective_chat.id):
+            await update.message.reply_text("❌ Unauthorized access.")
+            return
+        try:
+            from core.models import Trade
+            arg = (context.args[0] if context.args else None)
+            trade = None
+            if arg and arg.isdigit():
+                trade = await sync_to_async(lambda: Trade.objects.filter(id=int(arg)).first())()
+            elif arg:
+                sym = arg.upper()
+                trade = await sync_to_async(
+                    lambda: Trade.objects.filter(symbol=sym).order_by("-created_at").first()
+                )()
+            text = format_trade_detail(trade)
+            # Inline controls for open trades
+            if trade and trade.status in ("open", "pending_close"):
+                kb = [[InlineKeyboardButton("❌ Close", callback_data=f"close:{trade.id}"),
+                       InlineKeyboardButton("🔄 Refresh", callback_data=f"trade:{trade.id}")]]
+                await (update.message or update.callback_query.message).reply_text(text, reply_markup=InlineKeyboardMarkup(kb))
+            else:
+                await (update.message or update.callback_query.message).reply_text(text)
+        except Exception as e:
+            logger.error(f"Error in trade command: {e}")
+            await (update.message or update.callback_query.message).reply_text(f"❌ Error: {e}")
+
+    async def close_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /close <id|symbol> - request manual close for a trade."""
+        if not self.is_authorized(update.effective_chat.id):
+            await update.message.reply_text("❌ Unauthorized access.")
+            return
+        try:
+            from core.models import Trade
+            from core.tasks import close_trade_manually
+            arg = (context.args[0] if context.args else None)
+            if not arg:
+                await update.message.reply_text("Usage: /close <trade_id|symbol>")
+                return
+            if arg.isdigit():
+                trade = await sync_to_async(lambda: Trade.objects.filter(id=int(arg)).first())()
+            else:
+                sym = arg.upper()
+                trade = await sync_to_async(
+                    lambda: Trade.objects.filter(symbol=sym, status__in=["open","pending_close"]).order_by("-created_at").first()
+                )()
+            if not trade:
+                await update.message.reply_text("❌ Trade not found or not open.")
+                return
+            # Mark pending_close and enqueue background close via existing task
+            if trade.status != "pending_close":
+                trade.status = "pending_close"
+                if not trade.close_reason:
+                    trade.close_reason = "manual"
+                await sync_to_async(trade.save)(update_fields=["status","close_reason","updated_at"])
+            close_trade_manually.delay(trade.id)
+            await update.message.reply_text(f"✅ Close requested for trade #{trade.id} {trade.symbol}.")
+        except Exception as e:
+            logger.error(f"Error in close command: {e}")
+            await update.message.reply_text(f"❌ Error: {e}")
+
+    async def config_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /config - show active config and quick stats."""
+        if not self.is_authorized(update.effective_chat.id):
+            await update.message.reply_text("❌ Unauthorized access.")
+            return
+        try:
+            from core.models import TradingConfig, AlertSettings, Trade
+            config = await sync_to_async(TradingConfig.objects.filter(is_active=True).first)()
+            alerts = await sync_to_async(AlertSettings.objects.order_by("-created_at").first)()
+            # Stats: last 30 days closed
+            since = timezone.now().date() - timedelta(days=30)
+            closed = await sync_to_async(
+                lambda: list(Trade.objects.filter(status="closed", closed_at__date__gte=since))
+            )()
+            closed_count = len(closed)
+            wins = sum(1 for t in closed if (t.realized_pnl or 0) > 0)
+            win_rate = f"{(wins/closed_count*100):.0f}%" if closed_count else "0%"
+            avg_hold = "-"
+            try:
+                minutes = [t.duration_minutes for t in closed if t.duration_minutes]
+                if minutes:
+                    avg_m = sum(minutes)/len(minutes)
+                    avg_hold = f"{int(avg_m//60)}h {int(avg_m%60)}m" if avg_m >= 60 else f"{int(avg_m)}m"
+            except Exception:
+                pass
+            avg_pnl = 0.0
+            try:
+                vals = [float(t.realized_pnl or 0) for t in closed]
+                if vals:
+                    avg_pnl = sum(vals)/len(vals)
+            except Exception:
+                pass
+            text = format_config(
+                config,
+                alerts,
+                stats={
+                    "closed_count": closed_count,
+                    "win_rate": win_rate,
+                    "avg_hold": avg_hold,
+                    "avg_pnl": f"${avg_pnl:,.2f}",
+                },
+            )
+            await (update.message or update.callback_query.message).reply_text(text)
+        except Exception as e:
+            logger.error(f"Error in /config: {e}")
+            await (update.message or update.callback_query.message).reply_text(f"❌ Error: {e}")
+
+    async def health_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /health - quick subsystem connectivity check."""
+        if not self.is_authorized(update.effective_chat.id):
+            await update.message.reply_text("❌ Unauthorized access.")
+            return
+        try:
+            # DB
+            db_ok = await self._check_database_connection(update)
+            # Redis
+            redis_ok = False
+            try:
+                client = self._redis_client()
+                if client is not None:
+                    client.ping()
+                    redis_ok = True
+            except Exception:
+                redis_ok = False
+            # Celery broker URL presence
+            broker = os.getenv("CELERY_BROKER_URL") or ""
+            # Summarize
+            text = (
+                "🩺 System Health\n\n"
+                f"Database: {'OK' if db_ok else 'ERROR'}\n"
+                f"Redis: {'OK' if redis_ok else 'N/A or ERROR'}\n"
+                f"Celery broker: {'set' if broker else 'missing'}\n"
+            )
+            await (update.message or update.callback_query.message).reply_text(text)
+        except Exception as e:
+            logger.error(f"Error in /health: {e}")
+            await (update.message or update.callback_query.message).reply_text(f"❌ Error: {e}")
+
+    async def activity_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /activity [n] - last N activity log entries (default 10)."""
+        if not self.is_authorized(update.effective_chat.id):
+            await update.message.reply_text("❌ Unauthorized access.")
+            return
+        try:
+            from core.models import ActivityLog
+            try:
+                n = int(context.args[0]) if context.args else 10
+            except Exception:
+                n = 10
+            logs = await sync_to_async(lambda: list(ActivityLog.objects.order_by('-created_at')[: max(1, min(n, 50))]))()
+            await (update.message or update.callback_query.message).reply_text(format_activity(logs))
+        except Exception as e:
+            logger.error(f"Error in /activity: {e}")
+            await (update.message or update.callback_query.message).reply_text(f"❌ Error: {e}")
     
     async def enable_bot_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /enable command - enable the trading bot."""
@@ -582,6 +771,66 @@ Use the commands to control your trading bot remotely!
         except Exception as e:
             logger.error(f"Error disabling alerts: {e}")
             await update.message.reply_text(f"❌ Error disabling alerts: {str(e)}")
+
+    async def cutoff_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /cutoff - kill switch: disable bot and autostart."""
+        if not self.is_authorized(update.effective_chat.id):
+            await update.message.reply_text("❌ Unauthorized access.")
+            return
+        try:
+            from core.models import TradingConfig
+            config = await sync_to_async(TradingConfig.objects.filter(is_active=True).first)()
+            if not config:
+                await update.message.reply_text("❌ No active trading configuration found.")
+                return
+            changed = False
+            # Persist previous autostart state to ConfigControl for restoration
+            try:
+                prev = await sync_to_async(ConfigControl.objects.filter(name="autostart_previous").first)()
+                if not prev:
+                    prev = ConfigControl(name="autostart_previous", value_type=ConfigControl.TYPE_INTEGER, value_int=1 if getattr(config, "autostart", False) else 0)
+                else:
+                    prev.value_int = 1 if getattr(config, "autostart", False) else 0
+                await sync_to_async(prev.save)()
+            except Exception:
+                pass
+            if config.bot_enabled:
+                config.bot_enabled = False
+                changed = True
+            if getattr(config, "autostart", False):
+                config.autostart = False
+                changed = True
+            if changed:
+                await sync_to_async(config.save)(update_fields=["bot_enabled", "autostart", "updated_at"])  # type: ignore
+                await update.message.reply_text("🛑 Kill switch engaged: bot disabled and autostart OFF.")
+                await sync_to_async(send_telegram_message)("🛑 Kill switch engaged via Telegram: bot disabled, autostart OFF")
+            else:
+                await update.message.reply_text("ℹ️ Bot already disabled and autostart OFF.")
+        except Exception as e:
+            logger.error(f"Error in cutoff: {e}")
+            await update.message.reply_text(f"❌ Error: {e}")
+
+    async def restore_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /restore - restore autostart to its previous recorded value."""
+        if not self.is_authorized(update.effective_chat.id):
+            await update.message.reply_text("❌ Unauthorized access.")
+            return
+        try:
+            from core.models import TradingConfig
+            config = await sync_to_async(TradingConfig.objects.filter(is_active=True).first)()
+            if not config:
+                await update.message.reply_text("❌ No active trading configuration found.")
+                return
+            prev = await sync_to_async(ConfigControl.objects.filter(name="autostart_previous").first)()
+            if not prev or prev.value_int is None:
+                await update.message.reply_text("ℹ️ No previous autostart value recorded.")
+                return
+            config.autostart = bool(prev.value_int)
+            await sync_to_async(config.save)(update_fields=["autostart", "updated_at"])  # type: ignore
+            await update.message.reply_text(f"♻️ Restored autostart: {'ON' if config.autostart else 'OFF'}.")
+        except Exception as e:
+            logger.error(f"Error in restore: {e}")
+            await update.message.reply_text(f"❌ Error: {e}")
     
     async def handle_callback_query(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle inline keyboard button presses."""
@@ -629,6 +878,59 @@ Use the commands to control your trading bot remotely!
         elif query.data == "recent_trades":
             # Show recent trades
             await self.trades_command(update, context)
+        elif query.data == "cutoff":
+            try:
+                from core.models import TradingConfig
+                config = await sync_to_async(TradingConfig.objects.filter(is_active=True).first)()
+                if config:
+                    config.bot_enabled = False
+                    config.autostart = False
+                    await sync_to_async(config.save)(update_fields=["bot_enabled", "autostart", "updated_at"])  # type: ignore
+                    await query.edit_message_text("🛑 Kill switch engaged: bot disabled and autostart OFF.")
+                    await sync_to_async(send_telegram_message)("🛑 Kill switch engaged via Telegram: bot disabled, autostart OFF")
+                else:
+                    await query.edit_message_text("❌ No active trading configuration found.")
+            except Exception as e:
+                await query.edit_message_text(f"❌ Error: {e}")
+        elif query.data and query.data.startswith("close:"):
+            trade_id = int(query.data.split(":", 1)[1])
+            from core.models import Trade
+            from core.tasks import close_trade_manually
+            try:
+                trade = await sync_to_async(lambda: Trade.objects.filter(id=trade_id).first())()
+                if not trade:
+                    await query.edit_message_text("❌ Trade not found.")
+                    return
+                if trade.status != "pending_close":
+                    trade.status = "pending_close"
+                    if not trade.close_reason:
+                        trade.close_reason = "manual"
+                    await sync_to_async(trade.save)(update_fields=["status", "close_reason", "updated_at"])
+                close_trade_manually.delay(trade.id)
+                await query.edit_message_text(f"✅ Close requested for trade #{trade.id} {trade.symbol}.")
+            except Exception as e:
+                await query.edit_message_text(f"❌ Error: {e}")
+        elif query.data and query.data.startswith("trade:"):
+            trade_id = int(query.data.split(":", 1)[1])
+            from core.models import Trade
+            trade = await sync_to_async(lambda: Trade.objects.filter(id=trade_id).first())()
+            await query.edit_message_text(format_trade_detail(trade))
+        elif query.data == "restore":
+            try:
+                from core.models import TradingConfig
+                config = await sync_to_async(TradingConfig.objects.filter(is_active=True).first)()
+                if not config:
+                    await query.edit_message_text("❌ No active trading configuration found.")
+                    return
+                prev = await sync_to_async(ConfigControl.objects.filter(name="autostart_previous").first)()
+                if not prev or prev.value_int is None:
+                    await query.edit_message_text("ℹ️ No previous autostart value recorded.")
+                    return
+                config.autostart = bool(prev.value_int)
+                await sync_to_async(config.save)(update_fields=["autostart", "updated_at"])  # type: ignore
+                await query.edit_message_text(f"♻️ Restored autostart: {'ON' if config.autostart else 'OFF'}.")
+            except Exception as e:
+                await query.edit_message_text(f"❌ Error: {e}")
     
     async def handle_unauthorized_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle messages from unauthorized users."""
@@ -649,6 +951,14 @@ Use the commands to control your trading bot remotely!
         self.application.add_handler(CommandHandler("trades", self.trades_command))
         self.application.add_handler(CommandHandler("alerts_on", self.alerts_on_command))
         self.application.add_handler(CommandHandler("alerts_off", self.alerts_off_command))
+        self.application.add_handler(CommandHandler("cutoff", self.cutoff_command))
+        self.application.add_handler(CommandHandler("open_trades", self.open_trades_command))
+        self.application.add_handler(CommandHandler("trade", self.trade_command))
+        self.application.add_handler(CommandHandler("close", self.close_command))
+        self.application.add_handler(CommandHandler("config", self.config_command))
+        self.application.add_handler(CommandHandler("health", self.health_command))
+        self.application.add_handler(CommandHandler("activity", self.activity_command))
+        self.application.add_handler(CommandHandler("restore", self.restore_command))
         
         # Callback query handler for inline buttons
         self.application.add_handler(CallbackQueryHandler(self.handle_callback_query))
