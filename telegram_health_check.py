@@ -1,100 +1,67 @@
 #!/usr/bin/env python3
 """
-Simple health check script for the Telegram bot.
+Simple health check script for the Telegram bot container.
 
-This script checks if the Telegram bot is running and responsive.
+This validates health WITHOUT relying on in-process globals by:
+- Checking that TELEGRAM_BOT_TOKEN exists
+- Calling Telegram Bot API getMe with a short timeout
+
 Exit code 0 = healthy, non-zero = unhealthy.
 
 Usage:
     python telegram_health_check.py
 """
 
-import asyncio
 import os
 import sys
 import logging
-from datetime import datetime, timedelta
+from typing import Optional
 
-# Add the project root to the path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-# Set up Django
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'news_trader.settings')
-import django
-django.setup()
-
-from telegram_bot.bot import get_bot_service
+import httpx
 
 # Suppress verbose logging for health checks
 logging.getLogger('httpx').setLevel(logging.WARNING)
-logging.getLogger('telegram').setLevel(logging.WARNING)
-
-logger = logging.getLogger(__name__)
 
 
-async def check_bot_health():
-    """Check if the Telegram bot is healthy."""
-    bot_service = get_bot_service()
-    
-    if not bot_service:
-        print("❌ Bot service not running")
+def get_env(name: str) -> Optional[str]:
+    value = os.getenv(name)
+    if value:
+        value = value.strip()
+    return value or None
+
+
+def check_bot_health_sync() -> bool:
+    """Check bot health by performing a lightweight Telegram API call."""
+    token = get_env("TELEGRAM_BOT_TOKEN")
+    if not token:
+        print("❌ TELEGRAM_BOT_TOKEN is not set")
         return False
-    
-    if not bot_service.application:
-        print("❌ Bot application not initialized")
-        return False
-    
-    if not bot_service.application.updater:
-        print("❌ Bot updater not available")
-        return False
-    
-    if not bot_service.application.updater.running:
-        print("❌ Bot updater not running")
-        return False
-    
-    # Try to make a simple API call to verify connectivity with retries
-    max_attempts = 2
-    for attempt in range(max_attempts):
-        try:
-            bot_info = await asyncio.wait_for(
-                bot_service.application.bot.get_me(), 
-                timeout=12.0
-            )
-            print(f"✅ Bot is healthy: @{bot_info.username}")
-            return True
-        except asyncio.TimeoutError:
-            print(f"⚠️ Bot API call timed out (attempt {attempt + 1}/{max_attempts})")
-            if attempt < max_attempts - 1:
-                await asyncio.sleep(3.0)  # Brief pause before retry
-                continue
-            print("❌ Bot API call timed out after all attempts")
-            return False
-        except Exception as e:
-            error_type = type(e).__name__
-            if 'RemoteProtocolError' in error_type or 'ConnectError' in error_type:
-                print(f"❌ Critical network error detected: {error_type}: {e}")
-                return False
-            else:
-                print(f"⚠️ Bot API call failed (attempt {attempt + 1}/{max_attempts}): {error_type}: {e}")
-                if attempt < max_attempts - 1:
-                    await asyncio.sleep(3.0)  # Brief pause before retry
-                    continue
-                print("❌ Bot API call failed after all attempts")
-                return False
-    
-    return False
 
-
-async def main():
-    """Main health check function."""
+    url = f"https://api.telegram.org/bot{token}/getMe"
     try:
-        is_healthy = await check_bot_health()
-        return 0 if is_healthy else 1
+        with httpx.Client(timeout=httpx.Timeout(8.0, read=8.0, connect=6.0)) as client:
+            resp = client.get(url)
+            if resp.status_code != 200:
+                print(f"❌ Telegram API HTTP {resp.status_code}")
+                return False
+            data = resp.json()
+            if data.get("ok"):
+                username = (data.get("result") or {}).get("username", "?")
+                print(f"✅ Bot is healthy: @{username}")
+                return True
+            print(f"❌ Telegram API returned error: {data}")
+            return False
+    except httpx.RequestError as e:
+        print(f"❌ Network error contacting Telegram API: {type(e).__name__}: {e}")
+        return False
     except Exception as e:
-        print(f"❌ Health check error: {e}")
-        return 1
+        print(f"❌ Health check error: {type(e).__name__}: {e}")
+        return False
+
+
+def main() -> int:
+    return 0 if check_bot_health_sync() else 1
 
 
 if __name__ == "__main__":
-    exit_code = asyncio.run(main())
-    sys.exit(exit_code)
+    sys.exit(main())
