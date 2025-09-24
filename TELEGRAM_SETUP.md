@@ -12,6 +12,14 @@ Once configured, you can use these commands in your Telegram chat:
 - `/disable` - Disable the trading bot  
 - `/pnl` - Get detailed P&L summary (today, week, month, total)
 - `/trades` - Show recent trades (last 10)
+- `/open_trades` - List all active positions with unrealized P&L
+- `/trade <id|symbol>` - Detailed view of a single trade with inline controls
+- `/close <id|symbol>` - Request a manual close for an open trade
+- `/config` - Show active configuration and 30‑day stats (win rate, avg hold)
+- `/health` - DB/Redis/broker health snapshot
+- `/activity [n]` - Last N activity log entries (default 10)
+- `/cutoff` - Kill switch: disable bot AND turn autostart OFF
+- `/restore` - Restore autostart to the previously recorded value
 - `/alerts_on` - Enable Telegram notifications
 - `/alerts_off` - Disable Telegram notifications
 
@@ -104,7 +112,9 @@ telegram-bot:
 1. Send `/start` to your bot - you should get a welcome message
 2. Try `/status` to see your current bot status and trading summary
 3. Use `/enable` or `/disable` to test bot control
-4. Check `/pnl` to see your profit/loss summary
+4. Use `/open_trades`, `/trades`, `/trade <id|symbol>` to inspect positions
+5. Check `/pnl` to see your profit/loss summary
+6. Try the kill switch with `/cutoff` (and `/restore` to revert autostart)
 
 ## 🚨 Troubleshooting
 
@@ -138,7 +148,13 @@ print(f"Authorized chats: {bot.authorized_chat_ids}")
 
 ## 📱 Usage Tips
 
-- Use inline keyboard buttons in `/status` for quick actions
+- Use inline keyboard buttons in `/status` for quick actions. Buttons are arranged one per line:
+  - Toggle Bot
+  - Toggle Alerts
+  - Cutoff (kill switch)
+  - Restore (autostart)
+  - P&L Report
+  - Recent Trades
 - The bot remembers your preferences (alerts on/off)
 - All actions are logged for audit purposes
 - P&L calculations include both realized and unrealized gains/losses

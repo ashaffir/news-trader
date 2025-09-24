@@ -303,17 +303,21 @@ Use the commands to control your trading bot remotely!
             # Add quick action buttons
             keyboard = [
                 [
-                    InlineKeyboardButton("🟢 Enable Bot" if not (config and config.bot_enabled) else "🔴 Disable Bot", 
-                                       callback_data="toggle_bot"),
-                    InlineKeyboardButton("🔔 Alerts On" if not (alerts and alerts.enabled) else "🔕 Alerts Off", 
-                                       callback_data="toggle_alerts"),
-                    InlineKeyboardButton("🛑 Cutoff", callback_data="cutoff"),
-                    InlineKeyboardButton("♻️ Restore", callback_data="restore")
+                    InlineKeyboardButton(
+                        "🟢 Enable Bot" if not (config and config.bot_enabled) else "🔴 Disable Bot",
+                        callback_data="toggle_bot",
+                    )
                 ],
                 [
-                    InlineKeyboardButton("📊 P&L Report", callback_data="pnl_report"),
-                    InlineKeyboardButton("📋 Recent Trades", callback_data="recent_trades")
-                ]
+                    InlineKeyboardButton(
+                        "🔔 Alerts On" if not (alerts and alerts.enabled) else "🔕 Alerts Off",
+                        callback_data="toggle_alerts",
+                    )
+                ],
+                [InlineKeyboardButton("🛑 Cutoff", callback_data="cutoff")],
+                [InlineKeyboardButton("♻️ Restore", callback_data="restore")],
+                [InlineKeyboardButton("📊 P&L Report", callback_data="pnl_report")],
+                [InlineKeyboardButton("📋 Recent Trades", callback_data="recent_trades")],
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
