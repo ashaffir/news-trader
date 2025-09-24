@@ -7,7 +7,7 @@ to enable straightforward unit testing.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone as dt_timezone
 from typing import Iterable, Optional
 
 
@@ -35,11 +35,34 @@ def format_pnl_emoji(value: float) -> str:
     return f"⚪ ${amt:,.2f}"
 
 
+def _to_aware_utc(dt: Optional[datetime]) -> Optional[datetime]:
+    """Return a timezone-aware UTC datetime for safe arithmetic.
+
+    This avoids naive/aware subtraction errors when some model fields are
+    stored as naive (UTC) and others are aware.
+    """
+    if dt is None:
+        return None
+    try:
+        if dt.tzinfo is None:
+            # Assume naive timestamps are in UTC and mark them as such
+            return dt.replace(tzinfo=dt_timezone.utc)
+        # Convert any tz-aware value to UTC
+        return dt.astimezone(dt_timezone.utc)
+    except Exception:
+        # Fallback: treat as naive UTC
+        return dt.replace(tzinfo=dt_timezone.utc)
+
+
 def _duration_str(start: Optional[datetime], end: Optional[datetime] = None) -> str:
     if not start:
         return "-"
-    end = end or datetime.utcnow()
-    delta: timedelta = end - start
+    # Normalize both ends to aware UTC before subtraction
+    start_utc = _to_aware_utc(start)
+    end_utc = _to_aware_utc(end or datetime.now(dt_timezone.utc))
+    if not start_utc or not end_utc:
+        return "-"
+    delta: timedelta = end_utc - start_utc
     minutes = int(delta.total_seconds() // 60)
     if minutes < 60:
         return f"{minutes}m"
