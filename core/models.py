@@ -304,7 +304,6 @@ class Trade(models.Model):
         ("manual", "Manual Close"),
         ("stop_loss", "Stop Loss"),
         ("take_profit", "Take Profit"),
-        ("time_limit", "Time Limit"),
         ("market_close", "Market Close"),
         ("market_consensus_lost", "Market Consensus Lost"),
         ("stale", "Stale - Time Limit Reached"),
