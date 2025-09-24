@@ -3714,7 +3714,10 @@ def close_all_trades_manually():
             try:
                 # Update status to pending_close first
                 trade.status = "pending_close"
-                trade.save()
+                # Explicitly mark intent: bulk/manual operation (treated as market_close policy)
+                if not trade.close_reason:
+                    trade.close_reason = "market_close"
+                trade.save(update_fields=["status", "close_reason", "updated_at"])
                 
                 # Use the existing close trade logic
                 close_trade_manually.delay(trade.id)

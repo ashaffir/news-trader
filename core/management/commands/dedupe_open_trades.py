@@ -55,7 +55,9 @@ class Command(BaseCommand):
                     total_closed += 1
                     continue
                 dup.status = "closed"
-                dup.close_reason = dup.close_reason or "duplicate_sync"
+                # Preserve existing close_reason if set; only set market_close for truly empty ones
+                if not dup.close_reason:
+                    dup.close_reason = "market_close"
                 dup.closed_at = timezone.now()
                 dup.save(update_fields=["status", "close_reason", "closed_at"])
                 total_closed += 1
@@ -83,7 +85,9 @@ class Command(BaseCommand):
                     total_closed += 1
                     continue
                 dup.status = "closed"
-                dup.close_reason = dup.close_reason or "duplicate_sync"
+                # Preserve existing close_reason if set; only set market_close for truly empty ones
+                if not dup.close_reason:
+                    dup.close_reason = "market_close"
                 dup.closed_at = timezone.now()
                 dup.save(update_fields=["status", "close_reason", "closed_at"])
                 total_closed += 1
