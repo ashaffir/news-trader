@@ -2383,7 +2383,14 @@ def get_effective_open_exposure():
 
 @shared_task
 def create_new_trade(analysis_id):
-    """Create a new trade for the given analysis."""
+    """Create a new trade for the given analysis.
+
+    Concurrency-safe: we first create the Trade row within a DB transaction
+    (covered by the unique_active_trade_per_company constraint for statuses
+    pending/open/pending_close). Only after the transaction commits do we
+    submit the broker order and update the trade with the broker order id.
+    This prevents multiple broker orders for the same symbol on race.
+    """
     analysis = _run_db_call_in_thread(lambda: Analysis.objects.get(id=analysis_id)) if _is_async_context() else Analysis.objects.get(id=analysis_id)
     config = get_active_trading_config()
 
@@ -2531,16 +2538,7 @@ def create_new_trade(analysis_id):
             )
             return
 
-        # Submit order to Alpaca (market order). Broker-side TP/SL intentionally not used per requirements
-        order = api.submit_order(
-            symbol=analysis.symbol,
-            qty=quantity,
-            side=analysis.direction,  # "buy" or "sell"
-            type="market",
-            time_in_force="gtc",
-        )
-
-        # Calculate stop loss and take profit prices
+        # Calculate stop loss and take profit prices (local, to be saved after order)
         stop_loss_price = None
         take_profit_price = None
         if config and current_price > 0:
@@ -2551,18 +2549,20 @@ def create_new_trade(analysis_id):
                 stop_loss_price = current_price * (1 + config.stop_loss_percentage / 100)
                 take_profit_price = current_price * (1 - config.take_profit_percentage / 100)
 
-        # Create trade record, resilient to race duplicates (unique_active_trade_per_symbol)
-        def _create_trade():
-            from django.db import IntegrityError
+        # Create Trade row first to claim the unique active slot, then submit order on commit
+        from django.db import transaction, IntegrityError
+
+        def _create_then_submit():
+            from .models import TrackedCompany
+            tc = None
             try:
-                # Resolve tracked company by symbol for FK
-                from .models import TrackedCompany
+                tc = TrackedCompany.objects.filter(symbol__iexact=analysis.symbol).first()
+            except Exception:
                 tc = None
-                try:
-                    tc = TrackedCompany.objects.filter(symbol__iexact=analysis.symbol).first()
-                except Exception:
-                    tc = None
-                return Trade.objects.create(
+
+            with transaction.atomic():
+                # Attempt to create the pending trade; may raise IntegrityError if another task won the race
+                trade = Trade.objects.create(
                     analysis=analysis,
                     symbol=analysis.symbol,
                     tracked_company=tc,
@@ -2570,40 +2570,76 @@ def create_new_trade(analysis_id):
                     quantity=quantity,
                     entry_price=current_price,
                     status="pending",
-                    alpaca_order_id=order.id,
-                    stop_loss_price=stop_loss_price,
                     take_profit_price=take_profit_price,
+                    stop_loss_price=stop_loss_price,
                     original_stop_loss_price=stop_loss_price,
                     original_take_profit_price=take_profit_price,
                     take_profit_price_percentage=10.0 if config is None else (config.take_profit_percentage or 10.0),
                     stop_loss_price_percentage=2.0 if config is None else (config.stop_loss_percentage or 2.0),
                     max_holding_time_hours=getattr(analysis, "max_holding_time_hours", None),
                 )
-            except IntegrityError:
-                # Another worker created the active trade concurrently; return it instead
-                return Trade.objects.filter(
-                    tracked_company__symbol__iexact=analysis.symbol,
-                    status__in=["open", "pending", "pending_close"],
-                ).order_by("-created_at").first()
-        trade = _run_db_call_in_thread(_create_trade) if _is_async_context() else _create_trade()
 
-        logger.info(
-            f"Submitted {analysis.direction.upper()} order for {analysis.symbol}. Trade ID: {trade.id}, Order ID: {order.id}"
-        )
+                def _submit_and_update(trade_id: int):
+                    try:
+                        # Submit order to Alpaca (market order). Broker-side TP/SL intentionally not used per requirements
+                        order = api.submit_order(
+                            symbol=analysis.symbol,
+                            qty=quantity,
+                            side=analysis.direction,
+                            type="market",
+                            time_in_force="gtc",
+                        )
 
-        send_dashboard_update(
-            "new_trade",
-            {
-                "trade_id": trade.id,
-                "symbol": trade.symbol,
-                "direction": trade.direction,
-                "quantity": trade.quantity,
-                "status": trade.status,
-                "entry_price": trade.entry_price,
-                "stop_loss_price": trade.stop_loss_price,
-                "take_profit_price": trade.take_profit_price,
-            },
-        )
+                        # Update trade with broker order id and emit dashboard update
+                        _t = Trade.objects.get(id=trade_id)
+                        _t.alpaca_order_id = order.id
+                        try:
+                            _t.save(update_fields=["alpaca_order_id"])
+                        except Exception:
+                            pass
+
+                        logger.info(
+                            f"Submitted {analysis.direction.upper()} order for {analysis.symbol}. Trade ID: {_t.id}, Order ID: {order.id}"
+                        )
+                        try:
+                            send_dashboard_update(
+                                "new_trade",
+                                {
+                                    "trade_id": _t.id,
+                                    "symbol": _t.symbol,
+                                    "direction": _t.direction,
+                                    "quantity": _t.quantity,
+                                    "status": _t.status,
+                                    "entry_price": _t.entry_price,
+                                    "stop_loss_price": _t.stop_loss_price,
+                                    "take_profit_price": _t.take_profit_price,
+                                },
+                            )
+                        except Exception:
+                            pass
+                    except Exception as order_err:
+                        # Mark trade as failed if broker order submission fails
+                        try:
+                            _t = Trade.objects.get(id=trade_id)
+                            _t.status = "failed"
+                            _t.close_reason = "system_event"
+                            _t.save(update_fields=["status", "close_reason"])
+                        except Exception:
+                            pass
+                        logger.error(f"Broker order submission failed for {analysis.symbol}: {order_err}")
+
+                # Defer broker order until after the row is committed
+                transaction.on_commit(lambda: _submit_and_update(trade.id))
+                return trade
+
+        try:
+            trade = _run_db_call_in_thread(_create_then_submit) if _is_async_context() else _create_then_submit()
+        except IntegrityError:
+            # Another worker created the active trade concurrently; do not submit another order
+            logger.info(
+                f"Skipped creating duplicate active trade for {analysis.symbol}; another worker has already created it."
+            )
+            return
 
     except Exception as e:
         error_msg = f"Error creating new trade for analysis {analysis.id}: {e}"

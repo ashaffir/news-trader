@@ -373,6 +373,51 @@ class TaskTests(TestCase):
 
     @patch("core.tasks.tradeapi.REST")
     @patch("core.tasks.os.getenv")
+    @patch("django.db.transaction.on_commit", side_effect=lambda fn: fn())
+    def test_concurrent_create_new_trade_submits_single_order(self, mock_on_commit, mock_getenv, mock_tradeapi):
+        """Executing the same trade twice should submit a single broker order (second call adjusts only)."""
+        # Prepare env and Alpaca API
+        mock_getenv.side_effect = lambda key, default=None: {
+            "ALPACA_API_KEY": "fake-key",
+            "ALPACA_SECRET_KEY": "fake-secret",
+            "ALPACA_BASE_URL": "https://paper-api.alpaca.markets",
+        }.get(key, default)
+
+        api = MagicMock()
+        mock_tradeapi.return_value = api
+        ticker_entry = MagicMock(); ticker_entry.price = 50.0
+        api.get_latest_trade.return_value = ticker_entry
+
+        order = MagicMock(); order.id = "ord-concurrent"
+        api.submit_order.return_value = order
+
+        # Ensure tracked company exists
+        TrackedCompany.objects.get_or_create(symbol="AAPL", defaults={"name": "Apple"})
+
+        # Create analysis
+        analysis = Analysis.objects.create(
+            post=self.post,
+            symbol="AAPL",
+            direction="buy",
+            confidence=0.9,
+            reason="Concurrent test",
+        )
+
+        from core.tasks import execute_trade
+
+        # Call twice; first should create, second should route to adjustment path and not submit another order
+        execute_trade(analysis.id)
+        execute_trade(analysis.id)
+
+        # Only one DB trade should exist in active statuses
+        active = Trade.objects.filter(symbol="AAPL", status__in=["pending", "open", "pending_close"]).count()
+        self.assertEqual(active, 1)
+
+        # Alpaca submit_order should be called exactly once
+        api.submit_order.assert_called_once()
+
+    @patch("core.tasks.tradeapi.REST")
+    @patch("core.tasks.os.getenv")
     def test_trailing_stop_updates_and_triggers(self, mock_getenv, mock_tradeapi):
         """Trailing stop should move with favorable price and then trigger on reversal."""
         # Active config already has trailing enabled from setUp
