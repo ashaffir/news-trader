@@ -69,6 +69,11 @@ class Migration(migrations.Migration):
             name="hold_time_tail_impact_scale",
             field=models.FloatField(default=0.5, validators=[django.core.validators.MinValueValidator(0.0)], help_text="Scale factor for impact contribution in tail"),
         ),
+        migrations.AddField(
+            model_name="tradingconfig",
+            name="hold_time_min_hours",
+            field=models.FloatField(default=0.5, validators=[django.core.validators.MinValueValidator(0.0)], help_text="Minimum holding time in hours to enforce on computed per-analysis value"),
+        ),
     ]
 
 
