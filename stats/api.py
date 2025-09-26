@@ -2,6 +2,7 @@ from datetime import datetime
 from collections import defaultdict
 from django.utils import timezone
 from django.db.models import Sum, Count, Q
+from django.db.models import ExpressionWrapper, DurationField
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET
 from django.contrib.auth.decorators import login_required
@@ -19,8 +20,30 @@ def trades_log_api(request):
     qs = _filtered_trades(request)
     # Only trades that have at least been opened
     qs = qs.filter(opened_at__isnull=False)
-    # Sorting newest first by opened_at
-    qs = qs.order_by('-opened_at')
+    # Annotations to support sorting on computed fields
+    qs = qs.annotate(
+        pnl_adj=ExpressionWrapper(F('realized_pnl') - F('commission'), output_field=models.FloatField()),
+        dur=ExpressionWrapper(F('closed_at') - F('opened_at'), output_field=DurationField()),
+    )
+
+    # Sorting
+    sort_by = (request.GET.get('sort_by') or '').strip()
+    sort_dir = (request.GET.get('sort_dir') or 'desc').lower()
+    sort_map = {
+        'symbol': 'symbol',
+        'direction': 'direction',
+        'opened_at': 'opened_at',
+        'closed_at': 'closed_at',
+        'duration': 'dur',
+        'pnl': 'pnl_adj',
+        'confidence': 'analysis__confidence',
+        'close_reason': 'close_reason',
+    }
+    order_field = sort_map.get(sort_by, 'opened_at')
+    if sort_dir == 'asc':
+        qs = qs.order_by(order_field)
+    else:
+        qs = qs.order_by('-' + order_field)
 
     # Pagination
     try:
