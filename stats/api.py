@@ -1,4 +1,5 @@
 from datetime import datetime
+import logging
 from collections import defaultdict
 from django.utils import timezone
 from django.db.models import Sum, Count, Q
@@ -11,6 +12,7 @@ from django.contrib.auth.decorators import login_required
 from core.models import Trade
 from django.db.models import F
 from datetime import timedelta
+logger = logging.getLogger(__name__)
 @login_required
 @require_GET
 def trades_log_api(request):
@@ -114,25 +116,116 @@ def asset_intraday_api(request):
     if not symbol or not date_str:
         return JsonResponse({ 'labels': [], 'prices': [] })
     try:
-        from trader.services.alpaca import get_alpaca_client
-        from alpaca_trade_api.rest import TimeFrame
-        client = get_alpaca_client()
-        if not client:
-            return JsonResponse({ 'labels': [], 'prices': [] })
+        import os
         # Build start/end for the given date in UTC
         day_start = datetime.fromisoformat(date_str + 'T00:00:00+00:00')
         day_end = day_start + timedelta(days=1)
-        # Fetch 1-minute bars; prefer v2 TimeFrame API
+        logger.info("asset_intraday_api: requested bars. symbol=%s start=%s end=%s", symbol, day_start.isoformat(), day_end.isoformat())
+
+        # Preferred path: alpaca-py historical client per reference/alpaca_api
+        bars = None
+        used_client = 'none'
         try:
-            bars = client.get_bars(symbol, TimeFrame.Minute, day_start, day_end, adjustment='raw').df
-        except Exception:
-            # Fallback to legacy string timeframe
-            try:
-                bars = client.get_bars(symbol, '1Min', day_start, day_end).df
-            except Exception:
-                bars = None
+            from alpaca.data.historical import StockHistoricalDataClient
+            from alpaca.data.requests import StockBarsRequest
+            from alpaca.data.timeframe import TimeFrame as APTimeFrame
+            from alpaca.data.enums import DataFeed
+            api_key = os.getenv('ALPACA_API_KEY')
+            api_secret = os.getenv('ALPACA_SECRET_KEY')
+            if api_key and api_secret:
+                feed_name = os.getenv('ALPACA_DATA_FEED', 'IEX').upper()
+                data_feed = DataFeed.IEX if feed_name != 'SIP' else DataFeed.SIP
+                shc = StockHistoricalDataClient(api_key, api_secret)
+                req = StockBarsRequest(
+                    symbol_or_symbols=[symbol],
+                    timeframe=APTimeFrame.Minute,
+                    start=day_start,
+                    end=day_end,
+                    feed=data_feed,
+                )
+                resp = shc.get_stock_bars(req)
+                bars = resp.df if hasattr(resp, 'df') else None
+                used_client = f"alpaca-py({feed_name})"
+                logger.info("asset_intraday_api: alpaca-py returned df empty=%s shape=%s", getattr(bars, 'empty', None), getattr(bars, 'shape', None))
+        except Exception as ex:
+            logger.warning("asset_intraday_api: alpaca-py path failed: %s", ex, exc_info=True)
+            bars = None
+
+        # Fallback path: older alpaca_trade_api client if available
         if bars is None or getattr(bars, 'empty', True):
+            try:
+                from trader.services.alpaca import get_alpaca_client
+                from alpaca_trade_api.rest import TimeFrame as OldTimeFrame
+                client = get_alpaca_client()
+                if client:
+                    def fetch_bars(s, e):
+                        try:
+                            return client.get_bars(symbol, OldTimeFrame.Minute, s, e, adjustment='raw').df
+                        except Exception:
+                            return client.get_bars(symbol, '1Min', s, e).df
+                    bars = fetch_bars(day_start, day_end)
+                    used_client = 'alpaca-trade-api'
+                    logger.info("asset_intraday_api: alpaca-trade-api returned df empty=%s shape=%s", getattr(bars, 'empty', None), getattr(bars, 'shape', None))
+                else:
+                    logger.info("asset_intraday_api: no fallback alpaca client configured")
+            except Exception as ex:
+                logger.warning("asset_intraday_api: fallback alpaca-trade-api path failed: %s", ex, exc_info=True)
+                bars = None
+
+        # If no data (weekend/holiday/symbol), try up to 5 previous days regardless of client
+        back_tries = 0
+        while (bars is None or getattr(bars, 'empty', True)) and back_tries < 5:
+            back_tries += 1
+            alt_start = day_start - timedelta(days=back_tries)
+            alt_end = alt_start + timedelta(days=1)
+            logger.info("asset_intraday_api: no data with %s, retrying previous day #%s: %s", used_client, back_tries, alt_start.date())
+            # Re-run preferred first
+            try:
+                from alpaca.data.historical import StockHistoricalDataClient
+                from alpaca.data.requests import StockBarsRequest
+                from alpaca.data.timeframe import TimeFrame as APTimeFrame
+                from alpaca.data.enums import DataFeed
+                api_key = os.getenv('ALPACA_API_KEY')
+                api_secret = os.getenv('ALPACA_SECRET_KEY')
+                if api_key and api_secret:
+                    feed_name = os.getenv('ALPACA_DATA_FEED', 'IEX').upper()
+                    data_feed = DataFeed.IEX if feed_name != 'SIP' else DataFeed.SIP
+                    shc = StockHistoricalDataClient(api_key, api_secret)
+                    req = StockBarsRequest(symbol_or_symbols=[symbol], timeframe=APTimeFrame.Minute, start=alt_start, end=alt_end, feed=data_feed)
+                    resp = shc.get_stock_bars(req)
+                    bars = resp.df if hasattr(resp, 'df') else None
+                    used_client = f"alpaca-py({feed_name})"
+            except Exception:
+                pass
+            if bars is None or getattr(bars, 'empty', True):
+                try:
+                    from trader.services.alpaca import get_alpaca_client
+                    from alpaca_trade_api.rest import TimeFrame as OldTimeFrame
+                    client = get_alpaca_client()
+                    if client:
+                        def fetch_alt(s, e):
+                            try:
+                                return client.get_bars(symbol, OldTimeFrame.Minute, s, e, adjustment='raw').df
+                            except Exception:
+                                return client.get_bars(symbol, '1Min', s, e).df
+                        bars = fetch_alt(alt_start, alt_end)
+                        used_client = 'alpaca-trade-api'
+                except Exception:
+                    pass
+        # If no data (weekend/holiday/symbol issue), try up to 5 previous days
+        back_tries = 0
+        while (bars is None or getattr(bars, 'empty', True)) and back_tries < 5:
+            back_tries += 1
+            alt_start = day_start - timedelta(days=back_tries)
+            alt_end = alt_start + timedelta(days=1)
+            logger.info("asset_intraday_api: no data, retrying previous day #%s: %s", back_tries, alt_start.date())
+            bars = fetch_bars(alt_start, alt_end)
+
+        if bars is None or getattr(bars, 'empty', True):
+            logger.info("asset_intraday_api: no bars found for symbol=%s within %s days back from %s", symbol, back_tries, date_str)
             return JsonResponse({ 'labels': [], 'prices': [] })
+
+        logger.info("asset_intraday_api: bars loaded via %s rows=%s columns=%s", used_client, getattr(bars, 'shape', ['?', '?'])[0], getattr(bars, 'shape', ['?', '?'])[1] if hasattr(bars, 'shape') else '?')
         labels = []
         prices = []
         # bars may be multi-index (symbol, timestamp) or timestamp index
@@ -151,9 +244,12 @@ def asset_intraday_api(request):
                     labels.append(getattr(ts, 'isoformat', lambda: str(ts))())
                     prices.append(float(row.get('close') or 0.0))
         except Exception:
+            logger.warning("asset_intraday_api: error parsing bars DataFrame", exc_info=True)
             labels, prices = [], []
+        logger.info("asset_intraday_api: returning %s points for symbol=%s", len(labels), symbol)
         return JsonResponse({ 'labels': labels, 'prices': prices })
-    except Exception:
+    except Exception as ex:
+        logger.error("asset_intraday_api: unexpected error: %s", ex, exc_info=True)
         return JsonResponse({ 'labels': [], 'prices': [] })
 
 
