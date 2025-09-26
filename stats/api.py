@@ -115,27 +115,44 @@ def asset_intraday_api(request):
         return JsonResponse({ 'labels': [], 'prices': [] })
     try:
         from trader.services.alpaca import get_alpaca_client
+        from alpaca_trade_api.rest import TimeFrame
         client = get_alpaca_client()
         if not client:
             return JsonResponse({ 'labels': [], 'prices': [] })
         # Build start/end for the given date in UTC
         day_start = datetime.fromisoformat(date_str + 'T00:00:00+00:00')
         day_end = day_start + timedelta(days=1)
-        # Fetch 1-minute bars; fall back to empty on failure
+        # Fetch 1-minute bars; prefer v2 TimeFrame API
         try:
-            bars = client.get_bars(symbol, '1Min', day_start, day_end).df
-            labels = []
-            prices = []
-            try:
-                # Alpaca pandas DataFrame expected: index as timestamps, 'close' column
-                for ts, row in bars.iterrows():
-                    labels.append(ts.isoformat())
-                    prices.append(float(row.get('close') or 0.0))
-            except Exception:
-                labels, prices = [], []
-            return JsonResponse({ 'labels': labels, 'prices': prices })
+            bars = client.get_bars(symbol, TimeFrame.Minute, day_start, day_end, adjustment='raw').df
         except Exception:
+            # Fallback to legacy string timeframe
+            try:
+                bars = client.get_bars(symbol, '1Min', day_start, day_end).df
+            except Exception:
+                bars = None
+        if bars is None or getattr(bars, 'empty', True):
             return JsonResponse({ 'labels': [], 'prices': [] })
+        labels = []
+        prices = []
+        # bars may be multi-index (symbol, timestamp) or timestamp index
+        try:
+            if isinstance(bars.index, tuple) or (hasattr(bars.index, 'names') and bars.index.names and len(bars.index.names) > 1):
+                # Reset index to access timestamp column
+                df = bars.reset_index()
+                # Expect columns: 'timestamp' and 'close'
+                for _, row in df.iterrows():
+                    ts = row.get('timestamp')
+                    if ts is not None:
+                        labels.append(getattr(ts, 'isoformat', lambda: str(ts))())
+                        prices.append(float(row.get('close') or 0.0))
+            else:
+                for ts, row in bars.iterrows():
+                    labels.append(getattr(ts, 'isoformat', lambda: str(ts))())
+                    prices.append(float(row.get('close') or 0.0))
+        except Exception:
+            labels, prices = [], []
+        return JsonResponse({ 'labels': labels, 'prices': prices })
     except Exception:
         return JsonResponse({ 'labels': [], 'prices': [] })
 
