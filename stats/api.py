@@ -2,6 +2,7 @@ from datetime import datetime
 from collections import defaultdict
 from django.utils import timezone
 from django.db.models import Sum, Count, Q
+from django.db import models
 from django.db.models import ExpressionWrapper, DurationField
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET
@@ -17,9 +18,17 @@ def trades_log_api(request):
 
     Query params: start, end, symbol (optional), page, page_size.
     """
-    qs = _filtered_trades(request)
-    # Only trades that have at least been opened
-    qs = qs.filter(opened_at__isnull=False)
+    # Build query using opened_at/closed_at rather than created_at for date filtering
+    qs = Trade.objects.filter(opened_at__isnull=False)
+    start = _parse_dt(request.GET.get('start'))
+    end = _parse_dt(request.GET.get('end'))
+    symbol = request.GET.get('symbol')
+    if symbol:
+        qs = qs.filter(symbol__iexact=symbol)
+    if start:
+        qs = qs.filter(Q(opened_at__gte=start) | Q(closed_at__gte=start))
+    if end:
+        qs = qs.filter(Q(opened_at__lte=end) | Q(closed_at__lte=end))
     # Annotations to support sorting on computed fields
     qs = qs.annotate(
         pnl_adj=ExpressionWrapper(F('realized_pnl') - F('commission'), output_field=models.FloatField()),
@@ -57,10 +66,12 @@ def trades_log_api(request):
     page = max(1, page)
     page_size = max(1, min(page_size, 500))
     total = qs.count()
+    # Apply related loading before slicing for efficiency
+    qs = qs.select_related('analysis__post__source')
     start_idx = (page - 1) * page_size
     end_idx = start_idx + page_size
     rows = []
-    for t in qs[start_idx:end_idx].select_related('analysis__post__source'):
+    for t in qs[start_idx:end_idx]:
         opened = t.opened_at.isoformat() if t.opened_at else None
         closed = t.closed_at.isoformat() if t.closed_at else None
         duration = t.duration_minutes

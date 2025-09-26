@@ -64,9 +64,14 @@
   }
 
   async function load(){
-    const res = await fetch(`/stats/api/trades-log?${buildQuery()}`);
-    const data = await res.json();
-    render(data.items || [], data.total || 0);
+    try {
+      const res = await fetch(`/stats/api/trades-log?${buildQuery()}`);
+      if (!res.ok) throw new Error('Failed to load');
+      const data = await res.json();
+      render(Array.isArray(data.items) ? data.items : [], Number(data.total) || 0);
+    } catch (e) {
+      render([], 0);
+    }
   }
 
   function attachSorting(){
