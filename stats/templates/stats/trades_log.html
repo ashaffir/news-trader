@@ -1,0 +1,99 @@
+{% extends 'core/base.html' %}
+{% load static %}
+
+{% block title %}Trades Log{% endblock %}
+
+{% block extra_head %}
+<style>
+  .filter-bar { background: #fff; border-radius: 8px; padding: 12px; margin-bottom: 16px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+  .table-card { background: #fff; border-radius: 8px; padding: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+  .nowrap { white-space: nowrap; }
+  .w-110 { width: 110px; }
+  .w-80 { width: 80px; }
+  .w-120 { width: 120px; }
+  .w-140 { width: 140px; }
+  .w-200 { width: 200px; }
+  .sticky-th th { position: sticky; top: 0; background: #f8f9fa; z-index: 1; }
+  .table-responsive { max-height: 70vh; overflow: auto; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-2">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h2 class="mb-0">Trades Log</h2>
+      <div class="text-muted small">Closed and open trades in the selected range.</div>
+    </div>
+  </div>
+
+  <div class="filter-bar">
+    <div class="row g-2 align-items-end">
+      <div class="col-md-3">
+        <label class="form-label">Start</label>
+        <input id="filter-start" type="datetime-local" class="form-control">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">End</label>
+        <input id="filter-end" type="datetime-local" class="form-control">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Symbol</label>
+        <input id="filter-symbol" type="text" class="form-control" placeholder="Leave blank for all symbols" autocomplete="off">
+      </div>
+      <div class="col-md-3">
+        <button id="apply-filters" class="btn btn-primary w-100"><i class="fas fa-filter me-1"></i>Apply</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="table-card">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <div class="fw-semibold">Trades</div>
+      <div class="text-muted small"><span id="total-count">0</span> results</div>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle sticky-th">
+        <thead>
+          <tr>
+            <th class="w-80">Symbol</th>
+            <th class="w-110">Direction</th>
+            <th class="w-200">Open</th>
+            <th class="w-200">Close</th>
+            <th class="w-120">Duration</th>
+            <th class="w-120">PnL (adj.)</th>
+            <th class="w-140">Source</th>
+            <th class="w-120">Confidence</th>
+            <th class="w-140">Close Reason</th>
+            <th class="w-120">View Asset</th>
+          </tr>
+        </thead>
+        <tbody id="trades-body">
+        </tbody>
+      </table>
+    </div>
+    <div class="d-flex justify-content-between align-items-center mt-2">
+      <div class="small text-muted">Page <span id="page-num">1</span></div>
+      <div class="btn-group">
+        <button id="prev-page" class="btn btn-outline-secondary btn-sm">Prev</button>
+        <button id="next-page" class="btn btn-outline-secondary btn-sm">Next</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="{% static 'js/trades_log.js' %}"></script>
+<script>
+  (function(){
+    const start = new Date("{{ default_start }}");
+    const end = new Date("{{ default_end }}");
+    function toLocal(dt){ const z=dt.getTimezoneOffset(); const t=new Date(dt.getTime()-z*60000); return t.toISOString().slice(0,16); }
+    const s = document.getElementById('filter-start');
+    const e = document.getElementById('filter-end');
+    if (s && e) { s.value = toLocal(start); e.value = toLocal(end); }
+  })();
+</script>
+{% endblock %}
+
+

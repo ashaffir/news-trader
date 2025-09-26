@@ -1,0 +1,44 @@
+{% extends 'core/base.html' %}
+{% load static %}
+
+{% block title %}{{ symbol }} on {{ date }}{% endblock %}
+
+{% block extra_head %}
+<style>
+  .chart-card { background: #fff; border-radius: 8px; padding: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-2">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h2 class="mb-0">{{ symbol }} - {{ date }}</h2>
+      <div class="text-muted small">Intraday price chart</div>
+    </div>
+  </div>
+
+  <div class="chart-card">
+    <canvas id="chart-intraday" height="140"></canvas>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script>
+(function(){
+  async function load(){
+    const res = await fetch(`/stats/api/asset-intraday?symbol={{ symbol }}&date={{ date }}`);
+    const data = await res.json();
+    const ctx = document.getElementById('chart-intraday').getContext('2d');
+    new Chart(ctx, {
+      type: 'line',
+      data: { labels: data.labels, datasets: [ { label: '{{ symbol }}', data: data.prices, borderColor: '#0d6efd', pointRadius: 0 } ] },
+      options: { responsive: true, scales: { y: { title: { text: 'Price', display: true } } } }
+    });
+  }
+  document.addEventListener('DOMContentLoaded', load);
+})();
+</script>
+{% endblock %}
+
+

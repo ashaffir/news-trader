@@ -39,3 +39,31 @@ def analysis_page(request):
         "bot_enabled": bot_enabled,
     }
     return render(request, "stats/analysis.html", context)
+
+
+@login_required
+def trades_log_page(request):
+    """Render Trades Log page; data loaded via JS."""
+    end = timezone.now()
+    start = end - timedelta(days=30)
+    trading_config = TradingConfig.objects.filter(is_active=True).first()
+    bot_enabled = trading_config.bot_enabled if trading_config else False
+    context = {
+        "default_start": start.isoformat(),
+        "default_end": end.isoformat(),
+        "bot_enabled": bot_enabled,
+    }
+    return render(request, "stats/trades_log.html", context)
+
+
+@login_required
+def asset_view_page(request, symbol: str, date: str):
+    """Render Asset View page for a given symbol and date (YYYY-MM-DD)."""
+    trading_config = TradingConfig.objects.filter(is_active=True).first()
+    bot_enabled = trading_config.bot_enabled if trading_config else False
+    context = {
+        "symbol": symbol.upper(),
+        "date": date,
+        "bot_enabled": bot_enabled,
+    }
+    return render(request, "stats/asset_view.html", context)

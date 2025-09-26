@@ -9,6 +9,101 @@ from django.contrib.auth.decorators import login_required
 from core.models import Trade
 from django.db.models import F
 from datetime import timedelta
+@login_required
+@require_GET
+def trades_log_api(request):
+    """Return trades list for date range with essential fields.
+
+    Query params: start, end, symbol (optional), page, page_size.
+    """
+    qs = _filtered_trades(request)
+    # Only trades that have at least been opened
+    qs = qs.filter(opened_at__isnull=False)
+    # Sorting newest first by opened_at
+    qs = qs.order_by('-opened_at')
+
+    # Pagination
+    try:
+        page = int(request.GET.get('page', '1') or '1')
+    except Exception:
+        page = 1
+    try:
+        page_size = int(request.GET.get('page_size', '50') or '50')
+    except Exception:
+        page_size = 50
+    page = max(1, page)
+    page_size = max(1, min(page_size, 500))
+    total = qs.count()
+    start_idx = (page - 1) * page_size
+    end_idx = start_idx + page_size
+    rows = []
+    for t in qs[start_idx:end_idx].select_related('analysis__post__source'):
+        opened = t.opened_at.isoformat() if t.opened_at else None
+        closed = t.closed_at.isoformat() if t.closed_at else None
+        duration = t.duration_minutes
+        pnl = _commission_adjusted_realized_pnl(t) if t.status == 'closed' and t.realized_pnl is not None else None
+        source_url = None
+        try:
+            source_url = t.analysis.post.url
+        except Exception:
+            source_url = None
+        confidence = None
+        try:
+            confidence = float(t.analysis.confidence or 0.0)
+        except Exception:
+            confidence = None
+        rows.append({
+            'id': t.id,
+            'symbol': (t.symbol or '').upper(),
+            'direction': (t.direction or '').lower(),
+            'opened_at': opened,
+            'closed_at': closed,
+            'duration_minutes': duration,
+            'pnl_adjusted': pnl,
+            'source_url': source_url,
+            'confidence': confidence,
+            'close_reason': t.close_reason or None,
+        })
+    return JsonResponse({ 'total': total, 'page': page, 'page_size': page_size, 'items': rows })
+
+
+@login_required
+@require_GET
+def asset_intraday_api(request):
+    """Return intraday minute bars for a symbol and date (YYYY-MM-DD).
+
+    If Alpaca credentials are unavailable, returns empty series.
+    Query params: symbol, date (YYYY-MM-DD)
+    """
+    symbol = (request.GET.get('symbol') or '').upper()
+    date_str = request.GET.get('date') or ''
+    if not symbol or not date_str:
+        return JsonResponse({ 'labels': [], 'prices': [] })
+    try:
+        from trader.services.alpaca import get_alpaca_client
+        client = get_alpaca_client()
+        if not client:
+            return JsonResponse({ 'labels': [], 'prices': [] })
+        # Build start/end for the given date in UTC
+        day_start = datetime.fromisoformat(date_str + 'T00:00:00+00:00')
+        day_end = day_start + timedelta(days=1)
+        # Fetch 1-minute bars; fall back to empty on failure
+        try:
+            bars = client.get_bars(symbol, '1Min', day_start, day_end).df
+            labels = []
+            prices = []
+            try:
+                # Alpaca pandas DataFrame expected: index as timestamps, 'close' column
+                for ts, row in bars.iterrows():
+                    labels.append(ts.isoformat())
+                    prices.append(float(row.get('close') or 0.0))
+            except Exception:
+                labels, prices = [], []
+            return JsonResponse({ 'labels': labels, 'prices': prices })
+        except Exception:
+            return JsonResponse({ 'labels': [], 'prices': [] })
+    except Exception:
+        return JsonResponse({ 'labels': [], 'prices': [] })
 
 
 def _parse_dt(value: str | None):

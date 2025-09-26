@@ -5,6 +5,8 @@ from . import api
 urlpatterns = [
     path('', views.stats_page, name='stats_page'),
     path('analysis/', views.analysis_page, name='analysis_page'),
+    path('trades-log/', views.trades_log_page, name='trades_log_page'),
+    path('asset/<str:symbol>/<str:date>/', views.asset_view_page, name='asset_view_page'),
     path('api/summary', api.summary_api, name='stats_summary'),
     path('api/equity', api.equity_api, name='stats_equity'),
     path('api/pnl-by-day', api.pnl_by_day_api, name='stats_pnl_by_day'),
@@ -26,6 +28,9 @@ urlpatterns = [
     path('api/analysis/symbols', api.symbols_api, name='analysis_symbols'),
     path('api/analysis/confidence-pnl-scatter', api.confidence_pnl_scatter_api, name='analysis_confidence_pnl_scatter'),
     path('api/analysis/duration-pnl-scatter', api.duration_pnl_scatter_api, name='analysis_duration_pnl_scatter'),
+    # Trades log APIs
+    path('api/trades-log', api.trades_log_api, name='trades_log_api'),
+    path('api/asset-intraday', api.asset_intraday_api, name='asset_intraday_api'),
 ]
 
 
