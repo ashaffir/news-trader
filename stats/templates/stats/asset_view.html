@@ -6,7 +6,7 @@
 {% block extra_head %}
 <style>
   .chart-card { background: #fff; border-radius: 8px; padding: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); position: relative; }
-  #chart-container { height: 420px; }
+  #chart-container { height: 420px; width: 100%; }
   .floating-tooltip {
     position: absolute;
     display: none;
@@ -54,11 +54,20 @@
 <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
 <script>
 (function(){
+  function normalizeIso(s){
+    if (!s) return '';
+    let x = String(s).trim();
+    // Replace space with 'T' and normalize +00:00 to Z
+    x = x.replace(' ', 'T');
+    if (x.endsWith('+00:00')) x = x.slice(0, -6) + 'Z';
+    return x;
+  }
   function toSeries(labels, prices){
     const out = [];
     for (let i=0; i<labels.length && i<prices.length; i++){
-      const ts = Date.parse(labels[i]);
-      if (!isNaN(ts)) out.push({ time: Math.floor(ts/1000), value: Number(prices[i]) });
+      const iso = normalizeIso(labels[i]);
+      const tms = Date.parse(iso);
+      if (!isNaN(tms)) out.push({ time: Math.floor(tms/1000), value: Number(prices[i]) });
     }
     return out;
   }
@@ -84,6 +93,7 @@
     const series = chart.addLineSeries({ color: '#0d6efd', lineWidth: 2, crosshairMarkerVisible: true });
     const seriesData = toSeries(data.labels||[], data.prices||[]);
     series.setData(seriesData);
+    chart.timeScale().fitContent();
 
     const tooltip = document.getElementById('chart-tooltip');
     const legendRight = document.getElementById('legend-right');
