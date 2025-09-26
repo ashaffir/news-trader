@@ -179,23 +179,31 @@
   });
 
   async function loadScatter(){
+    const hasConf = document.getElementById('chart-scatter-conf');
+    const hasDur = document.getElementById('chart-scatter-dur');
+    if (!hasConf && !hasDur) return;
     const qp = buildParams();
-    const cdata = await (await fetch('/stats/api/analysis/confidence-pnl-scatter?' + qp)).json();
-    ensureChart('chart-scatter-conf', {
-      type: 'scatter',
-      data: { datasets: [{ label: 'PnL by Confidence', data: cdata.points, parsing: { xAxisKey: 'x', yAxisKey: 'y' }, backgroundColor: 'rgba(13,110,253,0.6)' }] },
-      options: { scales: { x: { min: 0.5, max: 1.0 } } }
-    });
-
-    const ddata = await (await fetch('/stats/api/analysis/duration-pnl-scatter?' + qp)).json();
-    ensureChart('chart-scatter-dur', {
-      type: 'scatter',
-      data: { datasets: [{ label: 'PnL by Duration (min)', data: ddata.points, parsing: { xAxisKey: 'x', yAxisKey: 'y' }, backgroundColor: 'rgba(40,167,69,0.6)' }] },
-      options: { scales: { x: { title: { display: true, text: 'Minutes' } } } }
-    });
+    if (hasConf) {
+      const cdata = await (await fetch('/stats/api/analysis/confidence-pnl-scatter?' + qp)).json();
+      ensureChart('chart-scatter-conf', {
+        type: 'scatter',
+        data: { datasets: [{ label: 'PnL by Confidence', data: cdata.points, parsing: { xAxisKey: 'x', yAxisKey: 'y' }, backgroundColor: 'rgba(13,110,253,0.6)' }] },
+        options: { scales: { x: { min: 0.5, max: 1.0 } } }
+      });
+    }
+    if (hasDur) {
+      const ddata = await (await fetch('/stats/api/analysis/duration-pnl-scatter?' + qp)).json();
+      ensureChart('chart-scatter-dur', {
+        type: 'scatter',
+        data: { datasets: [{ label: 'PnL by Duration (min)', data: ddata.points, parsing: { xAxisKey: 'x', yAxisKey: 'y' }, backgroundColor: 'rgba(40,167,69,0.6)' }] },
+        options: { scales: { x: { title: { display: true, text: 'Minutes' } } } }
+      });
+    }
   }
 
   async function loadMonthlyPnl(){
+    const el = document.getElementById('chart-monthly-pnl');
+    if (!el) return;
     const qp = buildParams();
     const url = '/stats/api/pnl-by-month?' + qp + '&projection_months=3';
     const d = await (await fetch(url)).json();

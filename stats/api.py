@@ -137,11 +137,14 @@ def equity_api(request):
 def pnl_by_day_api(request):
     qs = _filtered_trades(request).filter(status='closed', realized_pnl__isnull=False)
     by_day = defaultdict(float)
+    by_day_count = defaultdict(int)
     for t in qs:
         day = (t.closed_at or t.created_at).date().isoformat()
         by_day[day] += _commission_adjusted_realized_pnl(t)
+        by_day_count[day] += 1
     labels = sorted(by_day.keys())
     pnl = [by_day[d] for d in labels]
+    counts = [by_day_count[d] for d in labels]
     # 7D MA
     ma7 = []
     for i in range(len(pnl)):
@@ -173,6 +176,7 @@ def pnl_by_day_api(request):
         'projection_labels': proj_labels,
         'projection': proj_values,
         'avg_daily_pnl': round(avg_daily, 4),
+        'counts': counts,
     })
 
 
@@ -378,11 +382,16 @@ def model_performance_api(request):
     for t in trades:
         model = ''
         try:
-            model = t.analysis.trading_config_used.llm_model
+            # Prefer explicit model recorded on analysis, fallback to config
+            model = (t.analysis.used_llm_model or '').strip()
+            if not model:
+                model = (t.analysis.trading_config_used.llm_model if t.analysis.trading_config_used else '') or ''
+            model = (model or '').strip()
         except Exception:
             model = ''
         setattr(t, 'llm_model', model)
-    items = _aggregate_dimension(trades, 'llm_model', min_trades=3)
+    # Include any model that appears (>=1 trade) so all used models are visible
+    items = _aggregate_dimension(trades, 'llm_model', min_trades=1)
     return JsonResponse({ 'items': items })
 
 

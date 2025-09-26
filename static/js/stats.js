@@ -48,9 +48,10 @@
       type: 'bar',
       data: { labels: data.labels, datasets: [
         { label: 'PnL', data: data.pnl, backgroundColor: data.pnl.map(v => v >= 0 ? 'rgba(25,135,84,0.6)' : 'rgba(220,53,69,0.6)') },
-        { label: '7D MA', type: 'line', data: data.ma7, borderColor: '#6c757d' }
+        { label: '7D MA', type: 'line', data: data.ma7, borderColor: '#6c757d' },
+        { label: 'Trades', type: 'line', data: data.counts || [], borderColor: '#0d6efd', yAxisID: 'y1' }
       ]},
-      options: { responsive: true, interaction: { mode: 'index', intersect: false }, scales: { y: { title: { text: 'USD', display: true } } } }
+      options: { responsive: true, interaction: { mode: 'index', intersect: false }, scales: { y: { title: { text: 'USD', display: true } }, y1: { position: 'right', title: { text: 'Trades', display: true }, grid: { drawOnChartArea: false } } } }
     });
   }
 
