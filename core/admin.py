@@ -97,6 +97,27 @@ class TradingConfigAdmin(admin.ModelAdmin):
                 "classes": ("collapse",),
             },
         ),
+        (
+            "LLM Calculation Parameters",
+            {
+                "fields": (
+                    "confidence_weight_impact_size",
+                    "confidence_weight_time_proximity",
+                    "confidence_weight_clarity",
+                    "confidence_weight_volatility_sensitivity",
+                    "confidence_weight_duration",
+                    "hold_time_time_to_peak_min_hours",
+                    "hold_time_time_to_peak_max_hours",
+                    "hold_time_time_proximity_exponent",
+                    "hold_time_tail_multiplier",
+                    "hold_time_tail_duration_exponent",
+                    "hold_time_tail_impact_base",
+                    "hold_time_tail_impact_scale",
+                    "hold_time_min_hours",
+                ),
+                "classes": ("collapse",),
+            },
+        ),
     )
 
 

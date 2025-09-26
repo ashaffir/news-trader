@@ -219,8 +219,14 @@ class TaskTests(TestCase):
             {
                 "symbol": "AAPL",
                 "direction": "hold",  # Use 'hold' to avoid triggering trade execution
-                "confidence": 0.85,
                 "reason": "Strong growth indicators",
+                "scores": {
+                    "impact_size": 0.8,
+                    "time_proximity": 0.6,
+                    "clarity": 0.7,
+                    "volatility_sensitivity": 0.5,
+                    "duration": 0.4,
+                },
             }
         )
 
@@ -235,7 +241,11 @@ class TaskTests(TestCase):
         analysis = Analysis.objects.get(post=self.post)
         self.assertEqual(analysis.symbol, "AAPL")
         self.assertEqual(analysis.direction, "hold")
-        self.assertEqual(analysis.confidence, 0.85)
+        # Deterministic confidence: 0.35*0.8 + 0.25*0.6 + 0.15*0.7 + 0.15*0.5 + 0.10*0.4 = 0.645
+        self.assertAlmostEqual(analysis.confidence, 0.645, places=6)
+        # Deterministic max holding time (~2.48h for provided scores and defaults)
+        self.assertIsNotNone(analysis.max_holding_time_hours)
+        self.assertAlmostEqual(analysis.max_holding_time_hours, 2.48, delta=0.2)
         # New: ensure used_llm_model is stored from active config default
         self.assertEqual(analysis.used_llm_model, TradingConfig.objects.filter(is_active=True).first().llm_model)
 
@@ -645,8 +655,14 @@ class IntegrationTests(TestCase):
             {
                 "symbol": "TSLA",
                 "direction": "buy",
-                "confidence": 0.9,  # Above threshold
                 "reason": "Very positive news about Tesla",
+                "scores": {
+                    "impact_size": 1.0,
+                    "time_proximity": 1.0,
+                    "clarity": 0.9,
+                    "volatility_sensitivity": 0.8,
+                    "duration": 0.7,
+                },
             }
         )
 
@@ -680,7 +696,8 @@ class IntegrationTests(TestCase):
         analysis = Analysis.objects.get(post=post)
         self.assertEqual(analysis.symbol, "TSLA")
         self.assertEqual(analysis.direction, "buy")
-        self.assertEqual(analysis.confidence, 0.9)
+        # With default weights, confidence should be high (> 0.8)
+        self.assertGreater(analysis.confidence, 0.8)
 
         # Check that trade was created (should be triggered automatically due to high confidence)
         trade = Trade.objects.get(analysis=analysis)

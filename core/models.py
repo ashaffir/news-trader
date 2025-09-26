@@ -107,6 +107,78 @@ Direction can be 'buy', 'sell', or 'hold'. Confidence is a float between 0 and 1
         help_text="LLM prompt template for financial analysis",
     )
 
+    # LLM-derived metrics calculation controls (deterministic, tunable)
+    # Confidence weights
+    confidence_weight_impact_size = models.FloatField(
+        default=0.35,
+        validators=[MinValueValidator(0.0), MaxValueValidator(1.0)],
+        help_text="Weight for impact_size when computing final confidence (0-1)",
+    )
+    confidence_weight_time_proximity = models.FloatField(
+        default=0.25,
+        validators=[MinValueValidator(0.0), MaxValueValidator(1.0)],
+        help_text="Weight for time_proximity when computing final confidence (0-1)",
+    )
+    confidence_weight_clarity = models.FloatField(
+        default=0.15,
+        validators=[MinValueValidator(0.0), MaxValueValidator(1.0)],
+        help_text="Weight for clarity when computing final confidence (0-1)",
+    )
+    confidence_weight_volatility_sensitivity = models.FloatField(
+        default=0.15,
+        validators=[MinValueValidator(0.0), MaxValueValidator(1.0)],
+        help_text="Weight for volatility_sensitivity when computing final confidence (0-1)",
+    )
+    confidence_weight_duration = models.FloatField(
+        default=0.10,
+        validators=[MinValueValidator(0.0), MaxValueValidator(1.0)],
+        help_text="Weight for duration when computing final confidence (0-1)",
+    )
+
+    # Max holding time parameters
+    hold_time_time_to_peak_min_hours = models.FloatField(
+        default=0.25,
+        validators=[MinValueValidator(0.0)],
+        help_text="Minimum time to peak impact in hours",
+    )
+    hold_time_time_to_peak_max_hours = models.FloatField(
+        default=8.0,
+        validators=[MinValueValidator(0.0)],
+        help_text="Maximum time to peak impact in hours",
+    )
+    hold_time_time_proximity_exponent = models.FloatField(
+        default=1.7,
+        validators=[MinValueValidator(0.0)],
+        help_text="Exponent applied to (1 - time_proximity) when computing time_to_peak",
+    )
+    hold_time_tail_multiplier = models.FloatField(
+        default=2.0,
+        validators=[MinValueValidator(0.0)],
+        help_text="Multiplier applied to tail duration component",
+    )
+    hold_time_tail_duration_exponent = models.FloatField(
+        default=1.2,
+        validators=[MinValueValidator(0.0)],
+        help_text="Exponent applied to duration when computing tail",
+    )
+    hold_time_tail_impact_base = models.FloatField(
+        default=0.5,
+        validators=[MinValueValidator(0.0)],
+        help_text="Base factor for impact contribution in tail",
+    )
+    hold_time_tail_impact_scale = models.FloatField(
+        default=0.5,
+        validators=[MinValueValidator(0.0)],
+        help_text="Scale factor for impact contribution in tail",
+    )
+
+    # Minimum enforced holding time (hours) for computed per-analysis holding time
+    hold_time_min_hours = models.FloatField(
+        default=0.5,
+        validators=[MinValueValidator(0.0)],
+        help_text="Minimum holding time in hours to enforce on computed per-analysis value",
+    )
+
     # Trading hours
     trading_enabled = models.BooleanField(default=True)
     market_hours_only = models.BooleanField(

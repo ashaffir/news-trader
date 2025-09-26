@@ -26,16 +26,13 @@ PROMPT_TMPL = """You are a senior financial analyst and real-time trading decisi
 
 Analyze the following text for its potential short-term financial market impact — specifically within the next 24 hours.
 
-Score the event across five dimensions to determine an overall trading confidence level:
+Score the event across five dimensions:
 
 - **impact_size** (0–1): How strong the financial effect might be (0 = minimal, 1 = market-moving)
 - **time_proximity** (0–1): How soon the event is expected to begin affecting prices (1 = immediate, 0 = distant future)
 - **clarity** (0–1): How clear and unambiguous the financial implications are (1 = very clear, 0 = speculative or vague)
 - **volatility_sensitivity** (0–1): Whether the affected industry is known to respond quickly to events (1 = high sensitivity, 0 = slow/stable)
 - **duration** (0–1): How long the effect will last within the 24h window (1 = hours-long and tradable, 0 = fleeting or negligible)
-
-Then compute:
-final_confidence = 0.35 * impact_size + 0.25 * time_proximity + 0.15 * clarity + 0.15 * volatility_sensitivity + 0.10 * duration
 
 Respond only with a valid JSON object in the following format:
 
@@ -44,7 +41,6 @@ Respond only with a valid JSON object in the following format:
   "company": "COMPANY_NAME",         // Use "N/A" if no specific company mentioned
   "symbol": "STOCK_SYMBOL",          // If no company is mentioned, infer the most likely affected symbol from known large-cap leaders in the given industry.
   "direction": "buy",                // One of: 'buy', 'sell', or 'hold'
-  "confidence": CONFIDENCE,                // Final confidence score (0.0 – 1.0)
   "reason": "Short explanation of the event and impact logic",
   "scores": {
     "impact_size": IMPACT,              // impact size score 0.0 - 1.0
