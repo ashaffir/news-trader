@@ -5,30 +5,7 @@
 
 {% block extra_head %}
 <style>
-  .chart-card { background: #fff; border-radius: 8px; padding: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); position: relative; }
-  #chart-container { height: 420px; width: 100%; }
-  .floating-tooltip {
-    position: absolute;
-    display: none;
-    pointer-events: none;
-    background: rgba(33,37,41,0.9);
-    color: #fff;
-    padding: 6px 8px;
-    border-radius: 6px;
-    font-size: 12px;
-    z-index: 10;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-    transform: translate(-50%, -120%);
-    white-space: nowrap;
-  }
-  .floating-tooltip .muted { color: #ced4da; }
-  .floating-tooltip .value { font-weight: 600; }
-  .floating-tooltip .time { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
-  @media (max-width: 576px) { #chart-container { height: 300px; } }
-  @media (min-width: 1200px) { #chart-container { height: 520px; } }
-  .legend { font-size: 12px; color: #6c757d; }
-  .legend .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; background: #0d6efd; }
-}
+  .chart-card { background: #fff; border-radius: 8px; padding: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
 </style>
 {% endblock %}
 
@@ -42,84 +19,23 @@
   </div>
 
   <div class="chart-card">
-    <div class="d-flex justify-content-between align-items-center mb-2 legend">
-      <div><span class="dot"></span><span>{{ symbol }}</span></div>
-      <div id="legend-right" class="text-muted"></div>
-    </div>
-    <div id="chart-container"></div>
-    <div id="chart-tooltip" class="floating-tooltip"></div>
+    <canvas id="chart-intraday" height="140"></canvas>
   </div>
 </div>
 
-<script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script>
 (function(){
-  function normalizeIso(s){
-    if (!s) return '';
-    let x = String(s).trim();
-    // Replace space with 'T' and normalize +00:00 to Z
-    x = x.replace(' ', 'T');
-    if (x.endsWith('+00:00')) x = x.slice(0, -6) + 'Z';
-    return x;
-  }
-  function toSeries(labels, prices){
-    const out = [];
-    for (let i=0; i<labels.length && i<prices.length; i++){
-      const iso = normalizeIso(labels[i]);
-      const tms = Date.parse(iso);
-      if (!isNaN(tms)) out.push({ time: Math.floor(tms/1000), value: Number(prices[i]) });
-    }
-    return out;
-  }
-
-  function fmtTime(ts){
-    try { const d = new Date(ts*1000); return d.toLocaleString(); } catch { return String(ts); }
-  }
-
   async function load(){
     const res = await fetch(`/stats/api/asset-intraday?symbol={{ symbol }}&date={{ date }}`);
     const data = await res.json();
-    const container = document.getElementById('chart-container');
-    const chart = LightweightCharts.createChart(container, {
-      layout: { background: { type: 'solid', color: '#ffffff' }, textColor: '#495057' },
-      grid: { vertLines: { color: '#f1f3f5' }, horzLines: { color: '#f1f3f5' } },
-      rightPriceScale: { borderColor: '#dee2e6' },
-      timeScale: { borderColor: '#dee2e6', timeVisible: true, secondsVisible: false },
-      crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-      handleScroll: true,
-      handleScale: true,
-      localization: { priceFormatter: p => p.toFixed(4) }
+    const ctx = document.getElementById('chart-intraday').getContext('2d');
+    new Chart(ctx, {
+      type: 'line',
+      data: { labels: data.labels || [], datasets: [ { label: '{{ symbol }}', data: data.prices || [], borderColor: '#0d6efd', pointRadius: 0 } ] },
+      options: { responsive: true, plugins: { legend: { position: 'bottom' } }, scales: { y: { title: { text: 'Price', display: true } } } }
     });
-    const series = chart.addLineSeries({ color: '#0d6efd', lineWidth: 2, crosshairMarkerVisible: true });
-    const seriesData = toSeries(data.labels||[], data.prices||[]);
-    series.setData(seriesData);
-    chart.timeScale().fitContent();
-
-    const tooltip = document.getElementById('chart-tooltip');
-    const legendRight = document.getElementById('legend-right');
-
-    chart.subscribeCrosshairMove(param => {
-      if (!param || !param.time || !param.point) {
-        tooltip.style.display = 'none';
-        legendRight.textContent = '';
-        return;
-      }
-      const price = param.seriesPrices.get(series);
-      const x = Math.round(param.point.x);
-      const y = Math.round(param.point.y);
-      const timeStr = fmtTime(param.time);
-      tooltip.innerHTML = `<div class="time">${timeStr}</div><div class="value">$${Number(price||0).toFixed(4)}</div>`;
-      tooltip.style.display = 'block';
-      const parentRect = container.getBoundingClientRect();
-      tooltip.style.left = `${x}px`;
-      tooltip.style.top = `${y}px`;
-      legendRight.textContent = `${timeStr}  |  $${Number(price||0).toFixed(4)}`;
-    });
-
-    window.addEventListener('resize', () => { chart.applyOptions({ width: container.clientWidth }); });
-    chart.applyOptions({ width: container.clientWidth, height: container.clientHeight });
   }
-
   document.addEventListener('DOMContentLoaded', load);
 })();
 </script>

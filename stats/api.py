@@ -164,11 +164,12 @@ def asset_intraday_api(request):
                             return d.astimezone(dt_timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
                         except Exception:
                             return d.strftime('%Y-%m-%dT%H:%M:%SZ')
+                    feed = (os.getenv('ALPACA_DATA_FEED') or 'iex').lower()
                     def fetch_bars(s, e):
                         try:
-                            return client.get_bars(symbol, OldTimeFrame.Minute, to_rfc3339(s), to_rfc3339(e), adjustment='raw').df
+                            return client.get_bars(symbol, OldTimeFrame.Minute, to_rfc3339(s), to_rfc3339(e), adjustment='raw', feed=feed).df
                         except Exception:
-                            return client.get_bars(symbol, '1Min', to_rfc3339(s), to_rfc3339(e)).df
+                            return client.get_bars(symbol, '1Min', to_rfc3339(s), to_rfc3339(e), feed=feed).df
                     bars = fetch_bars(day_start, day_end)
                     used_client = 'alpaca-trade-api'
                     logger.info("asset_intraday_api: alpaca-trade-api returned df empty=%s shape=%s", getattr(bars, 'empty', None), getattr(bars, 'shape', None))
@@ -214,11 +215,12 @@ def asset_intraday_api(request):
                                 return d.astimezone(dt_timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
                             except Exception:
                                 return d.strftime('%Y-%m-%dT%H:%M:%SZ')
+                        feed = (os.getenv('ALPACA_DATA_FEED') or 'iex').lower()
                         def fetch_alt(s, e):
                             try:
-                                return client.get_bars(symbol, OldTimeFrame.Minute, to_rfc3339(s), to_rfc3339(e), adjustment='raw').df
+                                return client.get_bars(symbol, OldTimeFrame.Minute, to_rfc3339(s), to_rfc3339(e), adjustment='raw', feed=feed).df
                             except Exception:
-                                return client.get_bars(symbol, '1Min', to_rfc3339(s), to_rfc3339(e)).df
+                                return client.get_bars(symbol, '1Min', to_rfc3339(s), to_rfc3339(e), feed=feed).df
                         bars = fetch_alt(alt_start, alt_end)
                         used_client = 'alpaca-trade-api'
                 except Exception:
