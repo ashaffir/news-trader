@@ -80,5 +80,7 @@ def asset_view_page(request, symbol: str, date: str):
         "max_hold_hours": getattr(trade, 'max_holding_time_hours', None) or (getattr(getattr(trade, 'analysis', None), 'max_holding_time_hours', None) if trade else None),
         "opened_at": trade.opened_at.isoformat() if getattr(trade, 'opened_at', None) else None,
         "closed_at": trade.closed_at.isoformat() if getattr(trade, 'closed_at', None) else None,
+        "entry_price": float(getattr(trade, 'entry_price', 0.0)) if trade and getattr(trade, 'entry_price', None) is not None else None,
+        "exit_price": float(getattr(trade, 'exit_price', 0.0)) if trade and getattr(trade, 'exit_price', None) is not None else None,
     }
     return render(request, "stats/asset_view.html", context)

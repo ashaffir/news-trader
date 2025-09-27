@@ -60,13 +60,18 @@
     const closeTs = closeIso ? Date.parse(closeIso) : NaN;
 
     const ctx = document.getElementById('chart-intraday').getContext('2d');
+    const datasets = [ { label: '{{ symbol }}', data: points, parsing: false, borderColor: '#0d6efd', pointRadius: 0 } ];
+    const entryPrice = {{ entry_price|default:'null' }};
+    const exitPrice = {{ exit_price|default:'null' }};
+    if (!Number.isNaN(openTs) && entryPrice !== null) {
+      datasets.push({ label: 'Open', type: 'scatter', data: [ { x: openTs, y: entryPrice } ], parsing: false, pointBackgroundColor: '#198754', pointRadius: 4 });
+    }
+    if (!Number.isNaN(closeTs) && exitPrice !== null) {
+      datasets.push({ label: 'Close', type: 'scatter', data: [ { x: closeTs, y: exitPrice } ], parsing: false, pointBackgroundColor: '#dc3545', pointRadius: 4 });
+    }
     new Chart(ctx, {
       type: 'line',
-      data: { datasets: [
-        { label: '{{ symbol }}', data: points, parsing: false, borderColor: '#0d6efd', pointRadius: 0 },
-        {% if trade_id and opened_at %}{ label: 'Open', type: 'scatter', data: [{ x: openTs, y: points.length ? points[0].y : null }], parsing: false, pointBackgroundColor: '#198754', pointRadius: 4 },{% endif %}
-        {% if trade_id and closed_at %}{ label: 'Close', type: 'scatter', data: [{ x: closeTs, y: points.length ? points[points.length-1].y : null }], parsing: false, pointBackgroundColor: '#dc3545', pointRadius: 4 },{% endif %}
-      ] },
+      data: { datasets },
       options: {
         responsive: true,
         plugins: { legend: { position: 'bottom' } },
