@@ -18,6 +18,14 @@
     </div>
   </div>
 
+  {% if trade_id %}
+  <div class="row g-2 mb-2">
+    <div class="col-md-3"><div class="p-2 bg-light rounded"><div class="text-muted small">Confidence</div><div class="fw-semibold">{{ confidence|default:'-' }}</div></div></div>
+    <div class="col-md-3"><div class="p-2 bg-light rounded"><div class="text-muted small">Direction</div><div class="fw-semibold text-capitalize">{{ direction|default:'-' }}</div></div></div>
+    <div class="col-md-3"><div class="p-2 bg-light rounded"><div class="text-muted small">Max Hold (h)</div><div class="fw-semibold">{{ max_hold_hours|default:'-' }}</div></div></div>
+  </div>
+  {% endif %}
+
   <div class="chart-card">
     <canvas id="chart-intraday" height="140"></canvas>
   </div>
@@ -44,10 +52,21 @@
       const t = Date.parse(normalizeIso(labels[i]));
       if (!isNaN(t)) points.push({ x: t, y: Number(prices[i]) });
     }
+
+    // Optional markers for trade open/close
+    const openIso = normalizeIso("{{ opened_at|default:'' }}");
+    const closeIso = normalizeIso("{{ closed_at|default:'' }}");
+    const openTs = openIso ? Date.parse(openIso) : NaN;
+    const closeTs = closeIso ? Date.parse(closeIso) : NaN;
+
     const ctx = document.getElementById('chart-intraday').getContext('2d');
     new Chart(ctx, {
       type: 'line',
-      data: { datasets: [ { label: '{{ symbol }}', data: points, parsing: false, borderColor: '#0d6efd', pointRadius: 0 } ] },
+      data: { datasets: [
+        { label: '{{ symbol }}', data: points, parsing: false, borderColor: '#0d6efd', pointRadius: 0 },
+        {% if trade_id and opened_at %}{ label: 'Open', type: 'scatter', data: [{ x: openTs, y: points.length ? points[0].y : null }], parsing: false, pointBackgroundColor: '#198754', pointRadius: 4 },{% endif %}
+        {% if trade_id and closed_at %}{ label: 'Close', type: 'scatter', data: [{ x: closeTs, y: points.length ? points[points.length-1].y : null }], parsing: false, pointBackgroundColor: '#dc3545', pointRadius: 4 },{% endif %}
+      ] },
       options: {
         responsive: true,
         plugins: { legend: { position: 'bottom' } },

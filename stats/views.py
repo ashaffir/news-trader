@@ -61,9 +61,24 @@ def asset_view_page(request, symbol: str, date: str):
     """Render Asset View page for a given symbol and date (YYYY-MM-DD)."""
     trading_config = TradingConfig.objects.filter(is_active=True).first()
     bot_enabled = trading_config.bot_enabled if trading_config else False
+    # Optional trade details for annotations/metrics
+    trade = None
+    try:
+        from core.models import Trade
+        trade_id = request.GET.get('trade_id')
+        if trade_id:
+            trade = Trade.objects.select_related('analysis').filter(id=trade_id).first()
+    except Exception:
+        trade = None
     context = {
         "symbol": symbol.upper(),
         "date": date,
         "bot_enabled": bot_enabled,
+        "trade_id": getattr(trade, 'id', None),
+        "direction": getattr(trade, 'direction', None),
+        "confidence": getattr(getattr(trade, 'analysis', None), 'confidence', None) if trade else None,
+        "max_hold_hours": getattr(trade, 'max_holding_time_hours', None) or (getattr(getattr(trade, 'analysis', None), 'max_holding_time_hours', None) if trade else None),
+        "opened_at": trade.opened_at.isoformat() if getattr(trade, 'opened_at', None) else None,
+        "closed_at": trade.closed_at.isoformat() if getattr(trade, 'closed_at', None) else None,
     }
     return render(request, "stats/asset_view.html", context)

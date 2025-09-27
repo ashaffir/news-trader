@@ -43,7 +43,7 @@
       const tr = document.createElement('tr');
       const srcLink = r.source_url ? `<a href="${r.source_url}" target="_blank" rel="noreferrer noopener">Source</a>` : '-';
       const dateStr = r.opened_at ? r.opened_at.slice(0,10) : '';
-      const assetUrl = r.symbol && dateStr ? `/stats/asset/${encodeURIComponent(r.symbol)}/${encodeURIComponent(dateStr)}/` : '#';
+      const assetUrl = r.symbol && dateStr ? `/stats/asset/${encodeURIComponent(r.symbol)}/${encodeURIComponent(dateStr)}/?trade_id=${encodeURIComponent(r.id)}` : '#';
       tr.innerHTML = `
         <td class="nowrap">${r.symbol || '-'}</td>
         <td class="nowrap text-capitalize">${r.direction || '-'}</td>
