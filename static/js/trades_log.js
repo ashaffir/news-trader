@@ -53,6 +53,7 @@
         <td class="nowrap">${formatPnl(r.pnl_adjusted)}</td>
         <td class="nowrap">${srcLink}</td>
         <td class="nowrap">${formatConf(r.confidence)}</td>
+        <td class="nowrap">${r.max_hold_hours == null ? '-' : Number(r.max_hold_hours).toFixed(2)}</td>
         <td class="nowrap">${r.close_reason || '-'}</td>
         <td class="nowrap"><a class="btn btn-sm btn-outline-primary" href="${assetUrl}" target="_blank" rel="noreferrer noopener">View</a></td>
       `;

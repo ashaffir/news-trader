@@ -6,6 +6,7 @@ from django.utils import timezone
 from django.db.models import Sum, Count, Q
 from django.db import models
 from django.db.models import ExpressionWrapper, DurationField
+from django.db.models.functions import Coalesce
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET
 from django.contrib.auth.decorators import login_required
@@ -36,6 +37,7 @@ def trades_log_api(request):
     qs = qs.annotate(
         pnl_adj=ExpressionWrapper(F('realized_pnl') - F('commission'), output_field=models.FloatField()),
         dur=ExpressionWrapper(F('closed_at') - F('opened_at'), output_field=DurationField()),
+        max_hold=Coalesce(F('max_holding_time_hours'), F('analysis__max_holding_time_hours')),
     )
 
     # Sorting
@@ -50,6 +52,7 @@ def trades_log_api(request):
         'pnl': 'pnl_adj',
         'confidence': 'analysis__confidence',
         'close_reason': 'close_reason',
+        'max_hold': 'max_hold',
     }
     order_field = sort_map.get(sort_by, 'opened_at')
     if sort_dir == 'asc':
@@ -89,6 +92,10 @@ def trades_log_api(request):
             confidence = float(t.analysis.confidence or 0.0)
         except Exception:
             confidence = None
+        try:
+            max_hold_hours = float(t.max_holding_time_hours) if t.max_holding_time_hours is not None else float(getattr(t.analysis, 'max_holding_time_hours', None)) if getattr(t, 'analysis', None) else None
+        except Exception:
+            max_hold_hours = None
         rows.append({
             'id': t.id,
             'symbol': (t.symbol or '').upper(),
@@ -100,6 +107,7 @@ def trades_log_api(request):
             'source_url': source_url,
             'confidence': confidence,
             'close_reason': t.close_reason or None,
+            'max_hold_hours': max_hold_hours,
         })
     return JsonResponse({ 'total': total, 'page': page, 'page_size': page_size, 'items': rows })
 
