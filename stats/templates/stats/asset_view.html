@@ -24,16 +24,38 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3"></script>
 <script>
 (function(){
   async function load(){
     const res = await fetch(`/stats/api/asset-intraday?symbol={{ symbol }}&date={{ date }}`);
     const data = await res.json();
+    const normalizeIso = (s) => {
+      if (!s) return '';
+      let x = String(s).trim();
+      x = x.replace(' ', 'T');
+      if (x.endsWith('+00:00')) x = x.slice(0, -6) + 'Z';
+      return x;
+    };
+    const points = [];
+    const labels = Array.isArray(data.labels) ? data.labels : [];
+    const prices = Array.isArray(data.prices) ? data.prices : [];
+    for (let i = 0; i < labels.length && i < prices.length; i++) {
+      const t = Date.parse(normalizeIso(labels[i]));
+      if (!isNaN(t)) points.push({ x: t, y: Number(prices[i]) });
+    }
     const ctx = document.getElementById('chart-intraday').getContext('2d');
     new Chart(ctx, {
       type: 'line',
-      data: { labels: data.labels || [], datasets: [ { label: '{{ symbol }}', data: data.prices || [], borderColor: '#0d6efd', pointRadius: 0 } ] },
-      options: { responsive: true, plugins: { legend: { position: 'bottom' } }, scales: { y: { title: { text: 'Price', display: true } } } }
+      data: { datasets: [ { label: '{{ symbol }}', data: points, parsing: false, borderColor: '#0d6efd', pointRadius: 0 } ] },
+      options: {
+        responsive: true,
+        plugins: { legend: { position: 'bottom' } },
+        scales: {
+          x: { type: 'time', time: { unit: 'minute', tooltipFormat: 'MMM d HH:mm' }, ticks: { autoSkip: true, maxTicksLimit: 12 } },
+          y: { title: { text: 'Price', display: true } }
+        }
+      }
     });
   }
   document.addEventListener('DOMContentLoaded', load);
