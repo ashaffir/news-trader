@@ -33,6 +33,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3"></script>
 <script>
 (function(){
   async function load(){
@@ -61,20 +62,32 @@
 
     const ctx = document.getElementById('chart-intraday').getContext('2d');
     const datasets = [ { label: '{{ symbol }}', data: points, parsing: false, borderColor: '#0d6efd', pointRadius: 0 } ];
-    const entryPrice = {{ entry_price|default:'null' }};
-    const exitPrice = {{ exit_price|default:'null' }};
+    const entryPriceRaw = "{{ entry_price|default:'' }}";
+    const exitPriceRaw = "{{ exit_price|default:'' }}";
+    const entryPrice = entryPriceRaw === '' ? null : Number(entryPriceRaw);
+    const exitPrice = exitPriceRaw === '' ? null : Number(exitPriceRaw);
     if (!Number.isNaN(openTs) && entryPrice !== null) {
-      datasets.push({ label: 'Open', type: 'scatter', data: [ { x: openTs, y: entryPrice } ], parsing: false, pointBackgroundColor: '#198754', pointRadius: 4 });
+      datasets.push({ label: 'Open', type: 'scatter', data: [ { x: openTs, y: entryPrice } ], parsing: false, pointBackgroundColor: '#198754', pointRadius: 7 });
     }
     if (!Number.isNaN(closeTs) && exitPrice !== null) {
-      datasets.push({ label: 'Close', type: 'scatter', data: [ { x: closeTs, y: exitPrice } ], parsing: false, pointBackgroundColor: '#dc3545', pointRadius: 4 });
+      datasets.push({ label: 'Close', type: 'scatter', data: [ { x: closeTs, y: exitPrice } ], parsing: false, pointBackgroundColor: '#dc3545', pointRadius: 7 });
     }
+
+    const annotations = {};
+    if (!Number.isNaN(openTs)) {
+      annotations.openLine = { type: 'line', xMin: openTs, xMax: openTs, borderColor: '#198754', borderWidth: 2, borderDash: [4,4] };
+    }
+    if (!Number.isNaN(closeTs)) {
+      annotations.closeLine = { type: 'line', xMin: closeTs, xMax: closeTs, borderColor: '#dc3545', borderWidth: 2, borderDash: [4,4] };
+    }
+    const annPlugin = window['chartjs-plugin-annotation'];
+    if (annPlugin && Chart && Chart.register) { Chart.register(annPlugin); }
     new Chart(ctx, {
       type: 'line',
       data: { datasets },
       options: {
         responsive: true,
-        plugins: { legend: { position: 'bottom' } },
+        plugins: { legend: { position: 'bottom' }, annotation: { annotations } },
         scales: {
           x: { type: 'time', time: { unit: 'minute', tooltipFormat: 'MMM d HH:mm' }, ticks: { autoSkip: true, maxTicksLimit: 12 } },
           y: { title: { text: 'Price', display: true } }
