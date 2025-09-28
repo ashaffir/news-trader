@@ -1997,9 +1997,47 @@ def analyze_post(post_id, manual_test=False, llm_model: str | None = None):
         prompt = (
             config.llm_prompt_template
             if config
-            else """You are a financial analyst. Analyze the given text for potential financial impact on a stock. 
-Respond with a JSON object: { "symbol": "STOCK_SYMBOL", "direction": "buy", "confidence": 0.87, "reason": "Explanation" }. 
-Direction can be 'buy', 'sell', or 'hold'. Confidence is a float between 0 and 1."""
+            else """You are a senior financial analyst and real-time trading decision assistant.
+Analyze the following text for its potential short-term financial market impact — specifically within the next 24 hours.
+
+Score the event across six dimensions:
+- impact_size (0–1): How strong the financial effect might be (0 = minimal, 1 = market-moving)
+- time_proximity (0–1): How soon the event is expected to begin affecting prices (1 = immediate, 0 = distant future)
+- clarity (0–1): How clear and unambiguous the financial implications are (1 = very clear, 0 = speculative or vague)
+- volatility_sensitivity (0–1): Whether the affected industry is known to respond quickly to events (1 = high sensitivity, 0 = slow/stable)
+- duration (0–1): How long the effect will last within the 24h window (1 = hours-long and tradable, 0 = fleeting or negligible)
+- polarity_strength (–1.0 to +1.0): Direction and force of sentiment (-1.0 = strongly negative, +1.0 = strongly positive, 0 = neutral)
+
+Respond only with a valid JSON object in the following format:
+{
+  "industry": "INDUSTRY_NAME",
+  "company": "COMPANY_NAME",
+  "symbol": "STOCK_SYMBOL",
+  "reason": "Short explanation of the event and impact logic",
+  "scores": {
+    "impact_size": IMPACT,
+    "time_proximity": PROXIMITY,
+    "clarity": CLARITY,
+    "volatility_sensitivity": VOLATILITY,
+    "duration": DURATION,
+    "polarity_strength": POLARITY
+  }
+}
+
+If no specific market impact is likely or the text is irrelevant, return:
+{
+  "symbol": "N/A",
+  "industry": "N/A",
+  "reason": "No clear or tradable market impact identified.",
+  "scores": {
+    "impact_size": 0.0,
+    "time_proximity": 0.0,
+    "clarity": 0.0,
+    "volatility_sensitivity": 0.0,
+    "duration": 0.0,
+    "polarity_strength": 0.0
+  }
+}"""
         )
 
         # Prepare LLM params
@@ -2127,16 +2165,8 @@ Direction can be 'buy', 'sell', or 'hold'. Confidence is a float between 0 and 1
         cleaned_json_text = extract_json_from_response(raw_response_content or "")
         llm_output = json.loads(cleaned_json_text)
 
-        # Deterministic computation of confidence and max holding time
+        # Deterministic computation of direction, confidence, and max holding time
         scores_obj = llm_output.get("scores") or {}
-        impact_size = scores_obj.get("impact_size")
-        time_proximity = scores_obj.get("time_proximity")
-        clarity = scores_obj.get("clarity")
-        volatility_sensitivity = scores_obj.get("volatility_sensitivity")
-        duration = scores_obj.get("duration")
-
-        computed_confidence = None
-        computed_max_hold = None
 
         def _safe_float(x):
             try:
@@ -2144,31 +2174,39 @@ Direction can be 'buy', 'sell', or 'hold'. Confidence is a float between 0 and 1
             except Exception:
                 return None
 
-        impact_size = _safe_float(impact_size)
-        time_proximity = _safe_float(time_proximity)
-        clarity = _safe_float(clarity)
-        volatility_sensitivity = _safe_float(volatility_sensitivity)
-        duration = _safe_float(duration)
+        impact_size = _safe_float(scores_obj.get("impact_size"))
+        time_proximity = _safe_float(scores_obj.get("time_proximity"))
+        clarity = _safe_float(scores_obj.get("clarity"))
+        volatility_sensitivity = _safe_float(scores_obj.get("volatility_sensitivity"))
+        duration = _safe_float(scores_obj.get("duration"))
+        polarity_strength = _safe_float(scores_obj.get("polarity_strength"))
 
-        # Only compute when all score components are available
-        if None not in (impact_size, time_proximity, clarity, volatility_sensitivity, duration):
-            # Pull tunable weights/params from active config (fallback to defaults)
-            w_i = getattr(config, "confidence_weight_impact_size", 0.35)
-            w_t = getattr(config, "confidence_weight_time_proximity", 0.25)
-            w_c = getattr(config, "confidence_weight_clarity", 0.15)
-            w_v = getattr(config, "confidence_weight_volatility_sensitivity", 0.15)
-            w_d = getattr(config, "confidence_weight_duration", 0.10)
+        # Compute direction and confidence
+        from core.utils.strategy import compute_direction_and_confidence
+        weight_map = {
+            "impact_size": getattr(config, "confidence_weight_impact_size", 0.35),
+            "time_proximity": getattr(config, "confidence_weight_time_proximity", 0.25),
+            "clarity": getattr(config, "confidence_weight_clarity", 0.15),
+            "volatility_sensitivity": getattr(config, "confidence_weight_volatility_sensitivity", 0.15),
+            "duration": getattr(config, "confidence_weight_duration", 0.10),
+        }
 
-            computed_confidence = (
-                w_i * impact_size
-                + w_t * time_proximity
-                + w_c * clarity
-                + w_v * volatility_sensitivity
-                + w_d * duration
-            )
-            # Clamp to [0,1]
-            computed_confidence = max(0.0, min(1.0, computed_confidence))
+        # Build score dict for helper
+        score_payload = {
+            "impact_size": impact_size or 0.0,
+            "time_proximity": time_proximity or 0.0,
+            "clarity": clarity or 0.0,
+            "volatility_sensitivity": volatility_sensitivity or 0.0,
+            "duration": duration or 0.0,
+            "polarity_strength": polarity_strength or 0.0,
+        }
+        computed_direction, computed_confidence = compute_direction_and_confidence(
+            score_payload, weight_map
+        )
 
+        # Compute max holding time when we have required components
+        computed_max_hold = None
+        if None not in (time_proximity, duration, impact_size):
             t_min = getattr(config, "hold_time_time_to_peak_min_hours", 0.25)
             t_max = getattr(config, "hold_time_time_to_peak_max_hours", 8.0)
             prox_exp = getattr(config, "hold_time_time_proximity_exponent", 1.7)
@@ -2177,17 +2215,16 @@ Direction can be 'buy', 'sell', or 'hold'. Confidence is a float between 0 and 1
             tail_imp_base = getattr(config, "hold_time_tail_impact_base", 0.5)
             tail_imp_scale = getattr(config, "hold_time_tail_impact_scale", 0.5)
 
-            time_to_peak = t_min + (t_max - t_min) * (1.0 - time_proximity) ** prox_exp
-            tail = tail_mult * (duration ** tail_dur_exp) * (tail_imp_base + tail_imp_scale * impact_size)
+            time_to_peak = t_min + (t_max - t_min) * (1.0 - (time_proximity or 0.0)) ** prox_exp
+            tail = tail_mult * ((duration or 0.0) ** tail_dur_exp) * (tail_imp_base + tail_imp_scale * (impact_size or 0.0))
             computed_max_hold = float(time_to_peak + tail)
             # Enforce minimum hold time
             min_hold = getattr(config, "hold_time_min_hours", 0.5)
             if computed_max_hold < float(min_hold):
                 computed_max_hold = float(min_hold)
         else:
-            # Missing scores -> log and mark as invalid
             logger.warning(
-                "Missing score components for post %s (model=%s). impact=%s, time_proximity=%s, clarity=%s, vol_sens=%s, duration=%s",
+                "Missing score components for post %s (model=%s). impact=%s, time_proximity=%s, clarity=%s, vol_sens=%s, duration=%s, polarity=%s",
                 post.id,
                 model,
                 impact_size,
@@ -2195,21 +2232,15 @@ Direction can be 'buy', 'sell', or 'hold'. Confidence is a float between 0 and 1
                 clarity,
                 volatility_sensitivity,
                 duration,
+                polarity_strength,
             )
-            computed_confidence = 0.0
             computed_max_hold = None
-
-        final_confidence = (
-            computed_confidence
-            if computed_confidence is not None
-            else float(llm_output.get("confidence", 0.0) or 0.0)
-        )
 
         analysis = Analysis.objects.create(
             post=post,
             symbol=llm_output.get("symbol", "UNKNOWN"),
-            direction=llm_output.get("direction", "hold"),
-            confidence=final_confidence,
+            direction=computed_direction,
+            confidence=computed_confidence,
             reason=llm_output.get("reason", "No reason provided by LLM."),
             raw_llm_response=raw_response_content,
             trading_config_used=config,
@@ -2225,7 +2256,7 @@ Direction can be 'buy', 'sell', or 'hold'. Confidence is a float between 0 and 1
         if (
             analysis.direction in ["buy", "sell"]
             and analysis.confidence >= confidence_threshold
-            and computed_max_hold is not None  # Block progression when scores missing
+            and computed_max_hold is not None
         ):
             # Check trading limits
             trading_allowed, reason = is_trading_allowed()

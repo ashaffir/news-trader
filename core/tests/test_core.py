@@ -218,7 +218,6 @@ class TaskTests(TestCase):
         mock_response.choices[0].message.content = json.dumps(
             {
                 "symbol": "AAPL",
-                "direction": "hold",  # Use 'hold' to avoid triggering trade execution
                 "reason": "Strong growth indicators",
                 "scores": {
                     "impact_size": 0.8,
@@ -226,6 +225,7 @@ class TaskTests(TestCase):
                     "clarity": 0.7,
                     "volatility_sensitivity": 0.5,
                     "duration": 0.4,
+                    "polarity_strength": 0.0  # Hold per new policy
                 },
             }
         )
@@ -241,8 +241,8 @@ class TaskTests(TestCase):
         analysis = Analysis.objects.get(post=self.post)
         self.assertEqual(analysis.symbol, "AAPL")
         self.assertEqual(analysis.direction, "hold")
-        # Deterministic confidence: 0.35*0.8 + 0.25*0.6 + 0.15*0.7 + 0.15*0.5 + 0.10*0.4 = 0.645
-        self.assertAlmostEqual(analysis.confidence, 0.645, places=6)
+        # With polarity_strength=0.0, confidence must be 0.0 by design
+        self.assertAlmostEqual(analysis.confidence, 0.0, places=6)
         # Deterministic max holding time (~2.48h for provided scores and defaults)
         self.assertIsNotNone(analysis.max_holding_time_hours)
         self.assertAlmostEqual(analysis.max_holding_time_hours, 2.48, delta=0.2)
@@ -654,7 +654,6 @@ class IntegrationTests(TestCase):
         mock_openai_response.choices[0].message.content = json.dumps(
             {
                 "symbol": "TSLA",
-                "direction": "buy",
                 "reason": "Very positive news about Tesla",
                 "scores": {
                     "impact_size": 1.0,
@@ -662,6 +661,7 @@ class IntegrationTests(TestCase):
                     "clarity": 0.9,
                     "volatility_sensitivity": 0.8,
                     "duration": 0.7,
+                    "polarity_strength": 0.9,
                 },
             }
         )
@@ -689,14 +689,14 @@ class IntegrationTests(TestCase):
             url="https://example.com/tesla-news",
         )
 
-        # Trigger analysis with manual_test=True to bypass bot enabled gate
+        # Trigger analysis synchronously with manual_test=True to bypass bot enabled gate
         analyze_post(post.id, manual_test=True)
 
         # Check that analysis was created
         analysis = Analysis.objects.get(post=post)
         self.assertEqual(analysis.symbol, "TSLA")
         self.assertEqual(analysis.direction, "buy")
-        # With default weights, confidence should be high (> 0.8)
+        # With default weights and strong polarity, confidence should be high (> 0.8)
         self.assertGreater(analysis.confidence, 0.8)
 
         # Check that trade was created (should be triggered automatically due to high confidence)

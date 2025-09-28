@@ -9,7 +9,6 @@ def analysis_json_schema() -> dict:
             "industry": {"type": "string"},
             "company": {"type": "string"},
             "symbol": {"type": "string"},
-            "direction": {"type": "string", "enum": ["buy", "sell", "hold"]},
             "reason": {"type": "string"},
             "scores": {
                 "type": "object",
@@ -19,6 +18,7 @@ def analysis_json_schema() -> dict:
                     "clarity": {"type": "number", "minimum": 0.0, "maximum": 1.0},
                     "volatility_sensitivity": {"type": "number", "minimum": 0.0, "maximum": 1.0},
                     "duration": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+                    "polarity_strength": {"type": "number", "minimum": -1.0, "maximum": 1.0},
                 },
                 "required": [
                     "impact_size",
@@ -26,6 +26,7 @@ def analysis_json_schema() -> dict:
                     "clarity",
                     "volatility_sensitivity",
                     "duration",
+                    "polarity_strength",
                 ],
                 "additionalProperties": False,
             },
@@ -34,7 +35,6 @@ def analysis_json_schema() -> dict:
             "industry",
             "company",
             "symbol",
-            "direction",
             "reason",
             "scores",
         ],

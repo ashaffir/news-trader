@@ -26,28 +26,29 @@ PROMPT_TMPL = """You are a senior financial analyst and real-time trading decisi
 
 Analyze the following text for its potential short-term financial market impact — specifically within the next 24 hours.
 
-Score the event across five dimensions:
-
+Score the event across six dimensions:
 - **impact_size** (0–1): How strong the financial effect might be (0 = minimal, 1 = market-moving)
 - **time_proximity** (0–1): How soon the event is expected to begin affecting prices (1 = immediate, 0 = distant future)
 - **clarity** (0–1): How clear and unambiguous the financial implications are (1 = very clear, 0 = speculative or vague)
 - **volatility_sensitivity** (0–1): Whether the affected industry is known to respond quickly to events (1 = high sensitivity, 0 = slow/stable)
 - **duration** (0–1): How long the effect will last within the 24h window (1 = hours-long and tradable, 0 = fleeting or negligible)
+- **polarity_strength** (–1.0 to +1.0): Direction and force of sentiment 
+   (-1.0 = strongly negative, +1.0 = strongly positive, 0 = neutral)
 
 Respond only with a valid JSON object in the following format:
 
 {
-  "industry": "INDUSTRY_NAME",       // Best-matching impacted industry
+  "industry": "INDUSTRY_NAME",       // Best-matching impacted industry from the list below
   "company": "COMPANY_NAME",         // Use "N/A" if no specific company mentioned
-  "symbol": "STOCK_SYMBOL",          // If no company is mentioned, infer the most likely affected symbol from known large-cap leaders in the given industry.
-  "direction": "buy",                // One of: 'buy', 'sell', or 'hold'
+  "symbol": "STOCK_SYMBOL",          // If no company is mentioned, infer the most likely affected symbol from known large-cap leaders in the given industry. ONLY ONE SYMBOL
   "reason": "Short explanation of the event and impact logic",
   "scores": {
-    "impact_size": IMPACT,              // impact size score 0.0 - 1.0
-    "time_proximity": PROXIMITY,        // time proximity scode 0.0 - 1.0
-    "clarity": CLARITY,                 // clarity of the information  0.0 - 1.0 
-    "volatility_sensitivity": VOLATILITY, // volatility score 0.0 - 1.0
-    "duration": DURATION                  // effect duration score 0.0 - 1.0
+    "impact_size": IMPACT,
+    "time_proximity": PROXIMITY,
+    "clarity": CLARITY,
+    "volatility_sensitivity": VOLATILITY,
+    "duration": DURATION,
+    "polarity_strength": POLARITY
   }
 }
 
@@ -55,18 +56,16 @@ If no specific market impact is likely or the text is irrelevant, return:
 {
   "symbol": "N/A",
   "industry": "N/A",
-  "direction": "hold",
-  "confidence": 0.0,
   "reason": "No clear or tradable market impact identified.",
   "scores": {
     "impact_size": 0.0,
     "time_proximity": 0.0,
     "clarity": 0.0,
     "volatility_sensitivity": 0.0,
-    "duration": 0.0
+    "duration": 0.0,
+    "polarity_strength": 0.0
   }
 }
-
 ## POST TEXT IS HERE ##
 """
 
@@ -185,8 +184,6 @@ def _analysis_schema() -> dict:
             "industry": {"type": "string"},
             "company": {"type": "string"},
             "symbol": {"type": "string"},
-            "direction": {"type": "string", "enum": ["buy", "sell", "hold"]},
-            "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
             "reason": {"type": "string"},
             "scores": {
                 "type": "object",
@@ -195,14 +192,16 @@ def _analysis_schema() -> dict:
                     "time_proximity": {"type": "number", "minimum": 0.0, "maximum": 1.0},
                     "clarity": {"type": "number", "minimum": 0.0, "maximum": 1.0},
                     "volatility_sensitivity": {"type": "number", "minimum": 0.0, "maximum": 1.0},
-                    "duration": {"type": "number", "minimum": 0.0, "maximum": 1.0}
+                    "duration": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+                    "polarity_strength": {"type": "number", "minimum": -1.0, "maximum": 1.0},
                 },
                 "required": [
                     "impact_size",
                     "time_proximity",
                     "clarity",
                     "volatility_sensitivity",
-                    "duration"
+                    "duration",
+                    "polarity_strength",
                 ],
                 "additionalProperties": False
             }
@@ -211,8 +210,6 @@ def _analysis_schema() -> dict:
             "industry",
             "company",
             "symbol",
-            "direction",
-            "confidence",
             "reason",
             "scores"
         ],

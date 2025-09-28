@@ -98,7 +98,7 @@ class TradingConfigAdmin(admin.ModelAdmin):
             },
         ),
         (
-            "LLM Calculation Parameters",
+            "LLM Confidence Calculation (produces 'confidence')",
             {
                 "fields": (
                     "confidence_weight_impact_size",
@@ -106,6 +106,19 @@ class TradingConfigAdmin(admin.ModelAdmin):
                     "confidence_weight_clarity",
                     "confidence_weight_volatility_sensitivity",
                     "confidence_weight_duration",
+                ),
+                "description": (
+                    "confidence = |polarity_strength| * ("
+                    "w_impact*impact_size + w_time*time_proximity + w_clarity*clarity + "
+                    "w_vol*volatility_sensitivity + w_duration*duration)"
+                ),
+                "classes": ("collapse",),
+            },
+        ),
+        (
+            "LLM Max Hold Time Calculation (produces 'max_holding_time_hours')",
+            {
+                "fields": (
                     "hold_time_time_to_peak_min_hours",
                     "hold_time_time_to_peak_max_hours",
                     "hold_time_time_proximity_exponent",
@@ -115,10 +128,42 @@ class TradingConfigAdmin(admin.ModelAdmin):
                     "hold_time_tail_impact_scale",
                     "hold_time_min_hours",
                 ),
+                "description": (
+                    "time_to_peak = t_min + (t_max - t_min) * (1 - time_proximity)^prox_exp; "
+                    "tail = tail_mult * duration^tail_dur_exp * (tail_imp_base + tail_imp_scale*impact_size); "
+                    "max_hold = max(time_to_peak + tail, hold_time_min_hours)"
+                ),
                 "classes": ("collapse",),
             },
         ),
     )
+
+    def formfield_for_dbfield(self, db_field, request, **kwargs):
+        formfield = super().formfield_for_dbfield(db_field, request, **kwargs)
+        try:
+            name = db_field.name
+            if name in {
+                "confidence_weight_impact_size",
+                "confidence_weight_time_proximity",
+                "confidence_weight_clarity",
+                "confidence_weight_volatility_sensitivity",
+                "confidence_weight_duration",
+            }:
+                formfield.label = f"{formfield.label} → confidence"
+            elif name in {
+                "hold_time_time_to_peak_min_hours",
+                "hold_time_time_to_peak_max_hours",
+                "hold_time_time_proximity_exponent",
+                "hold_time_tail_multiplier",
+                "hold_time_tail_duration_exponent",
+                "hold_time_tail_impact_base",
+                "hold_time_tail_impact_scale",
+                "hold_time_min_hours",
+            }:
+                formfield.label = f"{formfield.label} → max_holding_time_hours"
+        except Exception:
+            pass
+        return formfield
 
 
 class PostInline(admin.TabularInline):
