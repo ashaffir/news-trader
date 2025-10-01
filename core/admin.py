@@ -371,6 +371,7 @@ class PostAdmin(admin.ModelAdmin):
         "content_preview",
         "published_at",
         "has_analysis",
+        "analysis_link",
         "created_at",
     )
     list_filter = ("source", "published_at", "created_at")
@@ -402,6 +403,16 @@ class PostAdmin(admin.ModelAdmin):
 
     has_analysis.short_description = "Analysis"
     has_analysis.admin_order_field = "analysis"
+
+    def analysis_link(self, obj):
+        try:
+            a = obj.analysis
+            url = reverse("admin:core_analysis_change", args=[a.id])
+            return format_html('<a href="{}" target="_blank">Open</a>', url)
+        except Analysis.DoesNotExist:
+            return "-"
+
+    analysis_link.short_description = "Analysis"
 
     def analysis_used_llm_model(self, obj):
         try:

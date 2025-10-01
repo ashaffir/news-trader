@@ -118,9 +118,12 @@ def flow_tracker_view(request):
             rows.append(row)
         except Exception:
             continue
+    # Include bot status for navbar badge
+    bot_enabled = active_cfg.bot_enabled if active_cfg else False
     context = {
         "rows": rows,
         "active_config": active_cfg,
+        "bot_enabled": bot_enabled,
     }
     return render(request, "core/flow_tracker.html", context)
 
