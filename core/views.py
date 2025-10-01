@@ -85,6 +85,37 @@ def flow_tracker_view(request):
             vol_ma = a.enter_volume_ma
             freshness_val = a.freshness_value
 
+            # Progress report rationale
+            progress = None
+            try:
+                if trade:
+                    progress = f"Trade {trade.status}"
+                else:
+                    status = (a.enter_status or "").strip()
+                    if status == "waiting_confirmation":
+                        progress = "Waiting confirmation"
+                    elif status == "confirm_failed":
+                        progress = a.enter_failure_code or "confirm_failed"
+                    elif status == "confirm_passed":
+                        progress = "Confirmation passed"
+                    elif status == "eligible":
+                        if a.max_holding_time_hours is None:
+                            progress = "Not scheduled: max_hold missing"
+                        else:
+                            if getattr(active_cfg, "enter_confirmation_enabled", False):
+                                # If confirmation is enabled but no check recorded yet
+                                progress = "Pending confirmation"
+                            else:
+                                progress = "Immediate mode: no order"
+                    elif status == "created":
+                        progress = "Not eligible"
+
+                    # If a confirmation ran but lacked market data
+                    if a.enter_checked_at and (price_change is None or vol_ratio is None) and not trade:
+                        progress = "No market data"
+            except Exception:
+                progress = None
+
             # 2) Exit trigger booleans from lifecycle events (if a trade exists)
             profit_protect = None
             sl_hit = None
@@ -114,6 +145,7 @@ def flow_tracker_view(request):
                 "tl": profit_protect,  # alias for clarity with requested column name
                 "sl": sl_hit,
                 "dyn_sl": dyn_sl,
+                "progress": progress,
             }
             rows.append(row)
         except Exception:
