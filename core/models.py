@@ -98,6 +98,22 @@ class TradingConfig(models.Model):
         help_text="How often to monitor positions for TP/SL triggers (in minutes)"
     )
 
+    # Overnight strategy
+    overnight_enabled = models.BooleanField(
+        default=False,
+        help_text="Enable overnight strategy (collect during close, act at open)",
+    )
+    overnight_reduce_sl_factor = models.FloatField(
+        default=0.5,
+        validators=[MinValueValidator(0.1), MaxValueValidator(1.0)],
+        help_text="Factor to tighten stop loss at market open for overnight entries (0.5 = 50%)",
+    )
+    overnight_max_age_hours = models.IntegerField(
+        default=12,
+        validators=[MinValueValidator(1), MaxValueValidator(48)],
+        help_text="Maximum age in hours for overnight posts to be considered at open",
+    )
+
     # Entry confirmation (price and volume) configuration
     enter_confirmation_enabled = models.BooleanField(
         default=True,
@@ -376,6 +392,11 @@ class Post(models.Model):
     url = models.URLField(unique=True, max_length=600)
     published_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    # Overnight tagging and staleness
+    overnight = models.BooleanField(default=False, help_text="Post collected during market close")
+    is_stale = models.BooleanField(default=False, help_text="Post is no longer eligible for trading")
+    stale_reason = models.CharField(max_length=200, null=True, blank=True)
 
     def __str__(self):
         return f"Post from {self.source.name} at {self.created_at}"

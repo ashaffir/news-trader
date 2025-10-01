@@ -27,19 +27,64 @@ def enter_confirmation_check(analysis_id: int):
     freshness_min = float(getattr(config, "freshness_threshold", 0.5) or 0.5)
 
     t_detect = analysis.created_at or timezone.now()
-    # Freshness = exp(-delay/decay)
+    # Overnight-aware freshness
     try:
-        delay_min = max(0.0, (timezone.now() - (analysis.post.published_at or t_detect)).total_seconds() / 60.0)
+        post = analysis.post
+        published = post.published_at or t_detect
     except Exception:
-        delay_min = 0.0
+        post = None
+        published = t_detect
+
+    try:
+        cfg = get_active_trading_config()
+    except Exception:
+        cfg = None
+
+    is_closed_now = False
+    try:
+        is_closed_now = not is_market_open_broker_aware()
+    except Exception:
+        is_closed_now = False
+
+    is_overnight = bool(getattr(post, "overnight", False))
+    # Hard-stop overnight by age cutoff before any confirmation work
+    try:
+        cfg_age_h = int(getattr(cfg, "overnight_max_age_hours", 12) or 12)
+        if is_overnight and published and (timezone.now() - published) > timedelta(hours=cfg_age_h):
+            try:
+                post.is_stale = True
+                post.stale_reason = "overnight_age_exceeded"
+                post.save(update_fields=["is_stale", "stale_reason"])
+            except Exception:
+                pass
+            return
+    except Exception:
+        pass
+    # Freshness policy:
+    # - If market closed: 0.0 (not tradable)
+    # - If within first window and news is overnight: 1.0
+    # - Else default exponential decay since published
     try:
         import math
-        freshness_val = math.exp(-delay_min / max(0.0001, decay_min))
+        if is_closed_now:
+            freshness_val = 0.0
+        elif is_overnight and market_just_opened(int(getattr(cfg, "enter_confirm_window_minutes", 5) or 5)):
+            freshness_val = 1.0
+        else:
+            delay_min = max(0.0, (timezone.now() - published).total_seconds() / 60.0)
+            freshness_val = math.exp(-delay_min / max(0.0001, decay_min))
     except Exception:
         freshness_val = 0.0
+    # For overnight posts at open, align detection to open so N-minute window starts at open
+    detection_time = t_detect
+    try:
+        if is_overnight and market_just_opened(int(getattr(cfg, "enter_confirm_window_minutes", 5) or 5)):
+            detection_time = get_today_market_open_utc()
+    except Exception:
+        detection_time = t_detect
     signed_change, vol_ratio, vol_n, vol_ma = compute_entry_confirmations(
         analysis.symbol,
-        t_detect,
+        detection_time,
         n_minutes,
         ma_window,
         analysis.direction,
@@ -68,6 +113,14 @@ def enter_confirmation_check(analysis_id: int):
             },
         )
         try:
+            if getattr(analysis.post, "overnight", False):
+                p = analysis.post
+                p.is_stale = True
+                p.stale_reason = "no_data"
+                p.save(update_fields=["is_stale", "stale_reason"])
+        except Exception:
+            pass
+        try:
             analysis.enter_confirmed = False
             prev = analysis.enter_status
             analysis.enter_status = "confirm_failed"
@@ -79,8 +132,8 @@ def enter_confirmation_check(analysis_id: int):
             pass
         return
 
-    price_ok = signed_change > price_threshold
-    volume_ok = vol_ratio >= vol_mult
+    price_ok = signed_change is not None and signed_change > price_threshold
+    volume_ok = vol_ratio is not None and vol_ratio >= vol_mult
     freshness_ok = (freshness_val >= freshness_min)
 
     if price_ok and volume_ok and freshness_ok:
@@ -106,6 +159,14 @@ def enter_confirmation_check(analysis_id: int):
                     "tag": "Rejected",
                 },
             )
+            try:
+                if getattr(analysis.post, "overnight", False):
+                    p = analysis.post
+                    p.is_stale = True
+                    p.stale_reason = "not_executed"
+                    p.save(update_fields=["is_stale", "stale_reason"])
+            except Exception:
+                pass
             return
 
         try:
@@ -133,6 +194,14 @@ def enter_confirmation_check(analysis_id: int):
                 "tag": "Rejected",
             },
         )
+        try:
+            if getattr(analysis.post, "overnight", False):
+                p = analysis.post
+                p.is_stale = True
+                p.stale_reason = "confirm_failed"
+                p.save(update_fields=["is_stale", "stale_reason"])
+        except Exception:
+            pass
         try:
             analysis.enter_confirmed = False
             prev = analysis.enter_status
@@ -868,10 +937,21 @@ def _scrape_rss_feed(source):
                     elif content_duplicate:
                         logger.debug(f"Skipping RSS post - similar content: {title[:50]}...")
                         continue
+                    # Tag as overnight when created while market is closed
+                    try:
+                        cfg = get_active_trading_config()
+                    except Exception:
+                        cfg = None
+                    overnight_flag = False
+                    try:
+                        overnight_flag = (cfg and getattr(cfg, "overnight_enabled", False) and not is_market_open_broker_aware())
+                    except Exception:
+                        overnight_flag = False
                     post = Post.objects.create(
                         source=source,
                         content=content,
-                        url=link
+                        url=link,
+                        overnight=overnight_flag,
                     )
                     
                     logger.info(f"New RSS post from {source.name}: {title[:50]}...")
@@ -1051,7 +1131,16 @@ def _scrape_with_browser(source):
                         except Exception:
                             pass
 
-                        post = Post.objects.create(source=source, content=enriched_content, url=tweet_url, published_at=ts)
+                        try:
+                            cfg = get_active_trading_config()
+                        except Exception:
+                            cfg = None
+                        overnight_flag = False
+                        try:
+                            overnight_flag = (cfg and getattr(cfg, "overnight_enabled", False) and not is_market_open_broker_aware())
+                        except Exception:
+                            overnight_flag = False
+                        post = Post.objects.create(source=source, content=enriched_content, url=tweet_url, published_at=ts, overnight=overnight_flag)
                         created_count += 1
                         analysis_post_ids.append(post.id)
                         send_dashboard_update(
@@ -1443,10 +1532,20 @@ def _scrape_api_source(source):
                     except Exception:
                         pass
 
+                    try:
+                        cfg = get_active_trading_config()
+                    except Exception:
+                        cfg = None
+                    overnight_flag = False
+                    try:
+                        overnight_flag = (cfg and getattr(cfg, "overnight_enabled", False) and not is_market_open_broker_aware())
+                    except Exception:
+                        overnight_flag = False
                     post = Post.objects.create(
                         source=source,
                         content=enriched_content,
-                        url=url
+                        url=url,
+                        overnight=overnight_flag,
                     )
                 except Exception as db_err:
                     try:
@@ -1631,6 +1730,60 @@ def is_market_open_broker_aware(now_utc: Optional[datetime] = None) -> bool:
         pass
 
     return is_market_open_now(now_utc)
+
+
+def minutes_since_market_open(now_utc: Optional[datetime] = None) -> Optional[int]:
+    """Heuristic minutes since market open (13:30 UTC). Ignores holidays.
+
+    Returns None if closed or on weekends.
+    """
+    try:
+        if now_utc is None:
+            now_utc = timezone.now()
+        weekday = now_utc.weekday()
+        if weekday >= 5:
+            return None
+        minutes = now_utc.hour * 60 + now_utc.minute
+        open_min = 13 * 60 + 30
+        close_min = 20 * 60
+        if minutes < open_min or minutes >= close_min:
+            return None
+        return max(0, minutes - open_min)
+    except Exception:
+        return None
+
+
+def market_just_opened(window_minutes: int = 15) -> bool:
+    """Return True if market is open and within first `window_minutes` since open."""
+    try:
+        if not is_market_open_broker_aware():
+            return False
+        m = minutes_since_market_open()
+        return m is not None and m <= max(1, int(window_minutes))
+    except Exception:
+        return False
+
+
+def get_today_market_open_utc(now_utc: Optional[datetime] = None) -> datetime:
+    """Return today's market open time (13:30 UTC) as aware datetime.
+
+    If weekend, returns the next upcoming weekday's open (heuristic).
+    """
+    try:
+        base = now_utc or timezone.now()
+        d = base.date()
+        # Monday is 0, Sunday is 6
+        weekday = base.weekday()
+        if weekday >= 5:
+            # If Saturday (5) -> add 2 days, Sunday (6) -> add 1 day
+            add = 2 if weekday == 5 else 1
+            from datetime import timedelta as _td
+            d = (base + _td(days=add)).date()
+        from datetime import datetime as _dt
+        open_dt = _dt(d.year, d.month, d.day, 13, 30, 0, tzinfo=timezone.utc)
+        return open_dt
+    except Exception:
+        return (now_utc or timezone.now()).replace(hour=13, minute=30, second=0, microsecond=0)
 
 
 def minutes_until_market_close(now_utc: Optional[datetime] = None) -> Optional[int]:
@@ -1965,11 +2118,21 @@ Content:
                     except Exception as e:
                         logger.warning(f"[Twitter Task] Error enriching tweet content: {e}")
                     
+                    try:
+                        cfg = get_active_trading_config()
+                    except Exception:
+                        cfg = None
+                    overnight_flag = False
+                    try:
+                        overnight_flag = (cfg and getattr(cfg, "overnight_enabled", False) and not is_market_open_broker_aware())
+                    except Exception:
+                        overnight_flag = False
                     post = Post.objects.create(
                         source=source, 
                         content=enriched_content, 
                         url=turl, 
-                        published_at=ts
+                        published_at=ts,
+                        overnight=overnight_flag,
                     )
                     created += 1
                     logger.debug(f"[Twitter Task] Created post: {turl}")
@@ -2857,12 +3020,23 @@ def create_new_trade(analysis_id):
         stop_loss_price = None
         take_profit_price = None
         if config and current_price > 0:
+            # Apply reduced SL at market open for overnight posts
+            reduce_factor = 1.0
+            try:
+                if getattr(config, "overnight_enabled", False) and getattr(analysis.post, "overnight", False) and market_just_opened(int(getattr(config, "enter_confirm_window_minutes", 5) or 5)):
+                    reduce_factor = float(getattr(config, "overnight_reduce_sl_factor", 0.5) or 0.5)
+            except Exception:
+                reduce_factor = 1.0
+
+            sl_pct = (config.stop_loss_percentage or 2.0) * reduce_factor
+            tp_pct = (config.take_profit_percentage or 10.0)
+
             if analysis.direction == "buy":
-                stop_loss_price = current_price * (1 - config.stop_loss_percentage / 100)
-                take_profit_price = current_price * (1 + config.take_profit_percentage / 100)
+                stop_loss_price = current_price * (1 - sl_pct / 100)
+                take_profit_price = current_price * (1 + tp_pct / 100)
             else:  # sell
-                stop_loss_price = current_price * (1 + config.stop_loss_percentage / 100)
-                take_profit_price = current_price * (1 - config.take_profit_percentage / 100)
+                stop_loss_price = current_price * (1 + sl_pct / 100)
+                take_profit_price = current_price * (1 - tp_pct / 100)
 
         # Create Trade row first to claim the unique active slot, then submit order on commit
         from django.db import transaction, IntegrityError
@@ -2890,7 +3064,7 @@ def create_new_trade(analysis_id):
                     original_stop_loss_price=stop_loss_price,
                     original_take_profit_price=take_profit_price,
                     take_profit_price_percentage=10.0 if config is None else (config.take_profit_percentage or 10.0),
-                    stop_loss_price_percentage=2.0 if config is None else (config.stop_loss_percentage or 2.0),
+                    stop_loss_price_percentage=2.0 if config is None else ((config.stop_loss_percentage or 2.0) * (reduce_factor if config else 1.0)),
                     max_holding_time_hours=getattr(analysis, "max_holding_time_hours", None),
                 )
 
@@ -4687,7 +4861,13 @@ def enforce_bot_autostart():
             except Exception:
                 pass
 
-        return {"changed": changed, "market_open": bool(market_open), "bot_enabled": config.bot_enabled}
+        # If market just opened and overnight is enabled, trigger processing
+        try:
+            if market_open and getattr(config, "overnight_enabled", False):
+                process_overnight_posts.delay()
+        except Exception:
+            pass
+        return {"changed": changed, "market_open": market_open}
     except Exception as e:
         logger.error(f"enforce_bot_autostart failed: {e}")
         return {"error": str(e)}
@@ -4776,3 +4956,78 @@ def run_telegram_bot_task(self):
     except Exception as e:
         logger.error(f"Error in Telegram bot task: {e}")
         return {"status": "error", "error": str(e)}
+
+
+@shared_task
+def process_overnight_posts():
+    """On market open, process overnight posts sorted by confidence.
+
+    For each overnight post with analysis:
+      - If confidence and freshness meet thresholds and confirmation passes, trade flow proceeds via existing tasks.
+      - Otherwise mark post as stale to avoid reprocessing.
+    """
+    try:
+        config = get_active_trading_config()
+        if not config or not getattr(config, "overnight_enabled", False):
+            return {"processed": 0}
+
+        # Only run near open window
+        if not market_just_opened(int(getattr(config, "enter_confirm_window_minutes", 5) or 5)):
+            return {"processed": 0, "reason": "not_in_open_window"}
+
+        # Query overnight posts with analyses not stale
+        qs = Post.objects.filter(overnight=True, is_stale=False, analysis__isnull=False).select_related("analysis").order_by("-analysis__confidence")
+        # Enforce age cutoff (default 12h)
+        try:
+            max_age_h = int(getattr(config, "overnight_max_age_hours", 12) or 12)
+        except Exception:
+            max_age_h = 12
+        cutoff = timezone.now() - timedelta(hours=max_age_h)
+        count = 0
+        for post in qs:
+            try:
+                # Skip and stale-out old overnight posts
+                try:
+                    if (post.published_at and post.published_at < cutoff) or (post.created_at and post.created_at < cutoff):
+                        post.is_stale = True
+                        post.stale_reason = "overnight_age_exceeded"
+                        post.save(update_fields=["is_stale", "stale_reason"])
+                        continue
+                except Exception:
+                    pass
+                a = post.analysis
+                # Respect base eligibility gates
+                threshold = float(getattr(config, "min_confidence_threshold", 0.7) or 0.7)
+                if a.direction not in ["buy", "sell"] or (a.confidence or 0.0) < threshold:
+                    post.is_stale = True
+                    post.stale_reason = "below_confidence_or_hold"
+                    post.save(update_fields=["is_stale", "stale_reason"])
+                    continue
+
+                # Schedule confirmation immediately using open-window params
+                try:
+                    prev = a.enter_status
+                    a.enter_status = "waiting_confirmation"
+                    a.save(update_fields=["enter_status"])
+                    emit_lifecycle_event(subject_type="analysis", subject_id=a.id, event_type="entry_waiting_confirmation", prev_state=prev, new_state="waiting_confirmation", correlation_id=a.correlation_id)
+                except Exception:
+                    pass
+
+                # Run confirmation synchronously right away (no countdown) so that we observe the first N minutes since open
+                try:
+                    enter_confirmation_check.delay(a.id)
+                except Exception:
+                    enter_confirmation_check.apply_async(args=[a.id])
+                count += 1
+            except Exception:
+                # Mark as stale on processing error to avoid infinite retries
+                try:
+                    post.is_stale = True
+                    post.stale_reason = "processing_error"
+                    post.save(update_fields=["is_stale", "stale_reason"])
+                except Exception:
+                    pass
+        return {"processed": count}
+    except Exception as e:
+        logger.error(f"process_overnight_posts failed: {e}")
+        return {"processed": 0, "error": str(e)}
