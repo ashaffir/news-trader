@@ -102,7 +102,8 @@ def enter_confirmation_check(analysis_id: int):
     except Exception:
         pass
 
-    if signed_change is None or vol_ratio is None:
+    # OR confirmation: only fail when both signals are missing
+    if signed_change is None and vol_ratio is None:
         send_dashboard_update(
             "trade_rejected",
             {
@@ -132,11 +133,12 @@ def enter_confirmation_check(analysis_id: int):
             pass
         return
 
-    price_ok = signed_change is not None and signed_change > price_threshold
-    volume_ok = vol_ratio is not None and vol_ratio >= vol_mult
+    price_ok = (signed_change is not None) and (signed_change > price_threshold)
+    volume_ok = (vol_ratio is not None) and (vol_ratio >= vol_mult)
     freshness_ok = (freshness_val >= freshness_min)
 
-    if price_ok and volume_ok and freshness_ok:
+    # OR logic on price/volume; still require freshness
+    if (price_ok or volume_ok) and freshness_ok:
         try:
             analysis.enter_confirmed = True
             prev = analysis.enter_status
@@ -178,10 +180,13 @@ def enter_confirmation_check(analysis_id: int):
             emit_lifecycle_event(subject_type="analysis", subject_id=analysis.id, event_type="order_submitted_fallback", correlation_id=analysis.correlation_id)
     else:
         reason_parts = []
-        if not price_ok:
-            reason_parts.append(f"Price change {signed_change:.3f}% <= threshold {price_threshold:.3f}%")
-        if not volume_ok:
-            reason_parts.append(f"Volume ratio {vol_ratio:.3f} < multiplier {vol_mult:.3f}")
+        if not (price_ok or volume_ok):
+            try:
+                reason_parts.append(
+                    f"Both signals failed: Price {signed_change:.3f}% <= {price_threshold:.3f}% AND Volume {vol_ratio:.3f} < {vol_mult:.3f}"
+                )
+            except Exception:
+                reason_parts.append("Both price and volume confirmations failed")
         if not freshness_ok:
             reason_parts.append(f"Freshness {freshness_val:.3f} < threshold {freshness_min:.3f}")
         reason = "; ".join(reason_parts) or "Entry confirmation failed"
@@ -207,12 +212,16 @@ def enter_confirmation_check(analysis_id: int):
             prev = analysis.enter_status
             analysis.enter_status = "confirm_failed"
             code = "unknown"
-            if not price_ok:
-                code = "price_below_threshold"
-            elif not volume_ok:
-                code = "volume_below_threshold"
-            elif not freshness_ok:
+            if not freshness_ok:
                 code = "freshness_below_threshold"
+            elif not (price_ok or volume_ok):
+                # Both failed or one missing and the other failed
+                if (not price_ok) and (not volume_ok):
+                    code = "price_and_volume_below_threshold"
+                elif not price_ok:
+                    code = "price_below_threshold"
+                else:
+                    code = "volume_below_threshold"
             analysis.enter_failure_code = code
             analysis.enter_failure_detail = reason
             analysis.save(update_fields=["enter_confirmed", "enter_status", "enter_failure_code", "enter_failure_detail"])
