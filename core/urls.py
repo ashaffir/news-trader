@@ -19,6 +19,7 @@ router.register(r'api-responses', ApiResponseViewSet)
 urlpatterns = [
     path('', views.dashboard_view, name='dashboard'),
     path('dashboard/', views.dashboard_view, name='dashboard_alt'),  # Alternative dashboard URL
+    path('flow-tracker/', views.flow_tracker_view, name='flow_tracker'),
     path('health/', health_check, name='health'),  # Health check for Docker
     path('trigger_scrape/', views.trigger_scrape_ajax, name='trigger_scrape'),
     path('trigger_analysis/', views.trigger_analysis_ajax, name='trigger_analysis'),

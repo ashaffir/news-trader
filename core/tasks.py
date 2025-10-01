@@ -1,3 +1,156 @@
+from celery import shared_task
+
+@shared_task
+def enter_confirmation_check(analysis_id: int):
+    """Evaluate entry confirmation and open trade only if both conditions pass.
+
+    Conditions:
+      - Price: (price_change_N * sign(polarity)) > price_threshold
+      - Volume: volume_N / volume_MA >= volume_multiplier
+    If market data is unavailable or insufficient, reject per policy.
+    """
+    try:
+        analysis = Analysis.objects.get(id=analysis_id)
+    except Analysis.DoesNotExist:
+        return
+
+    config = get_active_trading_config()
+    if not config or not getattr(config, "enter_confirmation_enabled", False):
+        return
+
+    # Compute freshness and confirmations
+    n_minutes = int(getattr(config, "enter_confirm_window_minutes", 5) or 5)
+    price_threshold = float(getattr(config, "enter_price_change_threshold_pct", 0.2) or 0.2)
+    ma_window = int(getattr(config, "enter_volume_ma_window", 20) or 20)
+    vol_mult = float(getattr(config, "enter_volume_multiplier_threshold", 1.5) or 1.5)
+    decay_min = float(getattr(config, "freshness_decay_constant_min", 10.0) or 10.0)
+    freshness_min = float(getattr(config, "freshness_threshold", 0.5) or 0.5)
+
+    t_detect = analysis.created_at or timezone.now()
+    # Freshness = exp(-delay/decay)
+    try:
+        delay_min = max(0.0, (timezone.now() - (analysis.post.published_at or t_detect)).total_seconds() / 60.0)
+    except Exception:
+        delay_min = 0.0
+    try:
+        import math
+        freshness_val = math.exp(-delay_min / max(0.0001, decay_min))
+    except Exception:
+        freshness_val = 0.0
+    signed_change, vol_ratio, vol_n, vol_ma = compute_entry_confirmations(
+        analysis.symbol,
+        t_detect,
+        n_minutes,
+        ma_window,
+        analysis.direction,
+    )
+
+    # Persist telemetry on Analysis
+    try:
+        analysis.enter_checked_at = timezone.now()
+        analysis.enter_price_change_n_pct = signed_change if signed_change is not None else None
+        analysis.enter_volume_ratio = vol_ratio if vol_ratio is not None else None
+        analysis.enter_volume_n = vol_n if vol_n is not None else None
+        analysis.enter_volume_ma = vol_ma if vol_ma is not None else None
+        analysis.freshness_value = freshness_val
+        analysis.save(update_fields=["enter_checked_at", "enter_price_change_n_pct", "enter_volume_ratio", "enter_volume_n", "enter_volume_ma", "freshness_value"])
+    except Exception:
+        pass
+
+    if signed_change is None or vol_ratio is None:
+        send_dashboard_update(
+            "trade_rejected",
+            {
+                "analysis_id": analysis.id,
+                "symbol": analysis.symbol,
+                "reason": "Insufficient market data for entry confirmation",
+                "tag": "Rejected",
+            },
+        )
+        try:
+            analysis.enter_confirmed = False
+            prev = analysis.enter_status
+            analysis.enter_status = "confirm_failed"
+            analysis.enter_failure_code = "no_data"
+            analysis.enter_failure_detail = "window bars or MA history missing"
+            analysis.save(update_fields=["enter_confirmed", "enter_status", "enter_failure_code", "enter_failure_detail"])
+            emit_lifecycle_event(subject_type="analysis", subject_id=analysis.id, event_type="entry_confirm_failed", prev_state=prev, new_state="confirm_failed", correlation_id=analysis.correlation_id, data={"reason": "no_data"})
+        except Exception:
+            pass
+        return
+
+    price_ok = signed_change > price_threshold
+    volume_ok = vol_ratio >= vol_mult
+    freshness_ok = (freshness_val >= freshness_min)
+
+    if price_ok and volume_ok and freshness_ok:
+        try:
+            analysis.enter_confirmed = True
+            prev = analysis.enter_status
+            analysis.enter_status = "confirm_passed"
+            analysis.save(update_fields=["enter_confirmed", "enter_status"])
+            emit_lifecycle_event(subject_type="analysis", subject_id=analysis.id, event_type="entry_confirm_passed", prev_state=prev, new_state="confirm_passed", correlation_id=analysis.correlation_id, data={"signed_change": signed_change, "vol_ratio": vol_ratio, "freshness": freshness_val})
+        except Exception:
+            pass
+
+        # Re-check trading windows and daily limits just-in-time
+        allowed, reason = is_trading_allowed()
+        daily_ok, daily_reason = check_daily_trade_limit()
+        if not (allowed and daily_ok):
+            send_dashboard_update(
+                "trade_rejected",
+                {
+                    "analysis_id": analysis.id,
+                    "symbol": analysis.symbol,
+                    "reason": f"Trading: {reason}; Daily: {daily_reason}",
+                    "tag": "Rejected",
+                },
+            )
+            return
+
+        try:
+            from trader.tasks.trades import create_new_trade as trader_create_new_trade
+            trader_create_new_trade.delay(analysis.id)
+            emit_lifecycle_event(subject_type="analysis", subject_id=analysis.id, event_type="order_submitted", correlation_id=analysis.correlation_id)
+        except Exception:
+            create_new_trade.delay(analysis.id)
+            emit_lifecycle_event(subject_type="analysis", subject_id=analysis.id, event_type="order_submitted_fallback", correlation_id=analysis.correlation_id)
+    else:
+        reason_parts = []
+        if not price_ok:
+            reason_parts.append(f"Price change {signed_change:.3f}% <= threshold {price_threshold:.3f}%")
+        if not volume_ok:
+            reason_parts.append(f"Volume ratio {vol_ratio:.3f} < multiplier {vol_mult:.3f}")
+        if not freshness_ok:
+            reason_parts.append(f"Freshness {freshness_val:.3f} < threshold {freshness_min:.3f}")
+        reason = "; ".join(reason_parts) or "Entry confirmation failed"
+        send_dashboard_update(
+            "trade_rejected",
+            {
+                "analysis_id": analysis.id,
+                "symbol": analysis.symbol,
+                "reason": reason,
+                "tag": "Rejected",
+            },
+        )
+        try:
+            analysis.enter_confirmed = False
+            prev = analysis.enter_status
+            analysis.enter_status = "confirm_failed"
+            code = "unknown"
+            if not price_ok:
+                code = "price_below_threshold"
+            elif not volume_ok:
+                code = "volume_below_threshold"
+            elif not freshness_ok:
+                code = "freshness_below_threshold"
+            analysis.enter_failure_code = code
+            analysis.enter_failure_detail = reason
+            analysis.save(update_fields=["enter_confirmed", "enter_status", "enter_failure_code", "enter_failure_detail"])
+            emit_lifecycle_event(subject_type="analysis", subject_id=analysis.id, event_type="entry_confirm_failed", prev_state=prev, new_state="confirm_failed", correlation_id=analysis.correlation_id, data={"reason": reason})
+        except Exception:
+            pass
+
 import os
 import openai
 import alpaca_trade_api as tradeapi
@@ -22,6 +175,8 @@ import re
 
 # Health monitoring will be defined in this file for proper Celery registration
 from django.utils import timezone
+from .utils.market_data import compute_entry_confirmations
+from .utils.logs import emit_lifecycle_event
 from django.db.models import Q
 import logging
 import hashlib
@@ -2236,6 +2391,8 @@ If no specific market impact is likely or the text is irrelevant, return:
             )
             computed_max_hold = None
 
+        import uuid
+        correlation = str(uuid.uuid4())
         analysis = Analysis.objects.create(
             post=post,
             symbol=llm_output.get("symbol", "UNKNOWN"),
@@ -2246,7 +2403,17 @@ If no specific market impact is likely or the text is irrelevant, return:
             trading_config_used=config,
             used_llm_model=model,
             max_holding_time_hours=computed_max_hold,
+            enter_status="created",
+            correlation_id=correlation,
+            # snapshot tunables for tracking
+            enter_window_minutes_snapshot=int(getattr(config, "enter_confirm_window_minutes", 5) or 5) if config else 5,
+            price_threshold_pct_snapshot=float(getattr(config, "enter_price_change_threshold_pct", 0.2) or 0.2) if config else 0.2,
+            volume_multiplier_snapshot=float(getattr(config, "enter_volume_multiplier_threshold", 1.5) or 1.5) if config else 1.5,
+            freshness_decay_min_snapshot=float(getattr(config, "freshness_decay_constant_min", 10.0) or 10.0) if config else 10.0,
+            freshness_threshold_snapshot=float(getattr(config, "freshness_threshold", 0.5) or 0.5) if config else 0.5,
+            profit_threshold_pct_snapshot=float(getattr(config, "profit_protect_threshold_pct", 0.7) or 0.7) if config else 0.7,
         )
+        emit_lifecycle_event(subject_type="analysis", subject_id=analysis.id, event_type="analysis_created", new_state="created", data={"symbol": analysis.symbol, "direction": analysis.direction}, correlation_id=correlation)
         logger.info(
             f"Analysis complete for post {post.id}: Symbol={analysis.symbol}, Direction={analysis.direction}, Confidence={analysis.confidence}"
         )
@@ -2258,41 +2425,87 @@ If no specific market impact is likely or the text is irrelevant, return:
             and analysis.confidence >= confidence_threshold
             and computed_max_hold is not None
         ):
-            # Check trading limits
-            trading_allowed, reason = is_trading_allowed()
-            daily_limit_ok, daily_reason = check_daily_trade_limit()
-
-            if trading_allowed and daily_limit_ok:
-                trade_executed_flag = True
-                # Delegate trade execution to trader app
+            try:
+                prev = analysis.enter_status
+                analysis.enter_status = "eligible"
+                analysis.save(update_fields=["enter_status"])
+                emit_lifecycle_event(subject_type="analysis", subject_id=analysis.id, event_type="entry_eligible", prev_state=prev, new_state="eligible", correlation_id=analysis.correlation_id)
+            except Exception:
+                pass
+            # If entry confirmation is enabled, schedule confirmation check after N minutes.
+            if getattr(config, "enter_confirmation_enabled", False):
+                n_minutes = int(getattr(config, "enter_confirm_window_minutes", 5) or 5)
                 try:
-                    from trader.tasks.trades import execute_trade as trader_execute_trade
-                    trader_execute_trade.delay(analysis.id)
+                    send_dashboard_update(
+                        "trade_status",
+                        {
+                            "analysis_id": analysis.id,
+                            "symbol": analysis.symbol,
+                            "status": f"Waiting entry confirmation for {n_minutes} min",
+                        },
+                    )
                 except Exception:
-                    # Fallback to local task to avoid breakage if trader app is unavailable
-                    execute_trade.delay(analysis.id)
-            else:
-                logger.info(
-                    f"Trade not executed for analysis {analysis.id}: Trading={reason}, Daily={daily_reason}"
-                )
-                send_dashboard_update(
-                    "trade_skipped",
-                    {
-                        "analysis_id": analysis.id,
-                        "reason": f"Trading: {reason}, Daily: {daily_reason}",
-                    },
-                )
-                # If daily limit is reached, raise alert via dashboard update
-                if not daily_limit_ok:
+                    pass
+                try:
+                    prev = analysis.enter_status
+                    analysis.enter_status = "waiting_confirmation"
+                    analysis.save(update_fields=["enter_status"])
+                    emit_lifecycle_event(subject_type="analysis", subject_id=analysis.id, event_type="entry_waiting_confirmation", prev_state=prev, new_state="waiting_confirmation", correlation_id=analysis.correlation_id)
+                except Exception:
+                    pass
+                try:
+                    from trader.tasks.trades import execute_trade as _  # noqa: F401  (ensure trader app loaded)
+                except Exception:
+                    pass
+                # Defer actual trade decision to confirmation task
+                try:
+                    enter_confirmation_check.apply_async(args=[analysis.id], countdown=n_minutes * 60)
+                    emit_lifecycle_event(subject_type="analysis", subject_id=analysis.id, event_type="entry_scheduled_check", correlation_id=analysis.correlation_id, data={"delay_min": n_minutes})
+                except Exception:
+                    # Fallback: if scheduling fails, do not execute immediately; log rejection
+                    logger.warning("Failed to schedule entry confirmation; rejecting trade by policy")
                     send_dashboard_update(
                         "trade_rejected",
                         {
                             "analysis_id": analysis.id,
                             "symbol": analysis.symbol,
-                            "reason": "Daily trade limit reached",
-                            "tag": "Limit",
+                            "reason": "Entry confirmation scheduling failed",
+                            "tag": "Rejected",
                         },
                     )
+            else:
+                # Legacy immediate execution path
+                trading_allowed, reason = is_trading_allowed()
+                daily_limit_ok, daily_reason = check_daily_trade_limit()
+
+                if trading_allowed and daily_limit_ok:
+                    trade_executed_flag = True
+                    try:
+                        from trader.tasks.trades import execute_trade as trader_execute_trade
+                        trader_execute_trade.delay(analysis.id)
+                    except Exception:
+                        execute_trade.delay(analysis.id)
+                else:
+                    logger.info(
+                        f"Trade not executed for analysis {analysis.id}: Trading={reason}, Daily={daily_reason}"
+                    )
+                    send_dashboard_update(
+                        "trade_skipped",
+                        {
+                            "analysis_id": analysis.id,
+                            "reason": f"Trading: {reason}, Daily: {daily_reason}",
+                        },
+                    )
+                    if not daily_limit_ok:
+                        send_dashboard_update(
+                            "trade_rejected",
+                            {
+                                "analysis_id": analysis.id,
+                                "symbol": analysis.symbol,
+                                "reason": "Daily trade limit reached",
+                                "tag": "Limit",
+                            },
+                        )
 
         send_dashboard_update(
             "new_analysis",
@@ -3059,18 +3272,43 @@ def monitor_local_stop_take_levels():
                             if trade.lowest_price_since_open is None or current_price < float(trade.lowest_price_since_open):
                                 trade.lowest_price_since_open = current_price
 
-                        # If activated, compute trailing SL level from extremes
+                        # If activated, compute trailing SL level from extremes (base distance)
                         if pnl_pct_for_activation is not None and pnl_pct_for_activation >= activation_pct:
                             if trade.direction == "buy" and trade.highest_price_since_open:
                                 new_trailing_sl = float(trade.highest_price_since_open) * (1 - distance_pct / 100.0)
                                 # Only raise SL for longs
                                 if trade.stop_loss_price is None or new_trailing_sl > float(trade.stop_loss_price):
                                     trade.stop_loss_price = new_trailing_sl
+                                    emit_lifecycle_event(subject_type="trade", subject_id=trade.id, event_type="trailing_adjusted", data={"type": "base", "distance_pct": distance_pct, "highest": float(trade.highest_price_since_open)})
                             elif trade.direction == "sell" and trade.lowest_price_since_open:
                                 new_trailing_sl = float(trade.lowest_price_since_open) * (1 + distance_pct / 100.0)
                                 # Only lower SL for shorts
                                 if trade.stop_loss_price is None or new_trailing_sl < float(trade.stop_loss_price):
                                     trade.stop_loss_price = new_trailing_sl
+                                    emit_lifecycle_event(subject_type="trade", subject_id=trade.id, event_type="trailing_adjusted", data={"type": "base", "distance_pct": distance_pct, "lowest": float(trade.lowest_price_since_open)})
+
+                        # Profit-protect tightening: if recent N-min signed move >= threshold, use tighter distance
+                        try:
+                            from .utils.market_data import compute_signed_price_change_over_window
+                            protect_thresh = float(getattr(config, "profit_protect_threshold_pct", 0.7) or 0.7)
+                            protect_dist = float(getattr(config, "profit_protect_trailing_distance_pct", 0.2) or 0.2)
+                            n_exit = int(getattr(config, "profit_protect_window_minutes", 5) or 5)
+                            signed_recent = compute_signed_price_change_over_window(
+                                trade.symbol, timezone.now(), n_exit, trade.direction
+                            )
+                            if signed_recent is not None and signed_recent >= protect_thresh:
+                                if trade.direction == "buy" and trade.highest_price_since_open:
+                                    tightened = float(trade.highest_price_since_open) * (1 - protect_dist / 100.0)
+                                    if trade.stop_loss_price is None or tightened > float(trade.stop_loss_price):
+                                        trade.stop_loss_price = tightened
+                                        emit_lifecycle_event(subject_type="trade", subject_id=trade.id, event_type="profit_protect_activated", data={"window_min": n_exit, "threshold_pct": protect_thresh, "distance_pct": protect_dist})
+                                elif trade.direction == "sell" and trade.lowest_price_since_open:
+                                    tightened = float(trade.lowest_price_since_open) * (1 + protect_dist / 100.0)
+                                    if trade.stop_loss_price is None or tightened < float(trade.stop_loss_price):
+                                        trade.stop_loss_price = tightened
+                                        emit_lifecycle_event(subject_type="trade", subject_id=trade.id, event_type="profit_protect_activated", data={"window_min": n_exit, "threshold_pct": protect_thresh, "distance_pct": protect_dist})
+                        except Exception:
+                            pass
 
                         # Persist trailing references and potential SL update
                         try:
@@ -3102,6 +3340,10 @@ def monitor_local_stop_take_levels():
 
                 if stop_triggered:
                     logger.info(f"Stop loss triggered for trade {trade.id} ({trade.symbol}): {current_price} vs SL {trade.stop_loss_price}")
+                    try:
+                        emit_lifecycle_event(subject_type="trade", subject_id=trade.id, event_type="sl_hit", data={"price": current_price, "sl": trade.stop_loss_price})
+                    except Exception:
+                        pass
                     # Idempotency guard: avoid re-queuing and duplicate alerts if already pending for SL
                     if not (trade.status == "pending_close" and trade.close_reason == "stop_loss"):
                         trade.status = "pending_close"
@@ -3115,6 +3357,10 @@ def monitor_local_stop_take_levels():
                     or should_trigger_take_profit(trade, current_price)
                 ):
                     logger.info(f"Take profit triggered for trade {trade.id} ({trade.symbol}): {current_price} vs TP {trade.take_profit_price}")
+                    try:
+                        emit_lifecycle_event(subject_type="trade", subject_id=trade.id, event_type="tp_hit", data={"price": current_price, "tp": trade.take_profit_price})
+                    except Exception:
+                        pass
                     # Idempotency guard: avoid re-queuing and duplicate alerts if already pending for TP
                     if not (trade.status == "pending_close" and trade.close_reason == "take_profit"):
                         trade.status = "pending_close"
@@ -3127,6 +3373,30 @@ def monitor_local_stop_take_levels():
                         logger.info(
                             f"No TP/SL set for trade #{trade.id} {trade.symbol}; skipping trigger checks"
                         )
+                    # Dynamic exit trigger based on rolling N-minute adverse move
+                    try:
+                        tol_pct = float(getattr(config, "dynamic_exit_drawdown_tolerance_pct", 0.3) or 0.3)
+                        n_exit = int(getattr(config, "dynamic_exit_window_minutes", 5) or 5)
+                        from .utils.market_data import compute_signed_price_change_over_window
+                        signed_change = compute_signed_price_change_over_window(
+                            trade.symbol, timezone.now(), n_exit, trade.direction
+                        )
+                        if signed_change is not None and signed_change < -tol_pct:
+                            logger.info(
+                                f"Dynamic exit: trade {trade.id} adverse {signed_change:.3f}% beyond tol {tol_pct:.3f}% over {n_exit}m"
+                            )
+                            try:
+                                emit_lifecycle_event(subject_type="trade", subject_id=trade.id, event_type="dynamic_exit_triggered", data={"window_min": n_exit, "signed_change": signed_change, "tolerance_pct": tol_pct})
+                            except Exception:
+                                pass
+                            if not (trade.status == "pending_close" and trade.close_reason == "stop_loss"):
+                                trade.status = "pending_close"
+                                trade.close_reason = "stop_loss"
+                                trade.save(update_fields=["status", "close_reason", "updated_at"])
+                                close_trade_manually.delay(trade.id)
+                                triggered_count += 1
+                    except Exception as _dyn_err:
+                        logger.debug(f"Dynamic exit check skipped for trade {trade.id}: {_dyn_err}")
             except Exception as e:
                 logger.error(f"Error monitoring trade {trade.id} ({trade.symbol}): {e}")
 

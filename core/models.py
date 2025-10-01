@@ -98,6 +98,44 @@ class TradingConfig(models.Model):
         help_text="How often to monitor positions for TP/SL triggers (in minutes)"
     )
 
+    # Entry confirmation (price and volume) configuration
+    enter_confirmation_enabled = models.BooleanField(
+        default=True,
+        help_text="Require price and volume confirmation before opening a position",
+    )
+    enter_confirm_window_minutes = models.IntegerField(
+        default=5,
+        validators=[MinValueValidator(1), MaxValueValidator(120)],
+        help_text="N: Minutes after detection to measure confirmation window",
+    )
+    enter_price_change_threshold_pct = models.FloatField(
+        default=0.2,
+        validators=[MinValueValidator(0.0), MaxValueValidator(100.0)],
+        help_text="Minimal signed price change threshold in % (e.g., 0.2 = 0.2%)",
+    )
+    enter_volume_ma_window = models.IntegerField(
+        default=20,
+        validators=[MinValueValidator(1), MaxValueValidator(200)],
+        help_text="M: Moving-average window length for volume baseline (bars)",
+    )
+    enter_volume_multiplier_threshold = models.FloatField(
+        default=1.5,
+        validators=[MinValueValidator(0.1), MaxValueValidator(100.0)],
+        help_text="Required spike factor: volume_N / volume_MA",
+    )
+
+    # Freshness filter configuration
+    freshness_decay_constant_min = models.FloatField(
+        default=10.0,
+        validators=[MinValueValidator(0.1)],
+        help_text="Decay constant in minutes for freshness exp(-delay/decay)",
+    )
+    freshness_threshold = models.FloatField(
+        default=0.5,
+        validators=[MinValueValidator(0.0), MaxValueValidator(1.0)],
+        help_text="Minimum acceptable freshness value (0-1)",
+    )
+
     # LLM Configuration
     llm_model = models.CharField(max_length=100, default="gpt-3.5-turbo")
     llm_prompt_template = models.TextField(
@@ -177,6 +215,35 @@ Direction can be 'buy', 'sell', or 'hold'. Confidence is a float between 0 and 1
         default=0.5,
         validators=[MinValueValidator(0.0)],
         help_text="Minimum holding time in hours to enforce on computed per-analysis value",
+    )
+
+    # Dynamic exit drawdown tolerance (%). If momentum reverses beyond this threshold, exit early.
+    dynamic_exit_drawdown_tolerance_pct = models.FloatField(
+        default=0.3,
+        validators=[MinValueValidator(0.0), MaxValueValidator(100.0)],
+        help_text="Max adverse move in % over N minutes to trigger dynamic exit (e.g., 0.3)",
+    )
+    dynamic_exit_window_minutes = models.IntegerField(
+        default=5,
+        validators=[MinValueValidator(1), MaxValueValidator(120)],
+        help_text="N: Rolling window in minutes for dynamic exit evaluation",
+    )
+
+    # Profit-protecting trailing stop tightening
+    profit_protect_threshold_pct = models.FloatField(
+        default=0.7,
+        validators=[MinValueValidator(0.0), MaxValueValidator(100.0)],
+        help_text="Signed N-min price change to start profit protection (e.g., 0.7)",
+    )
+    profit_protect_trailing_distance_pct = models.FloatField(
+        default=0.2,
+        validators=[MinValueValidator(0.01), MaxValueValidator(100.0)],
+        help_text="Tighter trailing stop distance in % once profit protection starts",
+    )
+    profit_protect_window_minutes = models.IntegerField(
+        default=5,
+        validators=[MinValueValidator(1), MaxValueValidator(120)],
+        help_text="N: Rolling window in minutes for profit-protect evaluation",
     )
 
     # Trading hours
@@ -353,6 +420,38 @@ class Analysis(models.Model):
         blank=True,
         help_text="Maximum holding time in hours suggested by LLM for this analysis",
     )
+
+    # Entry confirmation telemetry
+    enter_confirmed = models.BooleanField(null=True, blank=True)
+    enter_price_change_n_pct = models.FloatField(null=True, blank=True)
+    enter_volume_ratio = models.FloatField(null=True, blank=True)
+    enter_checked_at = models.DateTimeField(null=True, blank=True)
+    freshness_value = models.FloatField(null=True, blank=True)
+    enter_volume_n = models.FloatField(null=True, blank=True)
+    enter_volume_ma = models.FloatField(null=True, blank=True)
+
+    # Snapshot of config constants used at analysis time for auditability
+    enter_window_minutes_snapshot = models.IntegerField(null=True, blank=True)
+    price_threshold_pct_snapshot = models.FloatField(null=True, blank=True)
+    volume_multiplier_snapshot = models.FloatField(null=True, blank=True)
+    freshness_decay_min_snapshot = models.FloatField(null=True, blank=True)
+    freshness_threshold_snapshot = models.FloatField(null=True, blank=True)
+    profit_threshold_pct_snapshot = models.FloatField(null=True, blank=True)
+
+    # Entry lifecycle tracking
+    ENTER_STATUS_CHOICES = [
+        ("created", "Created"),
+        ("eligible", "Eligible"),
+        ("waiting_confirmation", "Waiting Confirmation"),
+        ("confirm_passed", "Confirmation Passed"),
+        ("confirm_failed", "Confirmation Failed"),
+        ("precheck_failed", "Pre-check Failed"),
+        ("scheduled_execution", "Scheduled Execution"),
+    ]
+    enter_status = models.CharField(max_length=40, choices=ENTER_STATUS_CHOICES, default="created")
+    correlation_id = models.CharField(max_length=36, null=True, blank=True)
+    enter_failure_code = models.CharField(max_length=64, null=True, blank=True)
+    enter_failure_detail = models.TextField(null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -564,6 +663,35 @@ class ActivityLog(models.Model):
     def __str__(self):
         return f"{self.activity_type}: {self.message[:100]}"
 
+
+class TradeLifecycleEvent(models.Model):
+    """Normalized lifecycle events for analyses and trades."""
+
+    SUBJECT_ANALYSIS = "analysis"
+    SUBJECT_TRADE = "trade"
+    SUBJECT_CHOICES = [
+        (SUBJECT_ANALYSIS, "Analysis"),
+        (SUBJECT_TRADE, "Trade"),
+    ]
+
+    subject_type = models.CharField(max_length=16, choices=SUBJECT_CHOICES)
+    subject_id = models.IntegerField()
+    event_type = models.CharField(max_length=64)
+    prev_state = models.CharField(max_length=64, null=True, blank=True)
+    new_state = models.CharField(max_length=64, null=True, blank=True)
+    data = models.JSONField(default=dict, blank=True)
+    correlation_id = models.CharField(max_length=36, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["subject_type", "subject_id", "created_at"]),
+            models.Index(fields=["event_type", "created_at"]),
+        ]
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.subject_type}#{self.subject_id} {self.event_type}"
 
 class AlertSettings(models.Model):
     """User-configurable alert preferences for outbound notifications."""

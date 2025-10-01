@@ -1,7 +1,7 @@
 from django.shortcuts import render, redirect
 from django.http import JsonResponse
 from django.contrib import messages
-from .models import Trade, Post, Analysis, Source, TradingConfig, ActivityLog, AlertSettings, TwitterSession
+from .models import Trade, Post, Analysis, Source, TradingConfig, ActivityLog, AlertSettings, TwitterSession, TradeLifecycleEvent
 from .tasks import (
     close_trade_manually,
     close_all_trades_manually,
@@ -46,6 +46,83 @@ def dashboard_view(request):
     
     context = {"bot_enabled": bot_enabled, "current_llm_model": current_llm_model}
     return render(request, "core/dashboard.html", context)
+
+
+@staff_member_required
+def flow_tracker_view(request):
+    """Render Flow Tracker page summarizing entry/exit signals per analysis."""
+    try:
+        analyses = (
+            Analysis.objects
+            .select_related("post", "trading_config_used")
+            .prefetch_related("trades")
+            .order_by("-created_at")[:200]
+        )
+    except Exception:
+        analyses = []
+    rows = []
+    active_cfg = TradingConfig.objects.filter(is_active=True).first()
+    for a in analyses:
+        try:
+            # Show only ones that have a real ticker/symbol (exclude placeholders)
+            sym = (a.symbol or "").strip().upper()
+            if not sym or sym in {"UNKNOWN", "N/A", "NA", "--"}:
+                continue
+
+            cfg = a.trading_config_used
+            trade = a.trades.order_by("-created_at").first()
+            price_threshold = float(getattr(cfg, "enter_price_change_threshold_pct", 0.2) or 0.2) if cfg else 0.2
+            vol_mult = float(getattr(cfg, "enter_volume_multiplier_threshold", 1.5) or 1.5) if cfg else 1.5
+            min_conf = float(getattr(cfg, "min_confidence_threshold", None) or getattr(active_cfg, "min_confidence_threshold", 0.7) or 0.7)
+            # 1) Filter: show only posts that passed the confidence condition (buy/sell and >= threshold)
+            if a.direction not in ("buy", "sell") or (a.confidence or 0.0) < min_conf:
+                continue
+
+            # Use persisted decision-process metrics only (to keep page fast)
+            price_change = a.enter_price_change_n_pct
+            vol_ratio = a.enter_volume_ratio
+            vol_n = a.enter_volume_n
+            vol_ma = a.enter_volume_ma
+            freshness_val = a.freshness_value
+
+            # 2) Exit trigger booleans from lifecycle events (if a trade exists)
+            profit_protect = None
+            sl_hit = None
+            dyn_sl = None
+            if trade:
+                try:
+                    ev_qs = TradeLifecycleEvent.objects.filter(subject_type="trade", subject_id=trade.id)
+                    profit_protect = ev_qs.filter(event_type="profit_protect_activated").exists()
+                    sl_hit = ev_qs.filter(event_type="sl_hit").exists()
+                    dyn_sl = ev_qs.filter(event_type="dynamic_exit_triggered").exists()
+                except Exception:
+                    profit_protect = sl_hit = dyn_sl = None
+            row = {
+                "created_at": a.created_at,
+                "instrument": a.symbol,
+                "post_id": a.post_id,
+                "confidence": None if a.confidence is None else round(float(a.confidence), 4),
+                "price_change": None if price_change is None else round(float(price_change), 4),
+                "price_confirmation": None if price_change is None else (float(price_change) >= price_threshold),
+                "volume_n": None if vol_n is None else int(vol_n),
+                "volume_ma": None if vol_ma is None else int(vol_ma),
+                "volume_confirmation": None if vol_ratio is None else (float(vol_ratio) >= vol_mult),
+                "time_delay": None,  # could compute from post.published_at vs analysis.created_at
+                "freshness": None if freshness_val is None else round(float(freshness_val), 4),
+                "trade_id": trade.id if trade else None,
+                "profit_protect": profit_protect,
+                "tl": profit_protect,  # alias for clarity with requested column name
+                "sl": sl_hit,
+                "dyn_sl": dyn_sl,
+            }
+            rows.append(row)
+        except Exception:
+            continue
+    context = {
+        "rows": rows,
+        "active_config": active_cfg,
+    }
+    return render(request, "core/flow_tracker.html", context)
 
 
 @staff_member_required

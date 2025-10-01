@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.utils.html import format_html
 from django.urls import reverse, path
 from django.utils.safestring import mark_safe
-from .models import Source, Post, Analysis, Trade, TradingConfig, ApiResponse, AlertSettings, TrackedCompany, ActivityLog, ConfigControl
+from .models import Source, Post, Analysis, Trade, TradingConfig, ApiResponse, AlertSettings, TrackedCompany, ActivityLog, ConfigControl, TradeLifecycleEvent
 from django.utils import timezone
 from datetime import timedelta
 import json
@@ -31,6 +31,7 @@ class TradingConfigAdmin(admin.ModelAdmin):
         "take_profit_percentage",
         "trailing_stop_enabled",
         "min_confidence_threshold",
+        "enter_confirmation_enabled",
     )
     list_filter = (
         "is_active",
@@ -67,6 +68,13 @@ class TradingConfigAdmin(admin.ModelAdmin):
                     "trailing_stop_distance_percentage",
                     "trailing_stop_activation_profit_percentage",
                     "min_confidence_threshold",
+                    "enter_confirmation_enabled",
+                    "enter_confirm_window_minutes",
+                    "enter_price_change_threshold_pct",
+                    "enter_volume_ma_window",
+                    "enter_volume_multiplier_threshold",
+                    "freshness_decay_constant_min",
+                    "freshness_threshold",
                 ),
             },
         ),
@@ -79,6 +87,11 @@ class TradingConfigAdmin(admin.ModelAdmin):
                     "conservative_adjustment_factor",
                     "allow_position_adjustments",
                     "monitoring_frequency_minutes",
+                    "dynamic_exit_drawdown_tolerance_pct",
+                    "dynamic_exit_window_minutes",
+                    "profit_protect_threshold_pct",
+                    "profit_protect_trailing_distance_pct",
+                    "profit_protect_window_minutes",
                 ),
                 "description": "Settings for enhanced position management and risk adjustment",
             },
@@ -394,7 +407,7 @@ class AnalysisAdmin(admin.ModelAdmin):
         "post_id",
         "symbol",
         "direction",
-        "confidence",
+        "confidence_fmt",
         "max_hold_display",
         "used_llm_model",
         "has_trades",
@@ -402,13 +415,30 @@ class AnalysisAdmin(admin.ModelAdmin):
     )
     list_filter = ("direction", "symbol", "created_at")
     search_fields = ("symbol", "reason", "post__content")
-    readonly_fields = ("post", "raw_llm_response", "created_at")
+    readonly_fields = ("post", "raw_llm_response", "created_at", "timeline_link")
     date_hierarchy = "created_at"
 
     fieldsets = (
         (
             "Analysis Results",
             {"fields": ("post", "symbol", "direction", "confidence", "reason")},
+        ),
+        (
+            "Entry Flow",
+            {
+                "fields": (
+                    "enter_status",
+                    "enter_confirmed",
+                    "enter_failure_code",
+                    "enter_failure_detail",
+                    "enter_price_change_n_pct",
+                    "enter_volume_ratio",
+                    "freshness_value",
+                    "enter_checked_at",
+                    "correlation_id",
+                    "timeline_link",
+                )
+            },
         ),
         (
             "Enhanced Analysis",
@@ -456,6 +486,24 @@ class AnalysisAdmin(admin.ModelAdmin):
 
     has_trades.short_description = "Trades"
 
+    def timeline_link(self, obj):
+        try:
+            url = reverse("admin:core_tradelifecycleevent_changelist")
+            q = f"?subject_type__exact=analysis&subject_id__exact={obj.id}"
+            return format_html('<a href="{}{}">View lifecycle events</a>', url, q)
+        except Exception:
+            return "-"
+
+    timeline_link.short_description = "Timeline"
+
+    def confidence_fmt(self, obj):
+        try:
+            return f"{float(obj.confidence):.4f}"
+        except Exception:
+            return "-"
+
+    confidence_fmt.short_description = "Confidence"
+
 
 @admin.register(Trade)
 class TradeAdmin(admin.ModelAdmin):
@@ -465,8 +513,8 @@ class TradeAdmin(admin.ModelAdmin):
         "direction",
         "quantity",
         "status",
-        "entry_price",
-        "exit_price",
+        "entry_price_fmt",
+        "exit_price_fmt",
         "pnl_display",
         "duration",
         "created_at",
@@ -564,7 +612,7 @@ class TradeAdmin(admin.ModelAdmin):
             return "-"
         
         try:
-            pnl = float(pnl)
+            pnl = round(float(pnl), 4)
             if pnl > 0:
                 return format_html(
                     '<span style="color: green; font-weight: bold;">+${}</span>', f'{pnl:.2f}'
@@ -595,6 +643,24 @@ class TradeAdmin(admin.ModelAdmin):
         return self.duration(obj)
 
     duration_display.short_description = "Trade Duration"
+
+    def entry_price_fmt(self, obj):
+        try:
+            return f"{float(obj.entry_price):.4f}"
+        except Exception:
+            return "-"
+
+    entry_price_fmt.short_description = "Entry Price"
+
+    def exit_price_fmt(self, obj):
+        try:
+            if obj.exit_price is None:
+                return "-"
+            return f"{float(obj.exit_price):.4f}"
+        except Exception:
+            return "-"
+
+    exit_price_fmt.short_description = "Exit Price"
 
     def close_trades_manually(self, request, queryset):
         from .tasks import close_trade_manually
@@ -881,3 +947,11 @@ class ActivityLogAdmin(admin.ModelAdmin):
         self._prune_before(request, 90)
 
     prune_older_than_90_days.short_description = "Prune logs older than 90 days"
+
+
+@admin.register(TradeLifecycleEvent)
+class TradeLifecycleEventAdmin(admin.ModelAdmin):
+    list_display = ("created_at", "subject_type", "subject_id", "event_type", "prev_state", "new_state")
+    list_filter = ("subject_type", "event_type", "created_at")
+    search_fields = ("subject_type", "subject_id", "event_type", "correlation_id")
+    readonly_fields = ("created_at",)

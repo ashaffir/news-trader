@@ -62,8 +62,8 @@
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link {% if '/api/' in request.path and request.path != '/api/toggle-bot-status/' %}active{% endif %}" href="/api/" target="_blank">
-                                <i class="fas fa-code me-1"></i> API Docs
+                            <a class="nav-link {% if request.resolver_match.url_name == 'flow_tracker' %}active{% endif %}" href="/flow-tracker/">
+                                <i class="fas fa-stream me-1"></i> Flow Tracker
                             </a>
                         </li>
                     </ul>

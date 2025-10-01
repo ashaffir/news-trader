@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.utils import timezone
 from django.db.models import Q, Count, Avg, Sum
-from .models import Source, Post, Analysis, Trade, TradingConfig, ApiResponse
+from .models import Source, Post, Analysis, Trade, TradingConfig, ApiResponse, TradeLifecycleEvent
 from .tasks import scrape_posts, analyze_post, execute_trade, close_trade_manually
 
 
@@ -220,6 +220,37 @@ class AnalysisViewSet(viewsets.ReadOnlyModelViewSet):
                 pass
 
         return queryset
+
+    @action(detail=True, methods=["get"])
+    def timeline(self, request, pk=None):
+        """Return lifecycle events for this analysis (and linked trade events)."""
+        analysis = self.get_object()
+        events = list(
+            TradeLifecycleEvent.objects.filter(subject_type="analysis", subject_id=analysis.id)
+            .order_by("created_at")
+            .values("created_at", "event_type", "prev_state", "new_state", "data")
+        )
+        # Append trade events for trades linked to this analysis
+        trade_ids = list(analysis.trades.values_list("id", flat=True))
+        if trade_ids:
+            trade_events = list(
+                TradeLifecycleEvent.objects.filter(subject_type="trade", subject_id__in=trade_ids)
+                .order_by("created_at")
+                .values("created_at", "event_type", "prev_state", "new_state", "data", "subject_id")
+            )
+            events.extend(trade_events)
+        return Response({
+            "analysis_id": analysis.id,
+            "enter_status": analysis.enter_status,
+            "enter_failure_code": getattr(analysis, "enter_failure_code", None),
+            "enter_failure_detail": getattr(analysis, "enter_failure_detail", None),
+            "metrics": {
+                "price_change_n_pct": getattr(analysis, "enter_price_change_n_pct", None),
+                "volume_ratio": getattr(analysis, "enter_volume_ratio", None),
+                "freshness": getattr(analysis, "freshness_value", None),
+            },
+            "events": events,
+        })
 
 
 class TradeViewSet(viewsets.ReadOnlyModelViewSet):

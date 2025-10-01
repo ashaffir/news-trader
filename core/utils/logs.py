@@ -1,7 +1,34 @@
 import os
 from pathlib import Path
 from datetime import datetime, timedelta
-from typing import Iterable, Optional, Union, Dict, List
+from typing import Iterable, Optional, Union, Dict, List, Any
+
+
+def emit_lifecycle_event(
+    *,
+    subject_type: str,
+    subject_id: int,
+    event_type: str,
+    prev_state: Optional[str] = None,
+    new_state: Optional[str] = None,
+    data: Optional[Dict[str, Any]] = None,
+    correlation_id: Optional[str] = None,
+) -> None:
+    """Persist a lifecycle event (best-effort; never raise)."""
+    try:
+        from core.models import TradeLifecycleEvent
+        TradeLifecycleEvent.objects.create(
+            subject_type=subject_type,
+            subject_id=subject_id,
+            event_type=event_type,
+            prev_state=prev_state,
+            new_state=new_state,
+            data=data or {},
+            correlation_id=correlation_id,
+        )
+    except Exception:
+        # Avoid breaking main flow on telemetry errors
+        pass
 
 
 def _iter_matching_files(directory: Path, patterns: Iterable[str]) -> Iterable[Path]:
