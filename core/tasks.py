@@ -102,8 +102,29 @@ def enter_confirmation_check(analysis_id: int):
     except Exception:
         pass
 
-    # OR confirmation: only fail when both signals are missing
+    # If still within the first confirmation window and no bars yet, reschedule instead of failing
+    try:
+        window_end = detection_time + timedelta(minutes=n_minutes)
+    except Exception:
+        window_end = None
     if signed_change is None and vol_ratio is None:
+        try:
+            now = timezone.now()
+            if window_end and now < window_end:
+                # Reschedule to the end of the window to wait for full N bars
+                delay_s = int((window_end - now).total_seconds()) + 5
+                enter_confirmation_check.apply_async(args=[analysis.id], countdown=max(5, delay_s))
+                try:
+                    prev = analysis.enter_status
+                    analysis.enter_status = "waiting_confirmation"
+                    analysis.save(update_fields=["enter_status"])
+                    emit_lifecycle_event(subject_type="analysis", subject_id=analysis.id, event_type="entry_waiting_confirmation", prev_state=prev, new_state="waiting_confirmation", correlation_id=analysis.correlation_id)
+                except Exception:
+                    pass
+                return
+        except Exception:
+            pass
+        # OR confirmation: only fail when both signals are missing and window elapsed
         send_dashboard_update(
             "trade_rejected",
             {
@@ -113,14 +134,6 @@ def enter_confirmation_check(analysis_id: int):
                 "tag": "Rejected",
             },
         )
-        try:
-            if getattr(analysis.post, "overnight", False):
-                p = analysis.post
-                p.is_stale = True
-                p.stale_reason = "no_data"
-                p.save(update_fields=["is_stale", "stale_reason"])
-        except Exception:
-            pass
         try:
             analysis.enter_confirmed = False
             prev = analysis.enter_status
@@ -161,14 +174,6 @@ def enter_confirmation_check(analysis_id: int):
                     "tag": "Rejected",
                 },
             )
-            try:
-                if getattr(analysis.post, "overnight", False):
-                    p = analysis.post
-                    p.is_stale = True
-                    p.stale_reason = "not_executed"
-                    p.save(update_fields=["is_stale", "stale_reason"])
-            except Exception:
-                pass
             return
 
         try:
@@ -199,14 +204,6 @@ def enter_confirmation_check(analysis_id: int):
                 "tag": "Rejected",
             },
         )
-        try:
-            if getattr(analysis.post, "overnight", False):
-                p = analysis.post
-                p.is_stale = True
-                p.stale_reason = "confirm_failed"
-                p.save(update_fields=["is_stale", "stale_reason"])
-        except Exception:
-            pass
         try:
             analysis.enter_confirmed = False
             prev = analysis.enter_status

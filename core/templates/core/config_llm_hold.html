@@ -1,0 +1,108 @@
+{% extends 'core/base.html' %}
+
+{% block title %}Configuration - LLM & Hold Time{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-2">
+  <h2 class="mb-1"><i class="fas fa-brain me-2"></i>LLM & Holding Time</h2>
+  <div class="text-muted mb-3">Choose the default LLM and tune weights used to compute confidence and holding time.</div>
+
+  <div class="row g-3">
+    <div class="col-lg-7">
+      <div class="card">
+        <div class="card-body">
+          <form method="post">
+            {% csrf_token %}
+            <div class="mb-3">
+              <label class="form-label">LLM model</label>
+              {{ form.llm_model }}
+            </div>
+            <div class="mb-3">
+              <label class="form-label">LLM prompt template</label>
+              {{ form.llm_prompt_template }}
+            </div>
+            <div class="row g-3 mb-2">
+              <div class="col-auto">
+                <label class="form-label small mb-1">w1: impact size</label>
+                {{ form.confidence_weight_impact_size }}
+              </div>
+              <div class="col-auto">
+                <label class="form-label small mb-1">w2: time proximity</label>
+                {{ form.confidence_weight_time_proximity }}
+              </div>
+              <div class="col-auto">
+                <label class="form-label small mb-1">w3: clarity</label>
+                {{ form.confidence_weight_clarity }}
+              </div>
+              <div class="col-auto">
+                <label class="form-label small mb-1">w4: volatility sens.</label>
+                {{ form.confidence_weight_volatility_sensitivity }}
+              </div>
+              <div class="col-auto">
+                <label class="form-label small mb-1">w5: duration</label>
+                {{ form.confidence_weight_duration }}
+              </div>
+            </div>
+
+            <div class="row g-3">
+              <div class="col-auto">
+                <label class="form-label small mb-1">min t_peak (h)</label>
+                {{ form.hold_time_time_to_peak_min_hours }}
+              </div>
+              <div class="col-auto">
+                <label class="form-label small mb-1">max t_peak (h)</label>
+                {{ form.hold_time_time_to_peak_max_hours }}
+              </div>
+              <div class="col-auto">
+                <label class="form-label small mb-1">(1−gap)^exp</label>
+                {{ form.hold_time_time_proximity_exponent }}
+              </div>
+              <div class="col-auto">
+                <label class="form-label small mb-1">tail mult</label>
+                {{ form.hold_time_tail_multiplier }}
+              </div>
+              <div class="col-auto">
+                <label class="form-label small mb-1">tail exp</label>
+                {{ form.hold_time_tail_duration_exponent }}
+              </div>
+              <div class="col-auto">
+                <label class="form-label small mb-1">impact base</label>
+                {{ form.hold_time_tail_impact_base }}
+              </div>
+              <div class="col-auto">
+                <label class="form-label small mb-1">impact scale</label>
+                {{ form.hold_time_tail_impact_scale }}
+              </div>
+              <div class="col-auto">
+                <label class="form-label small mb-1">min hold (h)</label>
+                {{ form.hold_time_min_hours }}
+              </div>
+            </div>
+            <button class="btn btn-primary"><i class="fas fa-save me-1"></i>Save</button>
+          </form>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-5">
+      <div class="card">
+        <div class="card-body">
+          <h6>How it works</h6>
+          <ul class="small mb-0">
+            <li><strong>Confidence Weights</strong>: Blend impact, recency, clarity, volatility, duration into a final score.</li>
+            <li><strong>Hold Time</strong>: Combines time-to-peak estimates with a decay tail and minimum floor.</li>
+            <li><strong>Equations</strong>:
+              <div class="mt-1">
+                confidence = <strong>w1</strong>·impact + <strong>w2</strong>·(1−time_gap) + <strong>w3</strong>·clarity + <strong>w4</strong>·vol_sens + <strong>w5</strong>·duration<br>
+                time_to_peak = clamp(min,max, base + a·(1−time_gap)^exp)<br>
+                hold_time = max(min_hold, time_to_peak + tail_mult · duration^tail_exp)
+              </div>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+

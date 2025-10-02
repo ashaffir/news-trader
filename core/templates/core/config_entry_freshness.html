@@ -1,0 +1,86 @@
+{% extends 'core/base.html' %}
+
+{% block title %}Configuration - Entry & Freshness{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-2">
+  <h2 class="mb-1"><i class="fas fa-wave-square me-2"></i>Entry Confirmation & Freshness</h2>
+  <div class="text-muted mb-3">Control signal confirmation (price/volume) and how recency decays into eligibility.</div>
+
+  <div class="row g-3">
+    <div class="col-lg-7">
+      <div class="card">
+        <div class="card-body">
+          <form method="post">
+            {% csrf_token %}
+            <div class="row g-3 mb-2">
+              <div class="col-auto">
+                <label class="form-label small mb-1">Min confidence (0–1)</label>
+                {{ form.min_confidence_threshold }}
+              </div>
+              <div class="col-auto">
+                <div class="form-check form-switch mt-4">
+                  {{ form.enter_confirmation_enabled }}
+                  <label class="form-check-label ms-2">Require confirmation</label>
+                </div>
+              </div>
+            </div>
+            <div class="row g-3 mb-2">
+              <div class="col-auto">
+                <label class="form-label small mb-1">Window N (min)</label>
+                {{ form.enter_confirm_window_minutes }}
+              </div>
+              <div class="col-auto">
+                <label class="form-label small mb-1">Price Δ threshold %</label>
+                {{ form.enter_price_change_threshold_pct }}
+              </div>
+              <div class="col-auto">
+                <label class="form-label small mb-1">Volume MA window (M)</label>
+                {{ form.enter_volume_ma_window }}
+              </div>
+              <div class="col-auto">
+                <label class="form-label small mb-1">Volume multiplier</label>
+                {{ form.enter_volume_multiplier_threshold }}
+              </div>
+            </div>
+            <div class="row g-3">
+              <div class="col-auto">
+                <label class="form-label small mb-1">Decay constant (min)</label>
+                {{ form.freshness_decay_constant_min }}
+              </div>
+              <div class="col-auto">
+                <label class="form-label small mb-1">Freshness threshold</label>
+                {{ form.freshness_threshold }}
+              </div>
+            </div>
+            <button class="btn btn-primary mt-3"><i class="fas fa-save me-1"></i>Save</button>
+          </form>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-5">
+      <div class="card">
+        <div class="card-body">
+          <h6>Clarifications</h6>
+          <ul class="small mb-0">
+            <li><strong>Min Confidence</strong>: Require confidence ≥ threshold to consider any trade.</li>
+            <li><strong>Window (N)</strong>: Duration after detection to evaluate price/volume confirmation.</li>
+            <li><strong>Price Threshold</strong>: Minimal signed % move in the expected direction.</li>
+            <li><strong>Volume Spike</strong>: Ratio of current volume over moving-average baseline.</li>
+            <li><strong>Freshness</strong>: Exponential decay controls recency weight; low values skip entries.</li>
+            <li><strong>Equations</strong>:
+              <div class="mt-1">
+                price_change_% = 100 × (p_now − p_ref) / p_ref<br>
+                volume_ratio = volume_N / MA(volume, M)<br>
+                freshness = exp(− delay_minutes / decay_constant)
+              </div>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+

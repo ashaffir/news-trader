@@ -1,0 +1,64 @@
+{% extends 'core/base.html' %}
+
+{% block title %}Configuration - Exit Protection{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-2">
+  <h2 class="mb-1"><i class="fas fa-sign-out-alt me-2"></i>Exit Protection</h2>
+  <div class="text-muted mb-3">Tune dynamic exit and profit-protect thresholds to balance cutting losses and keeping winners.</div>
+
+  <div class="row g-3">
+    <div class="col-lg-7">
+      <div class="card">
+        <div class="card-body">
+          <form method="post">
+            {% csrf_token %}
+            <div class="row g-3">
+              <div class="col-auto">
+                <label class="form-label small mb-1">Drawdown tolerance %</label>
+                {{ form.dynamic_exit_drawdown_tolerance_pct }}
+              </div>
+              <div class="col-auto">
+                <label class="form-label small mb-1">Window N (min)</label>
+                {{ form.dynamic_exit_window_minutes }}
+              </div>
+              <div class="col-auto">
+                <label class="form-label small mb-1">Profit protect Δ% start</label>
+                {{ form.profit_protect_threshold_pct }}
+              </div>
+              <div class="col-auto">
+                <label class="form-label small mb-1">Tight trail distance %</label>
+                {{ form.profit_protect_trailing_distance_pct }}
+              </div>
+              <div class="col-auto">
+                <label class="form-label small mb-1">Profit protect window (min)</label>
+                {{ form.profit_protect_window_minutes }}
+              </div>
+            </div>
+            <button class="btn btn-primary mt-3"><i class="fas fa-save me-1"></i>Save</button>
+          </form>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-5">
+      <div class="card">
+        <div class="card-body">
+          <h6>Descriptions</h6>
+          <ul class="small mb-0">
+            <li><strong>Drawdown Tolerance</strong>: Max adverse move over a short window to force an early exit.</li>
+            <li><strong>Profit Protect</strong>: Tighten trailing distance after a favorable move to secure gains.</li>
+            <li><strong>Equations</strong>:
+              <div class="mt-1">
+                drawdown_% = 100 × (p_max_N − p_now) / p_max_N  (for long; invert for short)<br>
+                profit_trailing = entry × (1 − tightened_trail_%) when price_change_% ≥ threshold
+              </div>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+

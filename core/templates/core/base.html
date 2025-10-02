@@ -79,6 +79,16 @@
             } catch (e) {}
         })();
     </script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function(){
+            // Enable all bootstrap tooltips on the page
+            if (window.bootstrap) {
+                document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function(el){
+                    try { bootstrap.Tooltip.getOrCreateInstance(el); } catch(e) {}
+                });
+            }
+        });
+    </script>
 
     <script>
         // Initialize Bootstrap dropdowns defensively in case auto-init fails

@@ -52,7 +52,13 @@
           <td>{% if r.tl == True %}<span class="text-success">True</span>{% elif r.tl == False %}<span class="text-danger">False</span>{% else %}-{% endif %}</td>
           <td>{% if r.sl == True %}<span class="text-success">True</span>{% elif r.sl == False %}<span class="text-danger">False</span>{% else %}-{% endif %}</td>
           <td>{% if r.dyn_sl == True %}<span class="text-success">True</span>{% elif r.dyn_sl == False %}<span class="text-danger">False</span>{% else %}-{% endif %}</td>
-          <td>{{ r.progress|default:"-" }}</td>
+          <td>
+            {% if r.progress_reason %}
+              <span title="{{ r.progress_reason }}" data-bs-toggle="tooltip">{{ r.progress }}</span>
+            {% else %}
+              {{ r.progress|default:"-" }}
+            {% endif %}
+          </td>
         </tr>
         {% endfor %}
       </tbody>

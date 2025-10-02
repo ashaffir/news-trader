@@ -1,8 +1,5 @@
 <nav class="navbar navbar-expand-lg mb-4">
             <div class="container-fluid">
-                <span class="navbar-brand mb-0 h5 text-white fw-bold">
-                    <i class="fas fa-sitemap me-2"></i>PAGES
-                </span>
                 
                 <!-- Bot Status Indicator -->
                 <span class="navbar-text me-3">
@@ -31,41 +28,51 @@
                                 <i class="fas fa-sitemap me-1"></i> Source Manager
                             </a>
                         </li>
-                        <li class="nav-item">
-                            <a class="nav-link {% if request.resolver_match.url_name == 'stats_page' %}active{% endif %}" href="/stats/">
+                        <!-- Stats/Analysis Dropdown (Stats default) -->
+                        <li class="nav-item dropdown">
+                            <a class="nav-link dropdown-toggle {% if request.resolver_match.url_name == 'stats_page' or request.resolver_match.url_name == 'analysis_page' %}active{% endif %}" href="/stats/" id="statsMenu" role="button" data-bs-toggle="dropdown" aria-expanded="false">
                                 <i class="fas fa-chart-pie me-1"></i> Stats
                             </a>
+                            <ul class="dropdown-menu" aria-labelledby="statsMenu">
+                                <li><a class="dropdown-item {% if request.resolver_match.url_name == 'stats_page' %}active{% endif %}" href="/stats/"><i class="fas fa-chart-pie me-2"></i>Stats</a></li>
+                                <li><a class="dropdown-item {% if request.resolver_match.url_name == 'analysis_page' %}active{% endif %}" href="/stats/analysis/"><i class="fas fa-microscope me-2"></i>Analysis</a></li>
+                            </ul>
                         </li>
-                        <li class="nav-item">
-                            <a class="nav-link {% if request.resolver_match.url_name == 'analysis_page' %}active{% endif %}" href="/stats/analysis/">
-                                <i class="fas fa-microscope me-1"></i> Analysis
+                        <!-- Configuration Dropdown -->
+                        <li class="nav-item dropdown">
+                            <a class="nav-link dropdown-toggle {% if request.resolver_match.url_name == 'config_basics' or request.resolver_match.url_name == 'config_position_sizing' or request.resolver_match.url_name == 'config_risk_limits' or request.resolver_match.url_name == 'config_entry_freshness' or request.resolver_match.url_name == 'config_llm_hold' or request.resolver_match.url_name == 'config_exit_protect' or request.resolver_match.url_name == 'alerts' %}active{% endif %}" href="/config/basics/" id="configMenu" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                <i class="fas fa-sliders-h me-1"></i> Configuration
                             </a>
+                            <ul class="dropdown-menu" aria-labelledby="configMenu">
+                                <li class="dropdown-header">Trading Bot</li>
+                                <li><a class="dropdown-item" href="/config/basics/"><i class="fas fa-toggle-on me-2"></i>Basics & Bot Control</a></li>
+                                <li><a class="dropdown-item" href="/config/position-sizing/"><i class="fas fa-balance-scale me-2"></i>Position Sizing</a></li>
+                                <li><a class="dropdown-item" href="/config/risk-limits/"><i class="fas fa-shield-alt me-2"></i>Risk & Limits</a></li>
+                                <li><a class="dropdown-item" href="/config/entry-freshness/"><i class="fas fa-wave-square me-2"></i>Entry & Freshness</a></li>
+                                <li><a class="dropdown-item" href="/config/llm-hold/"><i class="fas fa-brain me-2"></i>LLM & Hold Time</a></li>
+                                <li><a class="dropdown-item" href="/config/exit-protection/"><i class="fas fa-sign-out-alt me-2"></i>Exit Protection</a></li>
+                                <li><a class="dropdown-item" href="/config/overnight/"><i class="fas fa-moon me-2"></i>Overnight Strategy</a></li>
+                                <li><hr class="dropdown-divider"></li>
+                                <li><a class="dropdown-item" href="/alerts/"><i class="fas fa-bell me-2"></i>Alerts</a></li>
+                            </ul>
                         </li>
-                        <li class="nav-item">
-                            <a class="nav-link {% if request.resolver_match.url_name == 'trades_log_page' %}active{% endif %}" href="/stats/trades-log/">
-                                <i class="fas fa-list me-1"></i> Trades Log
+                        <!-- Flow/Trades Dropdown (Flow Tracker default) -->
+                        <li class="nav-item dropdown">
+                            <a class="nav-link dropdown-toggle {% if request.resolver_match.url_name == 'flow_tracker' or request.resolver_match.url_name == 'trades_log_page' %}active{% endif %}" href="/flow-tracker/" id="flowMenu" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                <i class="fas fa-stream me-1"></i> Flow Tracker
                             </a>
+                            <ul class="dropdown-menu" aria-labelledby="flowMenu">
+                                <li><a class="dropdown-item {% if request.resolver_match.url_name == 'flow_tracker' %}active{% endif %}" href="/flow-tracker/"><i class="fas fa-stream me-2"></i>Flow Tracker</a></li>
+                                <li><a class="dropdown-item {% if request.resolver_match.url_name == 'trades_log_page' %}active{% endif %}" href="/stats/trades-log/"><i class="fas fa-list me-2"></i>Trades Log</a></li>
+                            </ul>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link {% if request.resolver_match.url_name == 'close_trade' %}active{% endif %}" href="/close-trade/">
                                 <i class="fas fa-times-circle me-1"></i> Open Trades
                             </a>
                         </li>
-                        <li class="nav-item">
-                            <a class="nav-link {% if request.resolver_match.url_name == 'alerts' %}active{% endif %}" href="/alerts/">
-                                <i class="fas fa-bell me-1"></i> Alerts
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link {% if '/admin/' in request.path %}active{% endif %}" href="/admin/" target="_blank">
-                                <i class="fas fa-cogs me-1"></i> Admin Panel
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link {% if request.resolver_match.url_name == 'flow_tracker' %}active{% endif %}" href="/flow-tracker/">
-                                <i class="fas fa-stream me-1"></i> Flow Tracker
-                            </a>
-                        </li>
+                        
+                        
                     </ul>
                     <div class="d-flex">
                         <div class="dropdown">
@@ -74,8 +81,8 @@
                                 <i class="fas fa-tools me-1"></i> Quick Tools
                             </button>
                             <ul class="dropdown-menu dropdown-menu-end">
-                                <li><a class="dropdown-item" href="/admin/core/" target="_blank">
-                                        <i class="fas fa-database me-2"></i> Database Admin
+                                <li><a class="dropdown-item" href="/admin/" target="_blank">
+                                        <i class="fas fa-cogs me-2"></i> Admin Panel
                                     </a></li>
                                 <li><a class="dropdown-item" href="#" onclick="openBackupModal()">
                                         <i class="fas fa-database me-2"></i> Backup DB

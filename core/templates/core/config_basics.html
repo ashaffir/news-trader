@@ -1,0 +1,74 @@
+{% extends 'core/base.html' %}
+
+{% block title %}Configuration - Basics{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-2">
+  <h2 class="mb-1"><i class="fas fa-toggle-on me-2"></i>Basics & Bot Control</h2>
+  <div class="text-muted mb-3">Enable/disable the bot and core runtime behavior. These settings affect all activities.</div>
+
+  <div class="row g-3">
+    <div class="col-lg-7">
+      <div class="card">
+        <div class="card-body">
+          <form method="post" class="needs-validation" novalidate>
+            {% csrf_token %}
+            <div class="row g-3 align-items-center mb-2">
+              <div class="col-auto">
+                <div class="form-check form-switch">
+                  {{ form.bot_enabled }}
+                  <label class="form-check-label ms-2">Bot enabled</label>
+                </div>
+              </div>
+              <div class="col-auto">
+                <div class="form-check form-switch">
+                  {{ form.autostart }}
+                  <label class="form-check-label ms-2">Autostart in market hours</label>
+                </div>
+              </div>
+              <div class="col-auto">
+                <div class="form-check form-switch">
+                  {{ form.trading_enabled }}
+                  <label class="form-check-label ms-2">Trading enabled</label>
+                </div>
+              </div>
+              <div class="col-auto">
+                <div class="form-check form-switch">
+                  {{ form.market_hours_only }}
+                  <label class="form-check-label ms-2">Market hours only</label>
+                </div>
+              </div>
+            </div>
+            <div class="row g-3">
+              <div class="col-auto">
+                <label class="form-label small mb-1">Intraday close minutes before</label>
+                {{ form.intraday_close_minutes_before }}
+              </div>
+              <div class="col-auto">
+                <label class="form-label small mb-1">Config name</label>
+                {{ form.name }}
+              </div>
+            </div>
+            <button class="btn btn-primary mt-3"><i class="fas fa-save me-1"></i>Save</button>
+          </form>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-5">
+      <div class="card">
+        <div class="card-body">
+          <h6>Help</h6>
+          <ul class="small mb-0">
+            <li><strong>Bot Enabled</strong>: Master switch for scraping, analysis, and trading.</li>
+            <li><strong>Autostart</strong>: Automatically enable during market hours.</li>
+            <li><strong>Market Hours Only</strong>: Restrict trading to market open periods.</li>
+            <li><strong>Intraday Close</strong>: Close positions N minutes before close if enabled.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+

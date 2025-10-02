@@ -30,6 +30,16 @@ from .utils.telegram import send_telegram_message
 from .twitter_login_flow import start_login_flow, complete_login_with_code
 from scraper.twitter_scraper import scrape_twitter_profile
 import time
+from .forms import (
+    TradingBasicsForm,
+    PositionSizingForm,
+    RiskLimitsForm,
+    EntryFreshnessForm,
+    LlmHoldForm,
+    ExitProtectForm,
+    AlertSettingsForm,
+    OvernightForm,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -87,34 +97,73 @@ def flow_tracker_view(request):
 
             # Progress report rationale
             progress = None
+            progress_reason = None
             try:
                 if trade:
                     progress = f"Trade {trade.status}"
+                    try:
+                        progress_reason = f"Trade exists (id={trade.id}), status={trade.status}"
+                    except Exception:
+                        progress_reason = "Trade exists"
                 else:
                     status = (a.enter_status or "").strip()
                     if status == "waiting_confirmation":
                         progress = "Waiting confirmation"
+                        try:
+                            n_enter = int(getattr(cfg, "enter_confirm_window_minutes", None) or getattr(active_cfg, "enter_confirm_window_minutes", 5) or 5)
+                            eta = a.created_at + timedelta(minutes=n_enter)
+                            if getattr(a.post, "overnight", False):
+                                progress_reason = f"Overnight: will evaluate at market open, window {n_enter}m"
+                            else:
+                                progress_reason = f"Scheduled window {n_enter}m; est. done by {eta.strftime('%H:%M')}"
+                        except Exception:
+                            progress_reason = "Scheduled for N-minute window"
                     elif status == "confirm_failed":
                         progress = a.enter_failure_code or "confirm_failed"
+                        detail = a.enter_failure_detail or ""
+                        progress_reason = detail or "Entry confirmation failed"
                     elif status == "confirm_passed":
                         progress = "Confirmation passed"
+                        progress_reason = "Both freshness and (price or volume) met"
                     elif status == "eligible":
                         if a.max_holding_time_hours is None:
                             progress = "Not scheduled: max_hold missing"
+                            progress_reason = "LLM did not provide max_holding_time_hours"
                         else:
                             if getattr(active_cfg, "enter_confirmation_enabled", False):
                                 # If confirmation is enabled but no check recorded yet
                                 progress = "Pending confirmation"
+                                try:
+                                    n_enter = int(getattr(cfg, "enter_confirm_window_minutes", None) or getattr(active_cfg, "enter_confirm_window_minutes", 5) or 5)
+                                    eta = a.created_at + timedelta(minutes=n_enter)
+                                    progress_reason = f"Awaiting window completion ({n_enter}m) until {eta.strftime('%H:%M')}"
+                                except Exception:
+                                    progress_reason = "Awaiting window completion"
                             else:
                                 progress = "Immediate mode: no order"
+                                progress_reason = "Confirmation disabled"
                     elif status == "created":
                         progress = "Not eligible"
+                        try:
+                            why = []
+                            if a.direction not in ("buy", "sell"):
+                                why.append("direction=HOLD")
+                            if (a.confidence or 0.0) < min_conf:
+                                why.append(f"confidence {float(a.confidence or 0.0):.3f} < {min_conf:.3f}")
+                            if a.max_holding_time_hours is None:
+                                why.append("max_hold missing")
+                            progress_reason = ", ".join(why) or "status not updated yet"
+                        except Exception:
+                            progress_reason = "status not updated yet"
 
                     # If a confirmation ran but lacked market data
                     if a.enter_checked_at and (price_change is None or vol_ratio is None) and not trade:
                         progress = "No market data"
+                        if progress_reason is None:
+                            progress_reason = "Bars or MA history unavailable within window"
             except Exception:
                 progress = None
+                progress_reason = None
 
             # 2) Exit trigger booleans from lifecycle events (if a trade exists)
             profit_protect = None
@@ -146,6 +195,7 @@ def flow_tracker_view(request):
                 "sl": sl_hit,
                 "dyn_sl": dyn_sl,
                 "progress": progress,
+                "progress_reason": progress_reason,
             }
             rows.append(row)
         except Exception:
@@ -2698,6 +2748,122 @@ def analyze_source_page(request):
             'bot_enabled': bot_enabled,
         },
     )
+
+
+# =========================
+# Configuration Pages (Non-Admin)
+# =========================
+
+def _get_active_config():
+    try:
+        return TradingConfig.objects.filter(is_active=True).order_by("-updated_at").first() or TradingConfig.objects.first()
+    except Exception:
+        return None
+
+
+@staff_member_required
+def config_basics_view(request):
+    cfg = _get_active_config()
+    bot_enabled = bool(getattr(cfg, "bot_enabled", False))
+    if request.method == "POST":
+        form = TradingBasicsForm(request.POST, instance=cfg)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Saved basic bot configuration.")
+            return redirect("config_basics")
+    else:
+        form = TradingBasicsForm(instance=cfg)
+    return render(request, "core/config_basics.html", {"form": form, "section": "basics", "bot_enabled": bot_enabled})
+
+
+@staff_member_required
+def config_position_sizing_view(request):
+    cfg = _get_active_config()
+    bot_enabled = bool(getattr(cfg, "bot_enabled", False))
+    if request.method == "POST":
+        form = PositionSizingForm(request.POST, instance=cfg)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Saved position sizing settings.")
+            return redirect("config_position_sizing")
+    else:
+        form = PositionSizingForm(instance=cfg)
+    return render(request, "core/config_position_sizing.html", {"form": form, "section": "position", "bot_enabled": bot_enabled})
+
+
+@staff_member_required
+def config_risk_limits_view(request):
+    cfg = _get_active_config()
+    bot_enabled = bool(getattr(cfg, "bot_enabled", False))
+    if request.method == "POST":
+        form = RiskLimitsForm(request.POST, instance=cfg)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Saved risk and limits settings.")
+            return redirect("config_risk_limits")
+    else:
+        form = RiskLimitsForm(instance=cfg)
+    return render(request, "core/config_risk_limits.html", {"form": form, "section": "risk", "bot_enabled": bot_enabled})
+
+
+@staff_member_required
+def config_entry_freshness_view(request):
+    cfg = _get_active_config()
+    bot_enabled = bool(getattr(cfg, "bot_enabled", False))
+    if request.method == "POST":
+        form = EntryFreshnessForm(request.POST, instance=cfg)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Saved entry confirmation and freshness settings.")
+            return redirect("config_entry_freshness")
+    else:
+        form = EntryFreshnessForm(instance=cfg)
+    return render(request, "core/config_entry_freshness.html", {"form": form, "section": "entry", "bot_enabled": bot_enabled})
+
+
+@staff_member_required
+def config_llm_hold_view(request):
+    cfg = _get_active_config()
+    bot_enabled = bool(getattr(cfg, "bot_enabled", False))
+    if request.method == "POST":
+        form = LlmHoldForm(request.POST, instance=cfg)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Saved LLM and holding time settings.")
+            return redirect("config_llm_hold")
+    else:
+        form = LlmHoldForm(instance=cfg)
+    return render(request, "core/config_llm_hold.html", {"form": form, "section": "llm", "bot_enabled": bot_enabled})
+
+
+@staff_member_required
+def config_exit_protect_view(request):
+    cfg = _get_active_config()
+    bot_enabled = bool(getattr(cfg, "bot_enabled", False))
+    if request.method == "POST":
+        form = ExitProtectForm(request.POST, instance=cfg)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Saved exit protection settings.")
+            return redirect("config_exit_protect")
+    else:
+        form = ExitProtectForm(instance=cfg)
+    return render(request, "core/config_exit_protect.html", {"form": form, "section": "exit", "bot_enabled": bot_enabled})
+
+
+@staff_member_required
+def config_overnight_view(request):
+    cfg = _get_active_config()
+    bot_enabled = bool(getattr(cfg, "bot_enabled", False))
+    if request.method == "POST":
+        form = OvernightForm(request.POST, instance=cfg)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Saved overnight strategy settings.")
+            return redirect("config_overnight")
+    else:
+        form = OvernightForm(instance=cfg)
+    return render(request, "core/config_overnight.html", {"form": form, "section": "overnight", "bot_enabled": bot_enabled})
 
 
 @staff_member_required
