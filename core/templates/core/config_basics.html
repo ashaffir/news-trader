@@ -46,6 +46,12 @@
               </div>
               <div class="col-auto">
                 <div class="form-check form-switch">
+                  {{ form.allow_untracked_symbols }}
+                  <label class="form-check-label ms-2" for="{{ form.allow_untracked_symbols.id_for_label }}">{{ form.allow_untracked_symbols.label }}</label>
+                </div>
+              </div>
+              <div class="col-auto">
+                <div class="form-check form-switch">
                   {{ form.is_active }}
                   <label class="form-check-label ms-2" for="{{ form.is_active.id_for_label }}">{{ form.is_active.label }}</label>
                 </div>

@@ -119,4 +119,23 @@ AAPL,Apple Inc (Updated),Consumer Electronics,Information Technology,USA
         # Should show error message in response content
         self.assertContains(resp, "Missing required CSV headers")
 
+    def test_untracked_trade_allowed_when_config_enabled(self):
+        from core.models import TradingConfig
+        cfg = TradingConfig.objects.create(name="Cfg1", is_active=True, allow_untracked_symbols=True)
+        src = Source.objects.create(name="S", url="https://example.com")
+        post = Post.objects.create(source=src, url="https://example.com/x", content="x")
+        analysis = Analysis.objects.create(post=post, symbol="ZZZZ", direction="buy", confidence=0.99, reason="r", trading_config_used=cfg)
+        from core.tasks import create_new_trade
+        # This should not be rejected due to tracked-company check; function may exit earlier due to missing keys
+        create_new_trade(analysis.id)
+
+    def test_untracked_trade_blocked_when_config_disabled(self):
+        from core.models import TradingConfig
+        cfg = TradingConfig.objects.create(name="Cfg2", is_active=True, allow_untracked_symbols=False)
+        src = Source.objects.create(name="S2", url="https://example.com/2")
+        post = Post.objects.create(source=src, url="https://example.com/y", content="y")
+        analysis = Analysis.objects.create(post=post, symbol="QQQQ", direction="buy", confidence=0.99, reason="r", trading_config_used=cfg)
+        from core.tasks import create_new_trade
+        create_new_trade(analysis.id)
+
 

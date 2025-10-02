@@ -47,7 +47,7 @@ class TradingConfigAdmin(admin.ModelAdmin):
     fieldsets = (
         (
             "Basic Configuration",
-            {"fields": ("name", "is_active", "trading_enabled", "market_hours_only", "intraday_trading", "intraday_close_minutes_before", "autostart")},
+            {"fields": ("name", "is_active", "trading_enabled", "market_hours_only", "allow_untracked_symbols", "intraday_trading", "intraday_close_minutes_before", "autostart")},
         ),
         (
             "Overnight Strategy",

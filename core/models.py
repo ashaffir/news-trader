@@ -267,6 +267,11 @@ Direction can be 'buy', 'sell', or 'hold'. Confidence is a float between 0 and 1
     market_hours_only = models.BooleanField(
         default=True, help_text="Only trade during market hours"
     )
+    # Allow trading symbols that are not in TrackedCompany
+    allow_untracked_symbols = models.BooleanField(
+        default=True,
+        help_text="If True, do not enforce TrackedCompany membership before trading",
+    )
     intraday_trading = models.BooleanField(
         default=False,
         help_text="If enabled, close all open positions shortly before market close",

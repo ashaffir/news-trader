@@ -49,6 +49,7 @@ class TradingBasicsForm(_ConfigFormMixin, forms.ModelForm):
             "autostart",
             "trading_enabled",
             "market_hours_only",
+            "allow_untracked_symbols",
             "intraday_trading",
             "intraday_close_minutes_before",
             "is_active",

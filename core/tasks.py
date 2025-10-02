@@ -3003,24 +3003,29 @@ def create_new_trade(analysis_id):
                 )
                 return
 
-        # Enforce tracked-company requirement for analysis-driven trades
+        # Enforce tracked-company requirement for analysis-driven trades, unless config allows untracked
         try:
-            from .models import TrackedCompany
-            tc_enforced = TrackedCompany.objects.filter(symbol__iexact=analysis.symbol).first()
+            allow_untracked = bool(getattr(config, "allow_untracked_symbols", True))
         except Exception:
-            tc_enforced = None
-        if not tc_enforced:
-            logger.warning(f"Rejected new trade for untracked symbol: {analysis.symbol}")
-            send_dashboard_update(
-                "trade_rejected",
-                {
-                    "analysis_id": analysis.id,
-                    "symbol": analysis.symbol,
-                    "reason": "Symbol not in tracked companies",
-                    "tag": "Rejected",
-                },
-            )
-            return
+            allow_untracked = True
+        if not allow_untracked:
+            try:
+                from .models import TrackedCompany
+                tc_enforced = TrackedCompany.objects.filter(symbol__iexact=analysis.symbol).first()
+            except Exception:
+                tc_enforced = None
+            if not tc_enforced:
+                logger.warning(f"Rejected new trade for untracked symbol: {analysis.symbol}")
+                send_dashboard_update(
+                    "trade_rejected",
+                    {
+                        "analysis_id": analysis.id,
+                        "symbol": analysis.symbol,
+                        "reason": "Symbol not in tracked companies",
+                        "tag": "Rejected",
+                    },
+                )
+                return
 
         # Calculate stop loss and take profit prices (local, to be saved after order)
         stop_loss_price = None
@@ -3840,38 +3845,42 @@ def create_manual_test_trade(symbol, direction, quantity=None, position_size=Non
     """Create a manual test trade directly to Alpaca API for testing purposes."""
     logger.info(f"Creating manual test trade: {symbol} {direction}")
 
-    # Enforce tracked company requirement for any trade (including manual)
+    # Enforce tracked company requirement for any trade (including manual) unless config allows untracked
     try:
-        from .models import TrackedCompany
-        if not TrackedCompany.objects.filter(symbol__iexact=symbol).exists():
+        config = get_active_trading_config()
+        allow_untracked = bool(getattr(config, "allow_untracked_symbols", True)) if config else True
+    except Exception:
+        config = None
+        allow_untracked = True
+    if not allow_untracked:
+        try:
+            from .models import TrackedCompany
+            if not TrackedCompany.objects.filter(symbol__iexact=symbol).exists():
+                send_dashboard_update(
+                    "trade_rejected",
+                    {
+                        "symbol": symbol,
+                        "reason": "Symbol not in tracked companies",
+                        "tag": "Rejected",
+                    },
+                )
+                return {
+                    "success": False,
+                    "error": "Symbol not in tracked companies"
+                }
+        except Exception:
+            # If lookup fails unexpectedly, be safe and reject
             send_dashboard_update(
                 "trade_rejected",
-                {
-                    "symbol": symbol,
-                    "reason": "Symbol not in tracked companies",
-                    "tag": "Rejected",
-                },
+                {"symbol": symbol, "reason": "Tracked company check failed", "tag": "Rejected"},
             )
             return {
                 "success": False,
-                "error": "Symbol not in tracked companies"
+                "error": "Tracked company check failed"
             }
-    except Exception:
-        # If lookup fails unexpectedly, be safe and reject
-        send_dashboard_update(
-            "trade_rejected",
-            {"symbol": symbol, "reason": "Tracked company check failed", "tag": "Rejected"},
-        )
-        return {
-            "success": False,
-            "error": "Tracked company check failed"
-        }
 
     # Enforce configurable limits here as well
-    try:
-        config = get_active_trading_config()
-    except Exception:
-        config = None
+    # config already loaded above if possible
 
     if config:
         # Enforce max position size for manual trades
