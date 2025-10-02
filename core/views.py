@@ -157,11 +157,39 @@ def flow_tracker_view(request):
                         except Exception:
                             progress_reason = "status not updated yet"
 
-                    # If a confirmation ran but lacked market data
-                    if a.enter_checked_at and (price_change is None or vol_ratio is None) and not trade:
-                        progress = "No market data"
+                    # Clarify missing-data states
+                    # 1) If final failure due to no data, mark explicitly as final
+                    if status == "confirm_failed" and (getattr(a, "enter_failure_code", "") == "no_data" or (price_change is None or vol_ratio is None)) and not trade:
+                        progress = "No market data (final)"
                         if progress_reason is None:
-                            progress_reason = "Bars or MA history unavailable within window"
+                            detail = (a.enter_failure_detail or "Window elapsed or insufficient bars/MA; not considered")
+                            progress_reason = detail
+                    # 2) If check ran but signals missing and we're still within window/open context, show waiting-state
+                    elif a.enter_checked_at and (price_change is None or vol_ratio is None) and not trade and status != "waiting_confirmation":
+                        try:
+                            # Determine ETA from window length
+                            n_enter = int(getattr(cfg, "enter_confirm_window_minutes", None) or getattr(active_cfg, "enter_confirm_window_minutes", 5) or 5)
+                            eta = a.created_at + timedelta(minutes=n_enter)
+                            # Lazy import to avoid module-level dependency
+                            from .tasks import is_market_open_broker_aware
+                            if not is_market_open_broker_aware():
+                                progress = "Waiting market open"
+                                progress_reason = progress_reason or f"Market closed; will evaluate at open, window {n_enter}m"
+                            else:
+                                now = timezone.now()
+                                if now < eta:
+                                    progress = "Waiting bars"
+                                    progress_reason = progress_reason or f"Collecting bars ({n_enter}m window); est. done by {eta.strftime('%H:%M')}"
+                                else:
+                                    # Fallback if window math disagrees but signals missing
+                                    progress = "No market data"
+                                    progress_reason = progress_reason or "Bars or MA history unavailable within window"
+                        except Exception:
+                            # Keep previous messaging on error
+                            if progress is None:
+                                progress = "No market data"
+                            if progress_reason is None:
+                                progress_reason = "Bars or MA history unavailable within window"
             except Exception:
                 progress = None
                 progress_reason = None
