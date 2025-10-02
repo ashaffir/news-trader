@@ -14,16 +14,16 @@
           <form method="post">
             {% csrf_token %}
             <div class="mb-3">
-              <label class="form-label">Method</label>
+              <label class="form-label" for="{{ form.position_sizing_method.id_for_label }}">{{ form.position_sizing_method.label }}</label>
               {{ form.position_sizing_method }}
             </div>
             <div class="row g-3">
               <div class="col-auto">
-                <label class="form-label small mb-1">Default size ($)</label>
+                <label class="form-label small mb-1" for="{{ form.default_position_size.id_for_label }}">{{ form.default_position_size.label }}</label>
                 {{ form.default_position_size }}
               </div>
               <div class="col-auto">
-                <label class="form-label small mb-1">Max position ($)</label>
+                <label class="form-label small mb-1" for="{{ form.max_position_size.id_for_label }}">{{ form.max_position_size.label }}</label>
                 {{ form.max_position_size }}
               </div>
             </div>

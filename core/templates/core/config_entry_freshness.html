@@ -15,41 +15,42 @@
             {% csrf_token %}
             <div class="row g-3 mb-2">
               <div class="col-auto">
-                <label class="form-label small mb-1">Min confidence (0–1)</label>
+                <label class="form-label small mb-1" for="{{ form.min_confidence_threshold.id_for_label }}">{{ form.min_confidence_threshold.label }}</label>
                 {{ form.min_confidence_threshold }}
               </div>
               <div class="col-auto">
                 <div class="form-check form-switch mt-4">
                   {{ form.enter_confirmation_enabled }}
-                  <label class="form-check-label ms-2">Require confirmation</label>
+                  <label class="form-check-label ms-2" for="{{ form.enter_confirmation_enabled.id_for_label }}">{{ form.enter_confirmation_enabled.label }}</label>
                 </div>
+                <div class="form-text">{{ form.enter_confirmation_enabled.help_text }}</div>
               </div>
             </div>
             <div class="row g-3 mb-2">
               <div class="col-auto">
-                <label class="form-label small mb-1">Window N (min)</label>
+                <label class="form-label small mb-1" for="{{ form.enter_confirm_window_minutes.id_for_label }}">{{ form.enter_confirm_window_minutes.label }}</label>
                 {{ form.enter_confirm_window_minutes }}
               </div>
               <div class="col-auto">
-                <label class="form-label small mb-1">Price Δ threshold %</label>
+                <label class="form-label small mb-1" for="{{ form.enter_price_change_threshold_pct.id_for_label }}">{{ form.enter_price_change_threshold_pct.label }}</label>
                 {{ form.enter_price_change_threshold_pct }}
               </div>
               <div class="col-auto">
-                <label class="form-label small mb-1">Volume MA window (M)</label>
+                <label class="form-label small mb-1" for="{{ form.enter_volume_ma_window.id_for_label }}">{{ form.enter_volume_ma_window.label }}</label>
                 {{ form.enter_volume_ma_window }}
               </div>
               <div class="col-auto">
-                <label class="form-label small mb-1">Volume multiplier</label>
+                <label class="form-label small mb-1" for="{{ form.enter_volume_multiplier_threshold.id_for_label }}">{{ form.enter_volume_multiplier_threshold.label }}</label>
                 {{ form.enter_volume_multiplier_threshold }}
               </div>
             </div>
             <div class="row g-3">
               <div class="col-auto">
-                <label class="form-label small mb-1">Decay constant (min)</label>
+                <label class="form-label small mb-1" for="{{ form.freshness_decay_constant_min.id_for_label }}">{{ form.freshness_decay_constant_min.label }}</label>
                 {{ form.freshness_decay_constant_min }}
               </div>
               <div class="col-auto">
-                <label class="form-label small mb-1">Freshness threshold</label>
+                <label class="form-label small mb-1" for="{{ form.freshness_threshold.id_for_label }}">{{ form.freshness_threshold.label }}</label>
                 {{ form.freshness_threshold }}
               </div>
             </div>

@@ -17,35 +17,47 @@
               <div class="col-auto">
                 <div class="form-check form-switch">
                   {{ form.bot_enabled }}
-                  <label class="form-check-label ms-2">Bot enabled</label>
+                  <label class="form-check-label ms-2" for="{{ form.bot_enabled.id_for_label }}">{{ form.bot_enabled.label }}</label>
                 </div>
               </div>
               <div class="col-auto">
                 <div class="form-check form-switch">
                   {{ form.autostart }}
-                  <label class="form-check-label ms-2">Autostart in market hours</label>
+                  <label class="form-check-label ms-2" for="{{ form.autostart.id_for_label }}">{{ form.autostart.label }}</label>
                 </div>
               </div>
               <div class="col-auto">
                 <div class="form-check form-switch">
                   {{ form.trading_enabled }}
-                  <label class="form-check-label ms-2">Trading enabled</label>
+                  <label class="form-check-label ms-2" for="{{ form.trading_enabled.id_for_label }}">{{ form.trading_enabled.label }}</label>
+                </div>
+              </div>
+              <div class="col-auto">
+                <div class="form-check form-switch">
+                  {{ form.intraday_trading }}
+                  <label class="form-check-label ms-2" for="{{ form.intraday_trading.id_for_label }}">{{ form.intraday_trading.label }}</label>
                 </div>
               </div>
               <div class="col-auto">
                 <div class="form-check form-switch">
                   {{ form.market_hours_only }}
-                  <label class="form-check-label ms-2">Market hours only</label>
+                  <label class="form-check-label ms-2" for="{{ form.market_hours_only.id_for_label }}">{{ form.market_hours_only.label }}</label>
+                </div>
+              </div>
+              <div class="col-auto">
+                <div class="form-check form-switch">
+                  {{ form.is_active }}
+                  <label class="form-check-label ms-2" for="{{ form.is_active.id_for_label }}">{{ form.is_active.label }}</label>
                 </div>
               </div>
             </div>
             <div class="row g-3">
               <div class="col-auto">
-                <label class="form-label small mb-1">Intraday close minutes before</label>
+                <label class="form-label small mb-1" for="{{ form.intraday_close_minutes_before.id_for_label }}">{{ form.intraday_close_minutes_before.label }}</label>
                 {{ form.intraday_close_minutes_before }}
               </div>
               <div class="col-auto">
-                <label class="form-label small mb-1">Config name</label>
+                <label class="form-label small mb-1" for="{{ form.name.id_for_label }}">{{ form.name.label }}</label>
                 {{ form.name }}
               </div>
             </div>

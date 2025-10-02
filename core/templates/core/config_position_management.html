@@ -1,0 +1,62 @@
+{% extends 'core/base.html' %}
+
+{% block title %}Configuration - Position Management{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-2">
+  <h2 class="mb-1"><i class="fas fa-tasks me-2"></i>Position Management</h2>
+  <div class="text-muted mb-3">One-time adjustment policy, monitoring cadence, and maximum holding time.</div>
+
+  <div class="row g-3">
+    <div class="col-lg-7">
+      <div class="card">
+        <div class="card-body">
+          <form method="post">
+            {% csrf_token %}
+            <div class="row g-3 mb-2">
+              <div class="col-auto">
+                <label class="form-label small mb-1">Max hold (hours)</label>
+                {{ form.max_position_hold_time_hours }}
+              </div>
+              <div class="col-auto">
+                <label class="form-label small mb-1">Monitor frequency (min)</label>
+                {{ form.monitoring_frequency_minutes }}
+              </div>
+            </div>
+            <div class="row g-3 mb-2 align-items-center">
+              <div class="col-auto">
+                <div class="form-check form-switch">
+                  {{ form.allow_position_adjustments }}
+                  <label class="form-check-label ms-2">Allow one-time TP/SL adjustment</label>
+                </div>
+              </div>
+              <div class="col-auto">
+                <label class="form-label small mb-1">Min confidence to adjust</label>
+                {{ form.min_confidence_for_adjustment }}
+              </div>
+              <div class="col-auto">
+                <label class="form-label small mb-1">Conservative factor</label>
+                {{ form.conservative_adjustment_factor }}
+              </div>
+            </div>
+            <button class="btn btn-primary"><i class="fas fa-save me-1"></i>Save</button>
+          </form>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-5">
+      <div class="card">
+        <div class="card-body">
+          <h6>Notes & Equations</h6>
+          <ul class="small mb-0">
+            <li><strong>Adjustment rule:</strong> if confidence ≥ min and not adjusted, new levels = old + conservative_factor × (suggested − old).</li>
+            <li><strong>Monitoring cadence</strong> controls how often TP/SL triggers and dynamic rules are evaluated.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+

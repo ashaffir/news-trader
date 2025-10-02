@@ -39,6 +39,7 @@ from .forms import (
     ExitProtectForm,
     AlertSettingsForm,
     OvernightForm,
+    PositionManagementForm,
 )
 
 logger = logging.getLogger(__name__)
@@ -2864,6 +2865,21 @@ def config_overnight_view(request):
     else:
         form = OvernightForm(instance=cfg)
     return render(request, "core/config_overnight.html", {"form": form, "section": "overnight", "bot_enabled": bot_enabled})
+
+
+@staff_member_required
+def config_position_management_view(request):
+    cfg = _get_active_config()
+    bot_enabled = bool(getattr(cfg, "bot_enabled", False))
+    if request.method == "POST":
+        form = PositionManagementForm(request.POST, instance=cfg)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Saved position management settings.")
+            return redirect("config_position_management")
+    else:
+        form = PositionManagementForm(instance=cfg)
+    return render(request, "core/config_position_management.html", {"form": form, "section": "position_mgmt", "bot_enabled": bot_enabled})
 
 
 @staff_member_required

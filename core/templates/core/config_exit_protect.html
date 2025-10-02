@@ -15,23 +15,23 @@
             {% csrf_token %}
             <div class="row g-3">
               <div class="col-auto">
-                <label class="form-label small mb-1">Drawdown tolerance %</label>
+                <label class="form-label small mb-1" for="{{ form.dynamic_exit_drawdown_tolerance_pct.id_for_label }}">{{ form.dynamic_exit_drawdown_tolerance_pct.label }}</label>
                 {{ form.dynamic_exit_drawdown_tolerance_pct }}
               </div>
               <div class="col-auto">
-                <label class="form-label small mb-1">Window N (min)</label>
+                <label class="form-label small mb-1" for="{{ form.dynamic_exit_window_minutes.id_for_label }}">{{ form.dynamic_exit_window_minutes.label }}</label>
                 {{ form.dynamic_exit_window_minutes }}
               </div>
               <div class="col-auto">
-                <label class="form-label small mb-1">Profit protect Δ% start</label>
+                <label class="form-label small mb-1" for="{{ form.profit_protect_threshold_pct.id_for_label }}">{{ form.profit_protect_threshold_pct.label }}</label>
                 {{ form.profit_protect_threshold_pct }}
               </div>
               <div class="col-auto">
-                <label class="form-label small mb-1">Tight trail distance %</label>
+                <label class="form-label small mb-1" for="{{ form.profit_protect_trailing_distance_pct.id_for_label }}">{{ form.profit_protect_trailing_distance_pct.label }}</label>
                 {{ form.profit_protect_trailing_distance_pct }}
               </div>
               <div class="col-auto">
-                <label class="form-label small mb-1">Profit protect window (min)</label>
+                <label class="form-label small mb-1" for="{{ form.profit_protect_window_minutes.id_for_label }}">{{ form.profit_protect_window_minutes.label }}</label>
                 {{ form.profit_protect_window_minutes }}
               </div>
             </div>

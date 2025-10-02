@@ -35,6 +35,7 @@ urlpatterns = [
     path('config/llm-hold/', views.config_llm_hold_view, name='config_llm_hold'),
     path('config/exit-protection/', views.config_exit_protect_view, name='config_exit_protect'),
     path('config/overnight/', views.config_overnight_view, name='config_overnight'),
+    path('config/position-management/', views.config_position_management_view, name='config_position_management'),
     path('alerts/send-test/', views.alerts_send_test, name='alerts_send_test'),
     path('toggle_bot_status/', views.toggle_bot_status, name='toggle_bot_status'),
     path('system_status/', views.system_status_api, name='system_status'),

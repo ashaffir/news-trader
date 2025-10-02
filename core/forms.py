@@ -75,6 +75,22 @@ class RiskLimitsForm(_ConfigFormMixin, forms.ModelForm):
             "max_daily_trades",
             "max_concurrent_open_trades",
             "max_total_open_exposure",
+            # Trailing stop
+            "trailing_stop_enabled",
+            "trailing_stop_distance_percentage",
+            "trailing_stop_activation_profit_percentage",
+        ]
+
+
+class PositionManagementForm(_ConfigFormMixin, forms.ModelForm):
+    class Meta:
+        model = TradingConfig
+        fields = [
+            "max_position_hold_time_hours",
+            "allow_position_adjustments",
+            "min_confidence_for_adjustment",
+            "conservative_adjustment_factor",
+            "monitoring_frequency_minutes",
         ]
 
 
