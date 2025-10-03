@@ -146,8 +146,8 @@ def compute_entry_confirmations(
     if not window_bars or len(window_bars) < window_minutes:
         return None, None, None, None
     if not prior_bars or len(prior_bars) < max(3, min(10, volume_ma_window // 2)):
-        # Require some reasonable history
-        return None, None
+        # Require some reasonable history; maintain 4-tuple contract
+        return None, None, None, None
 
     # Sort by timestamp just in case
     window_bars = sorted(window_bars, key=lambda b: b.timestamp)
@@ -156,7 +156,7 @@ def compute_entry_confirmations(
     open_first = float(window_bars[0].open)
     close_last = float(window_bars[min(len(window_bars), window_minutes) - 1].close)
     if open_first <= 0:
-        return None, None
+        return None, None, None, None
 
     raw_change_pct = (close_last - open_first) / open_first * 100.0
     signed_change = raw_change_pct
