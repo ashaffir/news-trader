@@ -2676,19 +2676,19 @@ If no specific market impact is likely or the text is irrelevant, return:
                     # Defer actual trade decision to confirmation task
                     try:
                         enter_confirmation_check.apply_async(args=[analysis.id], countdown=n_minutes * 60)
-                    emit_lifecycle_event(subject_type="analysis", subject_id=analysis.id, event_type="entry_scheduled_check", correlation_id=analysis.correlation_id, data={"delay_min": n_minutes})
-                except Exception:
-                    # Fallback: if scheduling fails, do not execute immediately; log rejection
-                    logger.warning("Failed to schedule entry confirmation; rejecting trade by policy")
-                    send_dashboard_update(
-                        "trade_rejected",
-                        {
-                            "analysis_id": analysis.id,
-                            "symbol": analysis.symbol,
-                            "reason": "Entry confirmation scheduling failed",
-                            "tag": "Rejected",
-                        },
-                    )
+                        emit_lifecycle_event(subject_type="analysis", subject_id=analysis.id, event_type="entry_scheduled_check", correlation_id=analysis.correlation_id, data={"delay_min": n_minutes})
+                    except Exception:
+                        # Fallback: if scheduling fails, do not execute immediately; log rejection
+                        logger.warning("Failed to schedule entry confirmation; rejecting trade by policy")
+                        send_dashboard_update(
+                            "trade_rejected",
+                            {
+                                "analysis_id": analysis.id,
+                                "symbol": analysis.symbol,
+                                "reason": "Entry confirmation scheduling failed",
+                                "tag": "Rejected",
+                            },
+                        )
             else:
                 # Legacy immediate execution path
                 trading_allowed, reason = is_trading_allowed()
