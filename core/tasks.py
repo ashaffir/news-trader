@@ -2630,33 +2630,52 @@ If no specific market impact is likely or the text is irrelevant, return:
             except Exception:
                 pass
             # If entry confirmation is enabled, schedule confirmation check after N minutes.
+            # Skip scheduling for overnight posts; process_overnight_posts handles them at open.
             if getattr(config, "enter_confirmation_enabled", False):
-                n_minutes = int(getattr(config, "enter_confirm_window_minutes", 5) or 5)
-                try:
-                    send_dashboard_update(
-                        "trade_status",
-                        {
-                            "analysis_id": analysis.id,
-                            "symbol": analysis.symbol,
-                            "status": f"Waiting entry confirmation for {n_minutes} min",
-                        },
-                    )
-                except Exception:
-                    pass
-                try:
-                    prev = analysis.enter_status
-                    analysis.enter_status = "waiting_confirmation"
-                    analysis.save(update_fields=["enter_status"])
-                    emit_lifecycle_event(subject_type="analysis", subject_id=analysis.id, event_type="entry_waiting_confirmation", prev_state=prev, new_state="waiting_confirmation", correlation_id=analysis.correlation_id)
-                except Exception:
-                    pass
-                try:
-                    from trader.tasks.trades import execute_trade as _  # noqa: F401  (ensure trader app loaded)
-                except Exception:
-                    pass
-                # Defer actual trade decision to confirmation task
-                try:
-                    enter_confirmation_check.apply_async(args=[analysis.id], countdown=n_minutes * 60)
+                is_overnight = getattr(post, "overnight", False)
+                overnight_enabled = getattr(config, "overnight_enabled", False)
+                if is_overnight and overnight_enabled:
+                    # Overnight post: will be processed by process_overnight_posts at market open
+                    logger.info(f"Analysis {analysis.id} is overnight; skipping immediate confirmation, will process at open")
+                    try:
+                        send_dashboard_update(
+                            "trade_status",
+                            {
+                                "analysis_id": analysis.id,
+                                "symbol": analysis.symbol,
+                                "status": "Overnight post; will evaluate at market open",
+                            },
+                        )
+                    except Exception:
+                        pass
+                else:
+                    # Regular intraday post: schedule confirmation as usual
+                    n_minutes = int(getattr(config, "enter_confirm_window_minutes", 5) or 5)
+                    try:
+                        send_dashboard_update(
+                            "trade_status",
+                            {
+                                "analysis_id": analysis.id,
+                                "symbol": analysis.symbol,
+                                "status": f"Waiting entry confirmation for {n_minutes} min",
+                            },
+                        )
+                    except Exception:
+                        pass
+                    try:
+                        prev = analysis.enter_status
+                        analysis.enter_status = "waiting_confirmation"
+                        analysis.save(update_fields=["enter_status"])
+                        emit_lifecycle_event(subject_type="analysis", subject_id=analysis.id, event_type="entry_waiting_confirmation", prev_state=prev, new_state="waiting_confirmation", correlation_id=analysis.correlation_id)
+                    except Exception:
+                        pass
+                    try:
+                        from trader.tasks.trades import execute_trade as _  # noqa: F401  (ensure trader app loaded)
+                    except Exception:
+                        pass
+                    # Defer actual trade decision to confirmation task
+                    try:
+                        enter_confirmation_check.apply_async(args=[analysis.id], countdown=n_minutes * 60)
                     emit_lifecycle_event(subject_type="analysis", subject_id=analysis.id, event_type="entry_scheduled_check", correlation_id=analysis.correlation_id, data={"delay_min": n_minutes})
                 except Exception:
                     # Fallback: if scheduling fails, do not execute immediately; log rejection
