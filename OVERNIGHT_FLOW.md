@@ -91,26 +91,24 @@ sequenceDiagram
 ```mermaid
 flowchart TD
     A[Post created] --> B{overnight_enabled?}
-    B -- No --> Z[overnight=False]
-    B -- Yes --> C{Market open? (broker-aware)}
-    C -- Yes --> Z
-    C -- No --> D[overnight=True]
+    B -->|No| Z[overnight=False]
+    B -->|Yes| C{Market open?}
+    C -->|Yes| Z
+    C -->|No| D[overnight=True]
 
-    subgraph Market Open
-        E{{market_just_opened(N)?}} -->|No| F[Exit (do nothing)]
-        E -->|Yes| G[Fetch overnight posts]
-        G --> H{> max_age_hours?}
-        H -- Yes --> S[Mark stale: overnight_age_exceeded]
-        H -- No --> I{Direction buy/sell AND confidence >= min?}
-        I -- No --> T[Mark stale: below_confidence_or_hold]
-        I -- Yes --> J[enter_status=waiting_confirmation]
-        J --> K[enter_confirmation_check]
-        K --> L{price_ok OR volume_ok}
-        L -- No --> M[Fail with code: price/volume]
-        L -- Yes --> N{freshness_ok}
-        N -- No --> O[Fail: freshness_below_threshold]
-        N -- Yes --> P[create_new_trade]
-    end
+    E{market just opened?} -->|No| F[Exit]
+    E -->|Yes| G[Fetch overnight posts]
+    G --> H{older than max age?}
+    H -->|Yes| S[Mark stale: age exceeded]
+    H -->|No| I{Valid direction and confidence?}
+    I -->|No| T[Mark stale: below threshold]
+    I -->|Yes| J[Set waiting_confirmation]
+    J --> K[Run enter_confirmation_check]
+    K --> L{price or volume ok?}
+    L -->|No| M[Fail: signals below threshold]
+    L -->|Yes| N{freshness ok?}
+    N -->|No| O[Fail: freshness too low]
+    N -->|Yes| P[create_new_trade]
 ```
 
 ---
