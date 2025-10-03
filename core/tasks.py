@@ -1292,7 +1292,17 @@ def _scrape_with_browser(source):
                         except Exception:
                             pass
 
-                        post = Post.objects.create(source=source, content=enriched_title, url=href)
+                        # Determine overnight flag consistently
+                        try:
+                            cfg = get_active_trading_config()
+                        except Exception:
+                            cfg = None
+                        try:
+                            overnight_flag = (cfg and getattr(cfg, "overnight_enabled", False) and not is_market_open_broker_aware())
+                        except Exception:
+                            overnight_flag = False
+
+                        post = Post.objects.create(source=source, content=enriched_title, url=href, overnight=overnight_flag)
                     except Exception as db_err:
                         try:
                             # Refresh or recreate the Source if missing to survive FK races
@@ -1306,7 +1316,16 @@ def _scrape_with_browser(source):
                                         "scraping_enabled": True,
                                     },
                                 )
-                            post = Post.objects.create(source=source_refreshed, content=enriched_title, url=href)
+                            # Re-evaluate overnight flag in fallback path
+                            try:
+                                cfg = get_active_trading_config()
+                            except Exception:
+                                cfg = None
+                            try:
+                                overnight_flag = (cfg and getattr(cfg, "overnight_enabled", False) and not is_market_open_broker_aware())
+                            except Exception:
+                                overnight_flag = False
+                            post = Post.objects.create(source=source_refreshed, content=enriched_title, url=href, overnight=overnight_flag)
                         except Exception as inner_err:
                             logger.error(
                                 f"DB error creating post for {getattr(source,'name','<unknown>')}: {db_err}; retry failed: {inner_err}"
@@ -1556,10 +1575,19 @@ def _scrape_api_source(source):
                 except Exception as db_err:
                     try:
                         source = Source.objects.get(pk=source.pk)
+                        try:
+                            cfg = get_active_trading_config()
+                        except Exception:
+                            cfg = None
+                        try:
+                            overnight_flag = (cfg and getattr(cfg, "overnight_enabled", False) and not is_market_open_broker_aware())
+                        except Exception:
+                            overnight_flag = False
                         post = Post.objects.create(
                             source=source,
                             content=enriched_content,
-                            url=url
+                            url=url,
+                            overnight=overnight_flag,
                         )
                     except Exception:
                         logger.error(f"DB error creating API post for {source.name}: {db_err}")
