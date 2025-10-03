@@ -5033,9 +5033,21 @@ def process_overnight_posts():
         if not config or not getattr(config, "overnight_enabled", False):
             return {"processed": 0}
 
-        # Only run near open window
-        if not market_just_opened(int(getattr(config, "enter_confirm_window_minutes", 5) or 5)):
-            return {"processed": 0, "reason": "not_in_open_window"}
+        # Only run near open window, but allow a small grace period after open
+        try:
+            n_win = int(getattr(config, "enter_confirm_window_minutes", 5) or 5)
+        except Exception:
+            n_win = 5
+        just_opened = market_just_opened(n_win)
+        if not just_opened:
+            try:
+                m_since = minutes_since_market_open()
+            except Exception:
+                m_since = None
+            # Allow grace: run within max(15, 3*N) minutes after open
+            grace_min = max(15, 3 * n_win)
+            if not (m_since is not None and m_since <= grace_min):
+                return {"processed": 0, "reason": "not_in_open_window"}
 
         # Query overnight posts with analyses not stale
         qs = Post.objects.filter(overnight=True, is_stale=False, analysis__isnull=False).select_related("analysis").order_by("-analysis__confidence")

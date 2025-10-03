@@ -140,13 +140,24 @@ def flow_tracker_view(request):
                         else:
                             if getattr(active_cfg, "enter_confirmation_enabled", False):
                                 # If confirmation is enabled but no check recorded yet
-                                progress = "Pending confirmation"
                                 try:
                                     n_enter = int(getattr(cfg, "enter_confirm_window_minutes", None) or getattr(active_cfg, "enter_confirm_window_minutes", 5) or 5)
-                                    eta = a.created_at + timedelta(minutes=n_enter)
-                                    progress_reason = f"Awaiting window completion ({n_enter}m) until {eta.strftime('%H:%M')}"
                                 except Exception:
-                                    progress_reason = "Awaiting window completion"
+                                    n_enter = 5
+                                if getattr(a.post, "overnight", False):
+                                    # Overnight analyses: we intentionally skip immediate confirmation
+                                    progress = "Waiting market open"
+                                    try:
+                                        progress_reason = f"Overnight: will evaluate at market open, window {n_enter}m"
+                                    except Exception:
+                                        progress_reason = "Overnight: waiting market open"
+                                else:
+                                    progress = "Pending confirmation"
+                                    try:
+                                        eta = a.created_at + timedelta(minutes=n_enter)
+                                        progress_reason = f"Awaiting window completion ({n_enter}m) until {eta.strftime('%H:%M')}"
+                                    except Exception:
+                                        progress_reason = "Awaiting window completion"
                             else:
                                 progress = "Immediate mode: no order"
                                 progress_reason = "Confirmation disabled"
