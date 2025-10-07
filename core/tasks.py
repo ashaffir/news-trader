@@ -1909,6 +1909,38 @@ def scrape_posts(source_id=None, manual_test=False):
     else:
         logger.info("Manual test scraping - bypassing bot enabled check.")
 
+    # Overnight-first gate: if market is open and there is any overnight backlog,
+    # process it before scraping new posts.
+    try:
+        if not manual_test:
+            cfg = get_active_trading_config()
+        else:
+            cfg = None
+        if cfg and getattr(cfg, "overnight_enabled", False):
+            try:
+                market_open = is_market_open_broker_aware()
+            except Exception:
+                market_open = is_market_open_now()
+            if market_open:
+                try:
+                    backlog_count = Post.objects.filter(overnight=True, is_stale=False, analysis__isnull=False).count()
+                except Exception:
+                    backlog_count = 0
+                if backlog_count > 0:
+                    try:
+                        process_overnight_posts.delay()
+                    except Exception:
+                        process_overnight_posts.apply_async(args=[])
+                    logger.info(f"Overnight backlog detected ({backlog_count}); deferring scraping until cleared")
+                    send_dashboard_update(
+                        "scraper_status",
+                        {"status": f"Overnight backlog {backlog_count}: processing before scraping"},
+                    )
+                    return
+    except Exception:
+        # Non-fatal: continue to scraping if gate check fails unexpectedly
+        pass
+
     # Always resolve sources fresh from DB; avoid stale IDs after deletes
     def _resolve_sources():
         if source_id:
@@ -4964,6 +4996,48 @@ def enforce_bot_autostart():
         return {"error": str(e)}
 
 
+@shared_task
+def requeue_stale_waiting_confirmations(max_age_minutes: int = 2, batch_limit: int = 50):
+    """Re-enqueue analyses stuck in waiting_confirmation beyond max_age.
+
+    Criteria:
+      - enter_status == "waiting_confirmation"
+      - enter_checked_at is NULL (no confirmation result yet)
+      - created_at older than now - max_age_minutes
+    """
+    try:
+        now = timezone.now()
+        cutoff = now - timedelta(minutes=max(1, int(max_age_minutes)))
+        qs = (
+            Analysis.objects.filter(
+                enter_status="waiting_confirmation",
+                enter_checked_at__isnull=True,
+                created_at__lte=cutoff,
+            )
+            .only("id")
+            .order_by("id")
+        )
+        count = 0
+        for a in qs[: max(1, int(batch_limit))]:
+            try:
+                enter_confirmation_check.delay(a.id)
+            except Exception:
+                enter_confirmation_check.apply_async(args=[a.id])
+            count += 1
+        if count:
+            try:
+                ActivityLog.objects.create(
+                    activity_type="system_event",
+                    message=f"Watchdog requeued {count} waiting confirmations",
+                    data={"max_age_minutes": max_age_minutes},
+                )
+            except Exception:
+                pass
+        return {"requeued": count}
+    except Exception as e:
+        logger.error(f"requeue_stale_waiting_confirmations failed: {e}")
+        return {"error": str(e), "requeued": 0}
+
 @shared_task(bind=True)
 def run_telegram_bot_task(self):
     """
@@ -5062,21 +5136,15 @@ def process_overnight_posts():
         if not config or not getattr(config, "overnight_enabled", False):
             return {"processed": 0}
 
-        # Only run near open window, but allow a small grace period after open
+        # New policy: whenever market is open, process overnight posts immediately
+        # (no restriction to a short window after the open)
         try:
-            n_win = int(getattr(config, "enter_confirm_window_minutes", 5) or 5)
+            if not is_market_open_broker_aware():
+                return {"processed": 0, "reason": "market_closed"}
         except Exception:
-            n_win = 5
-        just_opened = market_just_opened(n_win)
-        if not just_opened:
-            try:
-                m_since = minutes_since_market_open()
-            except Exception:
-                m_since = None
-            # Allow grace: run within max(15, 3*N) minutes after open
-            grace_min = max(15, 3 * n_win)
-            if not (m_since is not None and m_since <= grace_min):
-                return {"processed": 0, "reason": "not_in_open_window"}
+            # Fall back to heuristic that may be conservative; if it errors, continue
+            if not is_market_open_now():
+                return {"processed": 0, "reason": "market_closed"}
 
         # Query overnight posts with analyses not stale
         qs = Post.objects.filter(overnight=True, is_stale=False, analysis__isnull=False).select_related("analysis").order_by("-analysis__confidence")

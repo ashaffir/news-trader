@@ -147,6 +147,12 @@ class Command(BaseCommand):
                 'description': 'If intraday trading enabled, close all positions before market close'
             },
             {
+                'name': 'Watchdog: Requeue Waiting Confirmations',
+                'task': 'core.tasks.requeue_stale_waiting_confirmations',
+                'interval': interval_2_minutes,
+                'description': 'Re-enqueue analyses stuck in waiting_confirmation > 2 minutes'
+            },
+            {
                 'name': 'Monthly Old Data Cleanup',
                 'task': 'core.tasks.cleanup_old_data',
                 'crontab': monthly_0300_cron,

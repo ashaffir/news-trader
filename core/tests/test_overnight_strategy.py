@@ -3,7 +3,7 @@ from django.utils import timezone
 from unittest.mock import patch
 
 from core.models import TradingConfig, Source, Post, Analysis
-from core.tasks import enter_confirmation_check, create_new_trade
+from core.tasks import enter_confirmation_check, create_new_trade, process_overnight_posts
 
 
 class OvernightStrategyTests(TestCase):
@@ -94,3 +94,31 @@ class OvernightStrategyTests(TestCase):
         post.refresh_from_db()
         self.assertTrue(post.is_stale)
         self.assertEqual(post.stale_reason, "overnight_age_exceeded")
+
+    @patch("core.tasks.is_market_open_broker_aware", return_value=True)
+    @patch("core.tasks.minutes_since_market_open", return_value=180)
+    @patch("core.tasks.compute_entry_confirmations", return_value=(1.0, 2.0, 100.0, 50.0))
+    def test_process_overnight_runs_hours_after_open(self, _conf, _m_since, _is_open):
+        # Ensure job processes even long after open (no "just opened" window)
+        post = Post.objects.create(source=self.source, content="c", url="https://x/late", overnight=True)
+        a = Analysis.objects.create(post=post, symbol="LATE", direction="buy", confidence=1.0, reason="r")
+
+        # Run the overnight processor; it should dispatch confirmation regardless of time since open
+        result = process_overnight_posts()
+        self.assertIn("processed", result)
+        self.assertGreaterEqual(result.get("processed", 0), 1)
+
+    @patch("core.tasks.enter_confirmation_check.delay")
+    def test_watchdog_requeues_waiting_confirmation(self, mock_delay):
+        # Create analysis stuck in waiting_confirmation without enter_checked_at
+        post = Post.objects.create(source=self.source, content="c", url="https://x/stuck")
+        a = Analysis.objects.create(post=post, symbol="STCK", direction="buy", confidence=1.0, reason="r")
+        a.enter_status = "waiting_confirmation"
+        # Backdate creation so it exceeds the watchdog window
+        a.created_at = timezone.now() - timezone.timedelta(minutes=10)
+        a.save(update_fields=["enter_status", "created_at"])
+
+        from core.tasks import requeue_stale_waiting_confirmations
+        res = requeue_stale_waiting_confirmations(max_age_minutes=2)
+        self.assertGreaterEqual(res.get("requeued", 0), 1)
+        mock_delay.assert_called()
