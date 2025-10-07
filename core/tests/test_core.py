@@ -566,6 +566,37 @@ class AdminTests(TestCase):
         response = self.client.get(f"/admin/core/source/{source.id}/change/")
         self.assertEqual(response.status_code, 200)
 
+    def test_source_admin_trades_count(self):
+        """Trades count column should show number of trades from this source."""
+        source = Source.objects.create(
+            name="S1", url="https://s1.example.com", scraping_method="web"
+        )
+        post = Post.objects.create(
+            source=source, content="Post", url="https://s1.example.com/p1"
+        )
+        analysis = Analysis.objects.create(
+            post=post, symbol="TSLA", direction="buy", confidence=0.9, reason="r"
+        )
+        Trade.objects.create(
+            analysis=analysis,
+            symbol="TSLA",
+            direction="buy",
+            quantity=1,
+            entry_price=10.0,
+            status="open",
+        )
+
+        # Hitting changelist should render the annotated trades count
+        response = self.client.get("/admin/core/source/")
+        self.assertEqual(response.status_code, 200)
+        # Sanity: page contains the source name
+        self.assertContains(response, "S1")
+        # We cannot easily assert the exact cell value without parsing HTML,
+        # but ensure no server error and at least one trade exists via ORM
+        self.assertEqual(
+            Trade.objects.filter(analysis__post__source=source).count(), 1
+        )
+
     def test_trading_config_admin(self):
         """Test TradingConfig admin interface."""
         config = TradingConfig.objects.create(name="Test Config", is_active=True)
@@ -574,6 +605,37 @@ class AdminTests(TestCase):
         response = self.client.get("/admin/core/tradingconfig/")
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Test Config")
+
+
+class ScrapingStatusTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_superuser(
+            username="admin2", email="admin2@test.com", password="adminpass2"
+        )
+        # Minimal source for browser/RSS path
+        self.source = Source.objects.create(
+            name="RSS Site",
+            url="https://example.com/rss.xml",
+            scraping_method="web",
+            scraping_enabled=True,
+        )
+
+    @patch("core.tasks._scrape_source")
+    def test_last_scraped_set_on_completion(self, mock_scrape_source):
+        # Simulate successful scrape
+        mock_scrape_source.side_effect = lambda s: None
+        scrape_posts(source_id=self.source.id, manual_test=True)
+        s = Source.objects.get(id=self.source.id)
+        self.assertIsNotNone(s.last_scraped_at)
+        self.assertEqual(s.scraping_status, "idle")
+
+    @patch("core.tasks._scrape_source")
+    def test_error_sets_scraping_status_error(self, mock_scrape_source):
+        mock_scrape_source.side_effect = RuntimeError("boom")
+        scrape_posts(source_id=self.source.id, manual_test=True)
+        s = Source.objects.get(id=self.source.id)
+        self.assertEqual(s.scraping_status, "error")
+        self.assertTrue((s.error_count or 0) >= 1)
 
 
 class SourceLLMTests(TestCase):

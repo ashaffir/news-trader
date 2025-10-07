@@ -1960,7 +1960,28 @@ def scrape_posts(source_id=None, manual_test=False):
     for source in active_sources:
         try:
             logger.info(f"Starting to scrape: {source.name}")
+            # Mark running at start for visibility
+            try:
+                source.scraping_status = "running"
+                source.save(update_fields=["scraping_status"])  # lightweight save
+            except Exception:
+                pass
+
             _scrape_source(source)
+
+            # On successful completion, update last_scraped_at and reset status
+            try:
+                from django.utils import timezone
+                source.last_scraped_at = timezone.now()
+                source.scraping_status = "idle"
+                # clear transient error details on success
+                source.error_count = 0
+                source.last_error = None
+                source.save(update_fields=["last_scraped_at", "scraping_status", "error_count", "last_error", "updated_at"])
+            except Exception:
+                # Avoid failing the loop due to bookkeeping errors
+                pass
+
             scraped_sources.append(source.name)
             send_dashboard_update(
                 "scraper_status",
@@ -1968,6 +1989,14 @@ def scrape_posts(source_id=None, manual_test=False):
             )
         except Exception as e:
             logger.error(f"Error scraping source {source.name}: {e}")
+            # Mark error status on failure
+            try:
+                source.error_count = (source.error_count or 0) + 1
+                source.last_error = str(e)
+                source.scraping_status = "error"
+                source.save(update_fields=["error_count", "last_error", "scraping_status", "updated_at"])
+            except Exception:
+                pass
             send_dashboard_update(
                 "scraper_error",
                 {"source": source.name, "error": str(e), "method": "scraping"},

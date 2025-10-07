@@ -9,6 +9,7 @@ import json
 from django.shortcuts import render, redirect
 from django.contrib import messages
 from django.utils.translation import gettext_lazy as _
+from django.db.models import Count
 
 from .forms import TrackedCompanyImportForm
 from .utils.tracked_company_import import (
@@ -225,6 +226,7 @@ class SourceAdmin(admin.ModelAdmin):
         "last_scraped_at",
         "error_count",
         "posts_count",
+        "trades_count",
     )
     list_filter = (
         "scraping_method",
@@ -234,11 +236,33 @@ class SourceAdmin(admin.ModelAdmin):
     )
 
     def posts_count(self, obj):
+        # Use annotation when available to avoid N+1 queries
+        try:
+            annotated = getattr(obj, "posts_count_annot", None)
+            if annotated is not None:
+                return annotated
+        except Exception:
+            pass
         try:
             return obj.individual_posts.count()
         except Exception:
             return 0
     posts_count.short_description = "Posts"
+
+    def trades_count(self, obj):
+        # Count trades linked via analysis -> post -> source
+        try:
+            annotated = getattr(obj, "trades_count_annot", None)
+            if annotated is not None:
+                return annotated
+        except Exception:
+            pass
+        try:
+            return Trade.objects.filter(analysis__post__source=obj).count()
+        except Exception:
+            return 0
+    trades_count.short_description = "Trades"
+    trades_count.admin_order_field = "trades_count_annot"
     search_fields = ("name", "url", "description")
     readonly_fields = (
         "last_scraped_at",
@@ -295,6 +319,18 @@ class SourceAdmin(admin.ModelAdmin):
             },
         ),
     )
+
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        try:
+            qs = qs.annotate(
+                posts_count_annot=Count("individual_posts", distinct=True),
+                trades_count_annot=Count("individual_posts__analysis__trades", distinct=True),
+            )
+        except Exception:
+            # If annotation fails for any reason, fall back to base queryset
+            return qs
+        return qs
 
 
 @admin.register(AlertSettings)
