@@ -5094,19 +5094,32 @@ def process_overnight_posts():
                     continue
 
                 # Schedule confirmation immediately using open-window params
+                # Make handoff robust: if status update fails, stale the post so it cannot block the gate
                 try:
                     prev = a.enter_status
-                    a.enter_status = "waiting_confirmation"
-                    a.save(update_fields=["enter_status"])
-                    emit_lifecycle_event(subject_type="analysis", subject_id=a.id, event_type="entry_waiting_confirmation", prev_state=prev, new_state="waiting_confirmation", correlation_id=a.correlation_id)
+                    # Use atomic update to avoid model save races
+                    Analysis.objects.filter(pk=a.id).update(enter_status="waiting_confirmation")
+                    emit_lifecycle_event(
+                        subject_type="analysis",
+                        subject_id=a.id,
+                        event_type="entry_waiting_confirmation",
+                        prev_state=prev,
+                        new_state="waiting_confirmation",
+                        correlation_id=a.correlation_id,
+                    )
+                    # Run confirmation immediately; failures must not block other backlog items
+                    try:
+                        enter_confirmation_check.delay(a.id)
+                    except Exception:
+                        enter_confirmation_check.apply_async(args=[a.id])
                 except Exception:
-                    pass
-
-                # Run confirmation immediately; failures must not block other backlog items
-                try:
-                    enter_confirmation_check.delay(a.id)
-                except Exception:
-                    enter_confirmation_check.apply_async(args=[a.id])
+                    # If we cannot transition to waiting_confirmation, mark post stale so the gate won't stick
+                    try:
+                        post.is_stale = True
+                        post.stale_reason = "handoff_error"
+                        post.save(update_fields=["is_stale", "stale_reason"])
+                    except Exception:
+                        pass
                 count += 1
             except Exception:
                 # Mark as stale on processing error to avoid blocking backlog
