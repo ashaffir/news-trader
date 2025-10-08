@@ -205,6 +205,34 @@
     refreshActivitiesFromDatabase();
   }
 
+  function refreshGateOnly() {
+    fetch('/api/gate/')
+      .then((r) => r.json())
+      .then((data) => {
+        const badge = document.getElementById('gate-status-badge');
+        if (!badge || !data || !data.gate) return;
+        const g = data.gate;
+        const mode = g.mode || 'unknown';
+        const backlog = Number(g.backlog_count || 0);
+        const map = {
+          off: { text: 'Off — bot disabled', cls: 'badge bg-secondary' },
+          manual_test: { text: 'Manual test — no trading', cls: 'badge bg-secondary text-dark' },
+          weekend_idle: { text: 'Weekend — idle', cls: 'badge bg-info text-dark' },
+          weekend_overnight: { text: 'Weekend — collecting/processing overnight', cls: 'badge bg-info text-dark' },
+          closed_idle: { text: 'Market closed — idle', cls: 'badge bg-secondary text-dark' },
+          closed_overnight_collect: { text: 'Market closed — collecting overnight', cls: 'badge bg-info text-dark' },
+          open_process_overnight: { text: 'Market open — processing overnight' + (backlog > 0 ? ` (${backlog})` : ''), cls: 'badge bg-warning text-dark' },
+          open_periodic: { text: 'Market open — normal operations', cls: 'badge bg-success' },
+          unknown: { text: 'Unknown gate state', cls: 'badge bg-secondary text-dark' },
+        };
+        const ui = map[mode] || map.unknown;
+        badge.className = ui.cls;
+        badge.title = `Mode: ${mode}${g.reason ? ` — Reason: ${g.reason}` : ''}`;
+        badge.innerHTML = '<i class="fas fa-lock me-1"></i>Gate: ' + ui.text;
+      })
+      .catch(() => {});
+  }
+
   function showBotToggleConfirmation(newState) {
     const isEnabling = newState;
     const iconElement = document.getElementById('botToggleConfirmIcon');
@@ -352,6 +380,8 @@
     setInterval(pollForUpdates, 3000);
     refreshData();
     setInterval(refreshData, 30000);
+    // Fast gate-only polling for better responsiveness
+    setInterval(refreshGateOnly, 5000);
     if (botToggle) {
       botToggle.addEventListener('change', function (e) {
         e.preventDefault();

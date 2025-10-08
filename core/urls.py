@@ -42,6 +42,7 @@ urlpatterns = [
     # API endpoints for dashboard
     path('api/system-status/', views.system_status_api, name='api_system_status'),
     path('api/recent-activities/', views.recent_activities_api, name='api_recent_activities'),
+    path('api/gate/', views.gate_status_api, name='api_gate_status'),
     path('api/close-trade/', views.close_trade_api, name='api_close_trade'),
     path('api/cancel-trade/', views.cancel_trade_api, name='api_cancel_trade'),
     path('api/trade-status/<int:trade_id>/', views.trade_status_api, name='api_trade_status'),

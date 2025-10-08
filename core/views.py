@@ -731,6 +731,16 @@ def system_status_api(request):
         return JsonResponse({"error": str(e)}, status=500)
 
 
+@staff_member_required
+def gate_status_api(request):
+    """Lightweight gate-only endpoint for fast polling on the dashboard."""
+    try:
+        gate = get_gate(manual_test=False, include_backlog=True)
+        return JsonResponse({"timestamp": timezone.now().isoformat(), "gate": gate})
+    except Exception as e:
+        logger.error(f"Error getting gate status: {e}")
+        return JsonResponse({"timestamp": timezone.now().isoformat(), "gate": {"mode": "unknown", "reason": "gate_error"}}, status=200)
+
 def check_default_llm_connection():
     """Check connectivity to the currently configured default LLM (OpenAI or LAN)."""
     try:
