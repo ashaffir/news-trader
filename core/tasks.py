@@ -1728,7 +1728,7 @@ def is_trading_allowed():
 def is_market_open_now(now_utc: Optional[datetime] = None) -> bool:
     """Heuristic market-hours check in UTC (Mon-Fri 13:30-20:00). Ignores holidays.
 
-    Prefer broker clock when available in autostart task; this is a fallback.
+    Prefer broker clock when available; this is a fallback.
     """
     try:
         if now_utc is None:

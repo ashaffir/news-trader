@@ -10,7 +10,6 @@ class GateFunctionTests(TestCase):
             name="Test",
             is_active=True,
             bot_enabled=True,
-            autostart=False,
             overnight_enabled=True,
         )
 

@@ -230,7 +230,7 @@ Available commands:
 • `/config` - Show active configuration and 30d stats
 • `/health` - Check system health (DB/Redis/Broker)
 • `/activity [n]` - Show recent activity log entries
-• `/cutoff` - Kill switch: disable bot and autostart
+• `/cutoff` - Kill switch: disable bot
 • `/alerts_on` - Enable notifications
 • `/alerts_off` - Disable notifications
 • `/help` - Show this help message
@@ -802,7 +802,7 @@ Use the commands to control your trading bot remotely!
             await update.message.reply_text(f"❌ Error: {e}")
 
     async def restore_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /restore - autostart removed; keep for compatibility."""
+        """Handle /restore - autostart removed; command retained for compatibility."""
         if not self.is_authorized(update.effective_chat.id):
             await update.message.reply_text("❌ Unauthorized access.")
             return
@@ -812,7 +812,7 @@ Use the commands to control your trading bot remotely!
             if not config:
                 await update.message.reply_text("❌ No active trading configuration found.")
                 return
-            await update.message.reply_text("ℹ️ Autostart is no longer used.")
+            await update.message.reply_text("ℹ️ Autostart has been removed; nothing to restore.")
         except Exception as e:
             logger.error(f"Error in restore: {e}")
             await update.message.reply_text(f"❌ Error: {e}")
@@ -869,10 +869,9 @@ Use the commands to control your trading bot remotely!
                 config = await sync_to_async(TradingConfig.objects.filter(is_active=True).first)()
                 if config:
                     config.bot_enabled = False
-                    config.autostart = False
-                    await sync_to_async(config.save)(update_fields=["bot_enabled", "autostart", "updated_at"])  # type: ignore
-                    await query.edit_message_text("🛑 Kill switch engaged: bot disabled and autostart OFF.")
-                    await sync_to_async(send_telegram_message)("🛑 Kill switch engaged via Telegram: bot disabled, autostart OFF")
+                    await sync_to_async(config.save)(update_fields=["bot_enabled", "updated_at"])  # type: ignore
+                    await query.edit_message_text("🛑 Kill switch engaged: bot disabled.")
+                    await sync_to_async(send_telegram_message)("🛑 Kill switch engaged via Telegram: bot disabled")
                 else:
                     await query.edit_message_text("❌ No active trading configuration found.")
             except Exception as e:
@@ -907,13 +906,11 @@ Use the commands to control your trading bot remotely!
                 if not config:
                     await query.edit_message_text("❌ No active trading configuration found.")
                     return
-                prev = await sync_to_async(ConfigControl.objects.filter(name="autostart_previous").first)()
+                prev = None
                 if not prev or prev.value_int is None:
-                    await query.edit_message_text("ℹ️ No previous autostart value recorded.")
+                    await query.edit_message_text("ℹ️ Autostart has been removed; no previous value exists.")
                     return
-                config.autostart = bool(prev.value_int)
-                await sync_to_async(config.save)(update_fields=["autostart", "updated_at"])  # type: ignore
-                await query.edit_message_text(f"♻️ Restored autostart: {'ON' if config.autostart else 'OFF'}.")
+                await query.edit_message_text("♻️ Autostart is deprecated; nothing changed.")
             except Exception as e:
                 await query.edit_message_text(f"❌ Error: {e}")
     

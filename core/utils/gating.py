@@ -80,7 +80,7 @@ def get_gate(manual_test: bool = False, include_backlog: bool = True) -> Dict[st
 
     Rules (as provided by product requirements):
     - Bot master switch controls EVERYTHING. If disabled, nothing runs (except manual tests).
-    - Autostart merely toggles the bot at market open/close. Gate computation is independent of it.
+    - No autostart flag. Bot enable/disable is manual; scheduling handles weekday/weekend policies.
     - No separate trading_enabled/market_hours_only flags. Trading is implicitly allowed only during market hours.
     - Weekends: overnight collection/processing may run; NO trading.
     - Market open with overnight backlog: process ALL overnight posts before regular scraping.
@@ -99,7 +99,6 @@ def get_gate(manual_test: bool = False, include_backlog: bool = True) -> Dict[st
     # Default OFF
     gate = GateState(
         bot_enabled=bot_enabled,
-        autostart=False,
         overnight_enabled=overnight_enabled,
         market_open=market_open,
         is_weekend=weekend,

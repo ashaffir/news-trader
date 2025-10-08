@@ -689,7 +689,6 @@ def system_status_api(request):
             config_info = {
                 "name": active_config.name,
                 "bot_enabled": active_config.bot_enabled,
-                "autostart": False,
                 "min_confidence": active_config.min_confidence_threshold,
                 "max_daily_trades": active_config.max_daily_trades,
                 "position_size": active_config.default_position_size,
@@ -699,7 +698,6 @@ def system_status_api(request):
             config_info = {
                 "name": "Default",
                 "bot_enabled": False,
-                "autostart": False,
                 "min_confidence": 0.7,
                 "max_daily_trades": 0,
                 "position_size": 0.0,
