@@ -144,6 +144,9 @@ def get_gate(manual_test: bool = False, include_backlog: bool = True) -> Dict[st
         backlog_count = 0
         if include_backlog and overnight_enabled:
             try:
+                # Count only items not yet handed off to confirmation. Once
+                # an analysis is in 'waiting_confirmation', we consider it
+                # out of the overnight backlog to avoid blocking the gate.
                 backlog_count = (
                     Post.objects.filter(
                         overnight=True,
@@ -154,7 +157,6 @@ def get_gate(manual_test: bool = False, include_backlog: bool = True) -> Dict[st
                         Q(analysis__enter_status__in=[
                             "created",
                             "eligible",
-                            "waiting_confirmation",
                         ])
                         | Q(analysis__enter_status__isnull=True)
                     )
