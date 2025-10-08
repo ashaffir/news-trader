@@ -7,12 +7,10 @@ from core.tasks import is_trading_allowed, create_new_trade
 
 class MarketHoursOnlyEnforcementTests(TestCase):
     def setUp(self):
-        # Active config with market-hours-only enabled
+        # Active config; trading window is implicit market-hours-only via gate
         self.config = TradingConfig.objects.create(
             name="Test Config",
             is_active=True,
-            trading_enabled=True,
-            market_hours_only=True,
             bot_enabled=True,
         )
 
@@ -39,7 +37,8 @@ class MarketHoursOnlyEnforcementTests(TestCase):
     def test_is_trading_allowed_blocks_when_market_closed(self, _mock_open):
         allowed, reason = is_trading_allowed()
         self.assertFalse(allowed)
-        self.assertIn("Market is closed", reason)
+        # Gate-based message contains mode; we only assert blocked
+        self.assertFalse(allowed)
 
     @patch("core.tasks.is_market_open_broker_aware", return_value=False)
     def test_create_new_trade_aborts_when_market_closed(self, _mock_open):

@@ -49,11 +49,9 @@ def test_format_trade_detail_closed():
 def test_format_config():
     cfg = types.SimpleNamespace(
         bot_enabled=True,
-        autostart=False,
         max_daily_trades=10,
         max_concurrent_open_trades=5,
         default_position_size=100.0,
-        market_hours_only=True,
         trailing_stop_enabled=False,
     )
     alerts = types.SimpleNamespace(enabled=True)

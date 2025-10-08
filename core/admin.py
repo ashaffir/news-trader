@@ -24,7 +24,6 @@ class TradingConfigAdmin(admin.ModelAdmin):
     list_display = (
         "name",
         "is_active",
-        "autostart",
         "overnight_enabled",
         "default_position_size",
         "max_concurrent_open_trades",
@@ -38,9 +37,6 @@ class TradingConfigAdmin(admin.ModelAdmin):
     list_filter = (
         "is_active",
         "position_sizing_method",
-        "market_hours_only",
-        "trading_enabled",
-        "autostart",
         "overnight_enabled",
     )
     search_fields = ("name",)
@@ -48,7 +44,7 @@ class TradingConfigAdmin(admin.ModelAdmin):
     fieldsets = (
         (
             "Basic Configuration",
-            {"fields": ("name", "is_active", "trading_enabled", "market_hours_only", "allow_untracked_symbols", "intraday_trading", "intraday_close_minutes_before", "autostart")},
+            {"fields": ("name", "is_active", "allow_untracked_symbols", "intraday_trading", "intraday_close_minutes_before")},
         ),
         (
             "Overnight Strategy",

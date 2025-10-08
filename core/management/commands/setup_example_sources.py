@@ -11,7 +11,6 @@ class Command(BaseCommand):
             name="Default Trading Configuration",
             defaults={
                 "is_active": True,
-                "trading_enabled": True,
                 "default_position_size": 100.0,
                 "max_position_size": 100.0,
                 "stop_loss_percentage": 5.0,
@@ -19,7 +18,6 @@ class Command(BaseCommand):
                 "min_confidence_threshold": 0.7,
                 "max_daily_trades": 10,
                 "llm_model": "gpt-3.5-turbo",
-                "market_hours_only": True,
             },
         )
 

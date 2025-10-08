@@ -21,9 +21,13 @@
                             <i class="fas fa-circle me-1" style="color: #28a745;"></i>
                             Live Updates Active
                         </span>
-                        <span class="badge bg-light text-dark border">
+                        <span class="badge bg-light text-dark border me-2">
                             <i class="fas fa-clock me-1"></i>
                             Market: {% if market_open is None %}Unknown{% elif market_open %}Open{% else %}Closed{% endif %}
+                        </span>
+                        <span class="badge bg-info text-dark" id="gate-status-badge">
+                            <i class="fas fa-lock me-1"></i>
+                            Gate: loading...
                         </span>
                     </div>
                 </div>
@@ -545,6 +549,22 @@
                             'Bot is currently active and monitoring markets' :
                             'Bot is currently disabled';
                         botToggleLabel.textContent = botEnabled ? 'ENABLED' : 'DISABLED';
+                    }
+
+                    // Update gate badge
+                    if (data.gate) {
+                        const badge = document.getElementById('gate-status-badge');
+                        if (badge) {
+                            const mode = data.gate.mode || 'unknown';
+                            const reason = data.gate.reason || '';
+                            let cls = 'badge bg-secondary text-dark';
+                            if (mode === 'open_periodic') cls = 'badge bg-success';
+                            else if (mode === 'open_process_overnight') cls = 'badge bg-warning text-dark';
+                            else if (mode.includes('overnight')) cls = 'badge bg-info text-dark';
+                            else if (mode === 'off') cls = 'badge bg-secondary';
+                            badge.className = cls;
+                            badge.innerHTML = `<i class="fas fa-lock me-1"></i>Gate: ${mode}` + (reason ? ` (${reason})` : '');
+                        }
                     }
                 })
                 .catch(error => {

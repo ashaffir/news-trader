@@ -257,6 +257,7 @@ import logging
 import hashlib
 from datetime import datetime, timedelta
 from typing import Optional
+from core.utils.gating import get_gate
 
 logger = logging.getLogger(__name__)
 
@@ -1711,21 +1712,17 @@ def get_active_trading_config():
 
 
 def is_trading_allowed():
-    """Check if trading is currently allowed based on configuration."""
-    config = get_active_trading_config()
-    if not config or not config.trading_enabled:
-        return False, "Trading is disabled in configuration"
+    """Single-source trading gate.
 
-    # Enforce market-hours-only constraint when enabled (broker-aware)
+    Trading is allowed if and only if the unified gate allows trading.
+    This implicitly requires: bot enabled AND market open (weekdays) and
+    does not depend on legacy flags like trading_enabled/market_hours_only.
+    """
     try:
-        if getattr(config, "market_hours_only", False):
-            if not is_market_open_broker_aware():
-                return False, "Market is closed (market_hours_only)"
+        gate = get_gate(manual_test=False, include_backlog=False)
+        return (gate.get("allow_trading", False), gate.get("mode", "blocked"))
     except Exception:
-        # On error determining market hours, be conservative and deny
-        return False, "Market hours check failed"
-
-    return True, "Trading allowed"
+        return False, "Gate computation failed"
 
 
 def is_market_open_now(now_utc: Optional[datetime] = None) -> bool:
@@ -1900,43 +1897,27 @@ def scrape_posts(source_id=None, manual_test=False):
     """Scrape posts from all configured sources or a specific source."""
     logger.info(f"Scrape posts task initiated. Source ID: {source_id}, Manual test: {manual_test}")
 
-    # Check if bot is enabled (skip check for manual tests)
-    if not manual_test:
-        trading_config = get_active_trading_config()
-        if trading_config and not trading_config.bot_enabled:
-            logger.info("Bot is disabled. Skipping automated scraping task.")
-            return
-    else:
-        logger.info("Manual test scraping - bypassing bot enabled check.")
-
-    # Overnight-first gate: if market is open and there is any overnight backlog,
-    # process it before scraping new posts.
+    # Unified gating
     try:
-        if not manual_test:
-            cfg = get_active_trading_config()
-        else:
-            cfg = None
-        if cfg and getattr(cfg, "overnight_enabled", False):
+        gate = get_gate(manual_test=bool(manual_test), include_backlog=True)
+        if not manual_test and not (gate.get("allow_scrape") or gate.get("allow_overnight_collection")):
+            logger.info("Scraping gated off: %s", gate.get("reason", "blocked"))
+            return
+        if gate.get("allow_overnight_processing") and gate.get("backlog_count", 0) > 0:
+            # Process backlog first, then exit to let scheduler re-run scrape after backlog clears
             try:
-                market_open = is_market_open_broker_aware()
+                process_overnight_posts.delay()
             except Exception:
-                market_open = is_market_open_now()
-            if market_open:
-                try:
-                    backlog_count = Post.objects.filter(overnight=True, is_stale=False, analysis__isnull=False).count()
-                except Exception:
-                    backlog_count = 0
-                if backlog_count > 0:
-                    try:
-                        process_overnight_posts.delay()
-                    except Exception:
-                        process_overnight_posts.apply_async(args=[])
-                    logger.info(f"Overnight backlog detected ({backlog_count}); deferring scraping until cleared")
-                    send_dashboard_update(
-                        "scraper_status",
-                        {"status": f"Overnight backlog {backlog_count}: processing before scraping"},
-                    )
-                    return
+                process_overnight_posts.apply_async(args=[])
+            logger.info(
+                "Overnight backlog detected (%s); deferring scraping until cleared",
+                gate.get("backlog_count", 0),
+            )
+            send_dashboard_update(
+                "scraper_status",
+                {"status": f"Overnight backlog {gate.get('backlog_count',0)}: processing before scraping"},
+            )
+            return
     except Exception:
         # Non-fatal: continue to scraping if gate check fails unexpectedly
         pass
@@ -4932,68 +4913,7 @@ def disable_bot_on_weekends():
         logger.error("disable_bot_on_weekends failed: %s", e)
 
 
-@shared_task
-def enforce_bot_autostart():
-    """Enable/disable bot automatically based on market hours when autostart is enabled.
-
-    Prefer Alpaca clock when available; fall back to heuristic UTC window.
-    """
-    try:
-        config = TradingConfig.objects.filter(is_active=True).first()
-        if not config or not getattr(config, "autostart", False):
-            return {"changed": False, "reason": "autostart_disabled_or_no_config"}
-
-        # Determine market status using shared helper
-        market_open = is_market_open_broker_aware()
-
-        changed = False
-        if market_open and not config.bot_enabled:
-            config.bot_enabled = True
-            config.save(update_fields=["bot_enabled"])
-            changed = True
-            try:
-                ActivityLog.objects.create(
-                    activity_type="system_event",
-                    message="Bot enabled automatically (market open)",
-                    data={"action": "bot_enabled_autostart", "timestamp": timezone.now().isoformat()},
-                )
-            except Exception:
-                pass
-            try:
-                from .utils.telegram import is_alert_enabled, send_telegram_message
-                if is_alert_enabled("bot_status"):
-                    send_telegram_message("🟢 Bot ENABLED automatically (market open)")
-            except Exception:
-                pass
-        elif not market_open and config.bot_enabled:
-            config.bot_enabled = False
-            config.save(update_fields=["bot_enabled"])
-            changed = True
-            try:
-                ActivityLog.objects.create(
-                    activity_type="system_event",
-                    message="Bot disabled automatically (market closed)",
-                    data={"action": "bot_disabled_autostart", "timestamp": timezone.now().isoformat()},
-                )
-            except Exception:
-                pass
-            try:
-                from .utils.telegram import is_alert_enabled, send_telegram_message
-                if is_alert_enabled("bot_status"):
-                    send_telegram_message("🔴 Bot DISABLED automatically (market closed)")
-            except Exception:
-                pass
-
-        # If market just opened and overnight is enabled, trigger processing
-        try:
-            if market_open and getattr(config, "overnight_enabled", False):
-                process_overnight_posts.delay()
-        except Exception:
-            pass
-        return {"changed": changed, "market_open": market_open}
-    except Exception as e:
-        logger.error(f"enforce_bot_autostart failed: {e}")
-        return {"error": str(e)}
+## Autostart logic removed. Bot enable/disable is manual; weekend/weekday tasks handle safety.
 
 
 @shared_task
@@ -5136,13 +5056,11 @@ def process_overnight_posts():
         if not config or not getattr(config, "overnight_enabled", False):
             return {"processed": 0}
 
-        # New policy: whenever market is open, process overnight posts immediately
-        # (no restriction to a short window after the open)
+        # Market must be open per unified gating (trading only during market hours)
         try:
             if not is_market_open_broker_aware():
                 return {"processed": 0, "reason": "market_closed"}
         except Exception:
-            # Fall back to heuristic that may be conservative; if it errors, continue
             if not is_market_open_now():
                 return {"processed": 0, "reason": "market_closed"}
 
@@ -5184,14 +5102,14 @@ def process_overnight_posts():
                 except Exception:
                     pass
 
-                # Run confirmation synchronously right away (no countdown) so that we observe the first N minutes since open
+                # Run confirmation immediately; failures must not block other backlog items
                 try:
                     enter_confirmation_check.delay(a.id)
                 except Exception:
                     enter_confirmation_check.apply_async(args=[a.id])
                 count += 1
             except Exception:
-                # Mark as stale on processing error to avoid infinite retries
+                # Mark as stale on processing error to avoid blocking backlog
                 try:
                     post.is_stale = True
                     post.stale_reason = "processing_error"
@@ -5202,3 +5120,40 @@ def process_overnight_posts():
     except Exception as e:
         logger.error(f"process_overnight_posts failed: {e}")
         return {"processed": 0, "error": str(e)}
+
+@shared_task
+def enable_bot_on_weekdays():
+    """Enable the bot at Monday market-open pre-window if currently disabled.
+
+    Runs via celery beat on weekdays before open (e.g., 13:25 UTC). Safe no-op otherwise.
+    """
+    try:
+        now = timezone.now()
+        # Monday-Friday only
+        if now.weekday() >= 5:
+            return {"changed": False, "reason": "weekend"}
+        cfg = TradingConfig.objects.filter(is_active=True).first()
+        if not cfg:
+            return {"changed": False, "reason": "no_config"}
+        if cfg.bot_enabled:
+            return {"changed": False, "reason": "already_enabled"}
+        # Optional: only enable if market is about to open or open
+        try:
+            market_open = is_market_open_broker_aware()
+        except Exception:
+            market_open = is_market_open_now()
+        # If not yet open, still enable so scrapers/overnight prep can run just before open
+        cfg.bot_enabled = True
+        cfg.save(update_fields=["bot_enabled", "updated_at"])  # type: ignore
+        try:
+            ActivityLog.objects.create(
+                activity_type="system_event",
+                message="Bot enabled for weekday start",
+                data={"action": "bot_enabled_weekday", "market_open": market_open},
+            )
+        except Exception:
+            pass
+        return {"changed": True, "market_open": market_open}
+    except Exception as e:
+        logger.error("enable_bot_on_weekdays failed: %s", e)
+        return {"error": str(e)}

@@ -10,7 +10,6 @@ class IntradayTradingTests(TestCase):
         self.config = TradingConfig.objects.create(
             name="Intraday",
             is_active=True,
-            trading_enabled=True,
             bot_enabled=True,
             intraday_trading=True,
             intraday_close_minutes_before=30,

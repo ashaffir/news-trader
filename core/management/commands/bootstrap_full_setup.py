@@ -66,7 +66,6 @@ class Command(BaseCommand):
         trading_defaults = dict(
             is_active=True,
             bot_enabled=False,
-            trading_enabled=True,
             default_position_size=100.0,
             max_position_size=100.0,
             stop_loss_percentage=5.0,
@@ -74,7 +73,6 @@ class Command(BaseCommand):
             min_confidence_threshold=0.7,
             max_daily_trades=10,
             llm_model="gpt-3.5-turbo",
-            market_hours_only=True,
         )
         config, created = TradingConfig.objects.get_or_create(
             name="Default Trading Configuration", defaults=trading_defaults
@@ -85,14 +83,12 @@ class Command(BaseCommand):
             if not config.is_active:
                 config.is_active = True
                 updated = True
-            if not config.trading_enabled:
-                config.trading_enabled = True
-                updated = True
+            # trading_enabled removed; trading is implicitly market-hours-only via gate
             if updated:
                 config.save()
         self.stdout.write(
             self.style.SUCCESS(
-                f"✅ TradingConfig ready: {config.name} (active={config.is_active}, bot_enabled={config.bot_enabled}, trading_enabled={config.trading_enabled})"
+                f"✅ TradingConfig ready: {config.name} (active={config.is_active}, bot_enabled={config.bot_enabled})"
             )
         )
 

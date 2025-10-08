@@ -27,6 +27,7 @@ from django.views.decorators.http import require_POST
 from django.contrib import messages
 from django.views.decorators.csrf import csrf_exempt
 from .utils.telegram import send_telegram_message
+from .utils.gating import get_gate
 from .twitter_login_flow import start_login_flow, complete_login_with_code
 from scraper.twitter_scraper import scrape_twitter_profile
 import time
@@ -480,7 +481,6 @@ def toggle_bot_status(request):
                 name="Default Trading Configuration",
                 is_active=True,
                 bot_enabled=False,
-                trading_enabled=True,
                 default_position_size=100.0,
                 max_position_size=100.0,
                 stop_loss_percentage=5.0,
@@ -488,9 +488,8 @@ def toggle_bot_status(request):
                 min_confidence_threshold=0.7,
                 max_daily_trades=10,
                 llm_model="gpt-3.5-turbo",
-                market_hours_only=True,
-                    intraday_trading=False,
-                    intraday_close_minutes_before=30,
+                intraday_trading=False,
+                intraday_close_minutes_before=30,
             )
 
         # Toggle the bot status
@@ -689,9 +688,8 @@ def system_status_api(request):
         if active_config:
             config_info = {
                 "name": active_config.name,
-                "trading_enabled": active_config.trading_enabled,
                 "bot_enabled": active_config.bot_enabled,
-                "autostart": getattr(active_config, "autostart", False),
+                "autostart": False,
                 "min_confidence": active_config.min_confidence_threshold,
                 "max_daily_trades": active_config.max_daily_trades,
                 "position_size": active_config.default_position_size,
@@ -700,13 +698,18 @@ def system_status_api(request):
             # Provide sensible defaults when no active config exists yet
             config_info = {
                 "name": "Default",
-                "trading_enabled": False,
                 "bot_enabled": False,
                 "autostart": False,
                 "min_confidence": 0.7,
                 "max_daily_trades": 0,
                 "position_size": 0.0,
             }
+
+        # Unified gate status for dashboard
+        try:
+            gate = get_gate(manual_test=False, include_backlog=True)
+        except Exception:
+            gate = {"mode": "unknown", "reason": "gate_error"}
 
         return JsonResponse(
             {
@@ -717,6 +720,7 @@ def system_status_api(request):
                 "sources": sources_status,
                 "recent_activity": recent_activity,
                 "trading_config": config_info,
+                "gate": gate,
                 "scraping_times": {
                     "last_scrape": last_scrape_time.isoformat() if last_scrape_time else None,
                     "next_scrape": next_scrape_time.isoformat() if next_scrape_time else None,
@@ -2815,7 +2819,12 @@ def config_basics_view(request):
     if request.method == "POST":
         form = TradingBasicsForm(request.POST, instance=cfg)
         if form.is_valid():
-            form.save()
+            # Make this config the sole active one
+            obj = form.save(commit=False)
+            obj.is_active = True
+            obj.save()
+            # Deactivate all other configs
+            TradingConfig.objects.exclude(pk=obj.pk).update(is_active=False)
             messages.success(request, "Saved basic bot configuration.")
             return redirect("config_basics")
     else:

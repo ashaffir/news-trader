@@ -22,38 +22,14 @@
               </div>
               <div class="col-auto">
                 <div class="form-check form-switch">
-                  {{ form.autostart }}
-                  <label class="form-check-label ms-2" for="{{ form.autostart.id_for_label }}">{{ form.autostart.label }}</label>
-                </div>
-              </div>
-              <div class="col-auto">
-                <div class="form-check form-switch">
-                  {{ form.trading_enabled }}
-                  <label class="form-check-label ms-2" for="{{ form.trading_enabled.id_for_label }}">{{ form.trading_enabled.label }}</label>
-                </div>
-              </div>
-              <div class="col-auto">
-                <div class="form-check form-switch">
                   {{ form.intraday_trading }}
                   <label class="form-check-label ms-2" for="{{ form.intraday_trading.id_for_label }}">{{ form.intraday_trading.label }}</label>
                 </div>
               </div>
               <div class="col-auto">
                 <div class="form-check form-switch">
-                  {{ form.market_hours_only }}
-                  <label class="form-check-label ms-2" for="{{ form.market_hours_only.id_for_label }}">{{ form.market_hours_only.label }}</label>
-                </div>
-              </div>
-              <div class="col-auto">
-                <div class="form-check form-switch">
                   {{ form.allow_untracked_symbols }}
                   <label class="form-check-label ms-2" for="{{ form.allow_untracked_symbols.id_for_label }}">{{ form.allow_untracked_symbols.label }}</label>
-                </div>
-              </div>
-              <div class="col-auto">
-                <div class="form-check form-switch">
-                  {{ form.is_active }}
-                  <label class="form-check-label ms-2" for="{{ form.is_active.id_for_label }}">{{ form.is_active.label }}</label>
                 </div>
               </div>
             </div>
@@ -78,8 +54,8 @@
           <h6>Help</h6>
           <ul class="small mb-0">
             <li><strong>Bot Enabled</strong>: Master switch for scraping, analysis, and trading.</li>
-            <li><strong>Autostart</strong>: Automatically enable during market hours.</li>
-            <li><strong>Market Hours Only</strong>: Restrict trading to market open periods.</li>
+            <li><strong>Weekend policy</strong>: Bot is disabled on weekends by scheduled task.</li>
+            <li><strong>Trading Window</strong>: Trading is implicit during market hours only.</li>
             <li><strong>Intraday Close</strong>: Close positions N minutes before close if enabled.</li>
           </ul>
         </div>

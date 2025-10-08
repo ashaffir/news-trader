@@ -13,7 +13,6 @@ class WeekendDisableBotTests(TestCase):
             name="Test Config",
             is_active=True,
             bot_enabled=True,
-            trading_enabled=True,
         )
 
     @patch("core.tasks.timezone")
@@ -40,7 +39,6 @@ class WeekendShutoffTests(TestCase):
             name="Test Config",
             is_active=True,
             bot_enabled=True,
-            trading_enabled=True,
         )
 
     @patch("core.tasks.close_all_trades_manually")

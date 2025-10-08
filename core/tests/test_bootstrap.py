@@ -26,7 +26,7 @@ class BootstrapCommandTests(TestCase):
         self.assertTrue(config.is_active)
         # Bot should start disabled by default
         self.assertFalse(config.bot_enabled)
-        self.assertTrue(config.trading_enabled)
+        # trading_enabled removed; gate enforces market-hours implicitly
 
         # Alert settings
         self.assertTrue(AlertSettings.objects.exists())

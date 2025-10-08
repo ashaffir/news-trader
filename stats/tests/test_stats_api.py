@@ -108,7 +108,6 @@ class StatsAPITests(TestCase):
             defaults={
                 'name': 'Default',
                 'bot_enabled': False,
-                'trading_enabled': True,
             }
         )
         resp = self.client.get(reverse('stats_page'))

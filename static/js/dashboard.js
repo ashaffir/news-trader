@@ -172,6 +172,31 @@
           if (botStatusText) botStatusText.textContent = botEnabled ? 'Bot is currently active and monitoring markets' : 'Bot is currently disabled';
           if (botToggleLabel) botToggleLabel.textContent = botEnabled ? 'ENABLED' : 'DISABLED';
         }
+
+        // Update gate badge from unified gate state (human-friendly)
+        if (data.gate) {
+          const badge = document.getElementById('gate-status-badge');
+          if (badge) {
+            const g = data.gate;
+            const mode = g.mode || 'unknown';
+            const backlog = Number(g.backlog_count || 0);
+            const map = {
+              off: { text: 'Off — bot disabled', cls: 'badge bg-secondary' },
+              manual_test: { text: 'Manual test — no trading', cls: 'badge bg-secondary text-dark' },
+              weekend_idle: { text: 'Weekend — idle', cls: 'badge bg-info text-dark' },
+              weekend_overnight: { text: 'Weekend — collecting/processing overnight', cls: 'badge bg-info text-dark' },
+              closed_idle: { text: 'Market closed — idle', cls: 'badge bg-secondary text-dark' },
+              closed_overnight_collect: { text: 'Market closed — collecting overnight', cls: 'badge bg-info text-dark' },
+              open_process_overnight: { text: 'Market open — processing overnight' + (backlog > 0 ? ` (${backlog})` : ''), cls: 'badge bg-warning text-dark' },
+              open_periodic: { text: 'Market open — normal operations', cls: 'badge bg-success' },
+              unknown: { text: 'Unknown gate state', cls: 'badge bg-secondary text-dark' },
+            };
+            const ui = map[mode] || map.unknown;
+            badge.className = ui.cls;
+            badge.title = `Mode: ${mode}${g.reason ? ` — Reason: ${g.reason}` : ''}`;
+            badge.innerHTML = '<i class="fas fa-lock me-1"></i>Gate: ' + ui.text;
+          }
+        }
       })
       .catch((e) => {
         console.error('Error fetching system status:', e);

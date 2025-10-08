@@ -12,8 +12,6 @@ class OvernightStrategyTests(TestCase):
             name="Test",
             is_active=True,
             bot_enabled=True,
-            trading_enabled=True,
-            market_hours_only=False,
             enter_confirmation_enabled=True,
             enter_confirm_window_minutes=5,
             enter_price_change_threshold_pct=0.0,

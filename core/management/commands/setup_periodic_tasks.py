@@ -44,6 +44,10 @@ class Command(BaseCommand):
         daily_230_cron, _ = CrontabSchedule.objects.get_or_create(
             minute='30', hour='2', day_of_week='*', day_of_month='*', month_of_year='*'
         )
+        # Weekday enable at 13:25 UTC (5 minutes before open) Mon-Fri
+        weekday_preopen_1325_cron, _ = CrontabSchedule.objects.get_or_create(
+            minute='25', hour='13', day_of_week='1-5', day_of_month='*', month_of_year='*'
+        )
 
         # Weekends at 02:30 UTC (Saturday and Sunday)
         weekend_230_cron, _ = CrontabSchedule.objects.get_or_create(
@@ -53,6 +57,13 @@ class Command(BaseCommand):
         # Friday pre-close at 19:55 UTC (market close ~20:00 UTC)
         friday_preclose_1955_cron, _ = CrontabSchedule.objects.get_or_create(
             minute='55', hour='19', day_of_week='5', day_of_month='*', month_of_year='*'
+        )
+        # Weekday open at 13:30 UTC and backup at 13:31 UTC (Mon-Fri)
+        weekday_open_1330_cron, _ = CrontabSchedule.objects.get_or_create(
+            minute='30', hour='13', day_of_week='1-5', day_of_month='*', month_of_year='*'
+        )
+        weekday_open_1331_cron, _ = CrontabSchedule.objects.get_or_create(
+            minute='31', hour='13', day_of_week='1-5', day_of_month='*', month_of_year='*'
         )
 
         # Monthly cleanup on the 1st day of each month at 03:00 UTC
@@ -134,11 +145,24 @@ class Command(BaseCommand):
                 'crontab': friday_preclose_1955_cron,
                 'description': 'Pre-weekend: cancel open orders, close trades, disable bot (Fri 19:55 UTC)'
             },
+            # Autostart removed: manual control + weekend/weekday tasks
             {
-                'name': 'Enforce Bot Autostart',
-                'task': 'core.tasks.enforce_bot_autostart',
-                'interval': interval_2_minutes,
-                'description': 'Enable/disable bot automatically based on market hours when autostart is enabled'
+                'name': 'Enable Bot On Weekdays (pre-open)',
+                'task': 'core.tasks.enable_bot_on_weekdays',
+                'crontab': weekday_preopen_1325_cron,
+                'description': 'Ensure bot is enabled before weekday market open'
+            },
+            {
+                'name': 'Process Overnight At Open',
+                'task': 'core.tasks.process_overnight_posts',
+                'crontab': weekday_open_1330_cron,
+                'description': 'Zero-latency overnight processing at market open (Mon-Fri 13:30 UTC)'
+            },
+            {
+                'name': 'Process Overnight Open Backup',
+                'task': 'core.tasks.process_overnight_posts',
+                'crontab': weekday_open_1331_cron,
+                'description': 'Backup trigger 1 minute after open (Mon-Fri 13:31 UTC)'
             },
             {
                 'name': 'Intraday Pre-Close Enforcement',

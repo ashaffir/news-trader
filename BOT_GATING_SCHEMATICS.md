@@ -149,3 +149,4 @@ References:
 If you want, we can add a small dashboard widget that derives and displays the current composite state: `bot_enabled`, `autostart`, market status, `trading_enabled`, `market_hours_only`, and whether overnight processing is expected at the next open.
 
 
+

@@ -7,7 +7,7 @@ from unittest import skipIf
 from rest_framework.test import APITestCase
 from rest_framework.authtoken.models import Token
 from core.models import Source, Post, Analysis, Trade, TradingConfig, ApiResponse, AlertSettings, TrackedCompany
-from core.tasks import analyze_post, execute_trade, scrape_posts, enforce_bot_autostart, is_market_open_now
+from core.tasks import analyze_post, execute_trade, scrape_posts, is_market_open_now
 from unittest.mock import patch, MagicMock
 from core.source_llm import analyze_news_source_with_llm, build_source_kwargs_from_llm_analysis
 import json
@@ -894,7 +894,8 @@ class AutostartTests(TestCase):
         os.environ.pop("ALPACA_SECRET_KEY", None)
         import datetime as _dt
         with patch('core.tasks.timezone.now', return_value=_dt.datetime(2025, 8, 18, 14, 0, 0, tzinfo=_dt.timezone.utc)):
-            result = enforce_bot_autostart.apply(args=[]).get()
+            # Autostart removed; this test now only validates helper timing
+            result = {"market_open": is_market_open_now(_dt.datetime(2025, 8, 18, 14, 0, 0, tzinfo=_dt.timezone.utc))}
         self.config.refresh_from_db()
         self.assertTrue(self.config.bot_enabled)
         self.assertTrue(result.get("market_open"))
@@ -906,7 +907,7 @@ class AutostartTests(TestCase):
         os.environ.pop("ALPACA_SECRET_KEY", None)
         import datetime as _dt
         with patch('core.tasks.timezone.now', return_value=_dt.datetime(2025, 8, 18, 21, 0, 0, tzinfo=_dt.timezone.utc)):
-            result = enforce_bot_autostart.apply(args=[]).get()
+            result = {"market_open": is_market_open_now(_dt.datetime(2025, 8, 18, 21, 0, 0, tzinfo=_dt.timezone.utc))}
         self.config.refresh_from_db()
         self.assertFalse(self.config.bot_enabled)
         self.assertFalse(result.get("market_open"))

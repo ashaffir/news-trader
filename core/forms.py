@@ -46,13 +46,9 @@ class TradingBasicsForm(_ConfigFormMixin, forms.ModelForm):
         model = TradingConfig
         fields = [
             "bot_enabled",
-            "autostart",
-            "trading_enabled",
-            "market_hours_only",
             "allow_untracked_symbols",
             "intraday_trading",
             "intraday_close_minutes_before",
-            "is_active",
             "name",
         ]
 

@@ -149,11 +149,12 @@ def format_config(config, alerts, stats: Optional[dict] = None) -> str:
     lines = [
         "⚙️ Configuration\n",
         f"Bot: {'🟢 ENABLED' if getattr(config,'bot_enabled', False) else '🔴 DISABLED'}",
-        f"Autostart: {'ON' if getattr(config,'autostart', False) else 'OFF'}",
+        # Autostart removed; show simple policy line
+        "Autostart: N/A",
         f"Max daily trades: {getattr(config,'max_daily_trades','-')}",
         f"Max concurrent: {getattr(config,'max_concurrent_open_trades','-')}",
         f"Position size: ${float(getattr(config,'default_position_size',0.0) or 0.0):.2f}",
-        f"Market hours only: {'Yes' if getattr(config,'market_hours_only', True) else 'No'}",
+        "Trading window: Market hours only",
         f"Trailing stop: {'ON' if getattr(config,'trailing_stop_enabled', False) else 'OFF'}",
         f"Alerts: {'🔔 ON' if (alerts and getattr(alerts,'enabled', False)) else '🔕 OFF'}",
     ]

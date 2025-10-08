@@ -262,11 +262,7 @@ Direction can be 'buy', 'sell', or 'hold'. Confidence is a float between 0 and 1
         help_text="N: Rolling window in minutes for profit-protect evaluation",
     )
 
-    # Trading hours
-    trading_enabled = models.BooleanField(default=True)
-    market_hours_only = models.BooleanField(
-        default=True, help_text="Only trade during market hours"
-    )
+    # Trading policy: trading occurs only during market hours (implicit via gate)
     # Allow trading symbols that are not in TrackedCompany
     allow_untracked_symbols = models.BooleanField(
         default=True,
