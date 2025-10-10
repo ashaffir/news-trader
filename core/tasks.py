@@ -3001,6 +3001,65 @@ def create_new_trade(analysis_id):
 
     api = tradeapi.REST(ALPACA_API_KEY, ALPACA_SECRET_KEY, base_url=ALPACA_BASE_URL)
 
+    # Validate symbol existence/tradability before proceeding
+    try:
+        from .utils.alpaca_assets import is_valid_tradable_symbol
+        ok, reason = is_valid_tradable_symbol(api, symbol)
+        if not ok:
+            logger.warning(f"Rejected manual trade for {symbol}: {reason}")
+            send_dashboard_update(
+                "trade_rejected",
+                {
+                    "symbol": symbol,
+                    "reason": f"Symbol invalid: {reason}",
+                    "tag": "Rejected",
+                },
+            )
+            return {"success": False, "error": f"Symbol invalid: {reason}"}
+    except Exception as _val_err:
+        logger.warning(f"Symbol validation failed for {symbol}: {_val_err}")
+        send_dashboard_update(
+            "trade_rejected",
+            {"symbol": symbol, "reason": "Symbol validation error", "tag": "Rejected"},
+        )
+        return {"success": False, "error": "Symbol validation error"}
+
+    # Validate symbol existence/tradability before proceeding
+    try:
+        from .utils.alpaca_assets import is_valid_tradable_symbol
+        ok, reason = is_valid_tradable_symbol(api, analysis.symbol)
+        if not ok:
+            logger.warning(f"Rejected new trade for {analysis.symbol}: {reason}")
+            try:
+                send_dashboard_update(
+                    "trade_rejected",
+                    {
+                        "analysis_id": analysis.id,
+                        "symbol": analysis.symbol,
+                        "reason": f"Symbol invalid: {reason}",
+                        "tag": "Rejected",
+                    },
+                )
+            except Exception:
+                pass
+            return
+    except Exception as _val_err:
+        # If validation itself fails unexpectedly, be safe and reject
+        logger.warning(f"Symbol validation failed for {analysis.symbol}: {_val_err}")
+        try:
+            send_dashboard_update(
+                "trade_rejected",
+                {
+                    "analysis_id": analysis.id,
+                    "symbol": analysis.symbol,
+                    "reason": "Symbol validation error",
+                    "tag": "Rejected",
+                },
+            )
+        except Exception:
+            pass
+        return
+
     try:
         # Enforce configurable limits (concurrent trades and total exposure)
         if config:

@@ -525,6 +525,56 @@ class TaskTests(TestCase):
         self.assertEqual(trade.close_reason, "stop_loss")
 
 
+    @patch("core.tasks.tradeapi.REST")
+    @patch("core.tasks.os.getenv")
+    def test_rejects_invalid_symbol_before_trade(self, mock_getenv, mock_tradeapi):
+        """create_new_trade should reject when Alpaca asset validation fails."""
+        analysis = Analysis.objects.create(
+            post=self.post,
+            symbol="BADSYM",
+            direction="buy",
+            confidence=0.9,
+            reason="Invalid symbol test",
+        )
+
+        mock_getenv.side_effect = lambda key, default=None: {
+            "ALPACA_API_KEY": "fake-key",
+            "ALPACA_SECRET_KEY": "fake-secret",
+            "ALPACA_BASE_URL": "https://paper-api.alpaca.markets",
+        }.get(key, default)
+
+        api = MagicMock()
+        # Simulate asset lookup raising error for invalid symbol
+        api.get_asset.side_effect = Exception("not found")
+        mock_tradeapi.return_value = api
+
+        from core.tasks import create_new_trade
+        create_new_trade(analysis.id)
+
+        # No Trade should be created
+        self.assertFalse(Trade.objects.filter(symbol="BADSYM").exists())
+
+    @patch("core.tasks.tradeapi.REST")
+    @patch("core.tasks.os.getenv")
+    def test_manual_trade_rejects_invalid_symbol(self, mock_getenv, mock_tradeapi):
+        """create_manual_test_trade should reject invalid symbol with clear error."""
+        mock_getenv.side_effect = lambda key, default=None: {
+            "ALPACA_API_KEY": "fake-key",
+            "ALPACA_SECRET_KEY": "fake-secret",
+            "ALPACA_BASE_URL": "https://paper-api.alpaca.markets",
+        }.get(key, default)
+
+        api = MagicMock()
+        api.get_asset.side_effect = Exception("not found")
+        mock_tradeapi.return_value = api
+
+        from core.tasks import create_manual_test_trade
+        res = create_manual_test_trade("NOSYM", "buy", quantity=1)
+        self.assertIsInstance(res, dict)
+        self.assertFalse(res.get("success", False))
+        self.assertIn("Symbol invalid", res.get("error", ""))
+
+
 class APITests(APITestCase):
     """Test REST API endpoints."""
 
