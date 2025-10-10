@@ -428,6 +428,47 @@ class TaskTests(TestCase):
 
     @patch("core.tasks.tradeapi.REST")
     @patch("core.tasks.os.getenv")
+    @patch("django.db.transaction.on_commit", side_effect=lambda fn: fn())
+    def test_untracked_symbol_duplicate_prevented_by_symbol_constraint(self, mock_on_commit, mock_getenv, mock_tradeapi):
+        """When TrackedCompany is missing (tracked_company NULL), DB should still prevent duplicate active trades per symbol."""
+        # Env and API
+        mock_getenv.side_effect = lambda key, default=None: {
+            "ALPACA_API_KEY": "fake-key",
+            "ALPACA_SECRET_KEY": "fake-secret",
+            "ALPACA_BASE_URL": "https://paper-api.alpaca.markets",
+        }.get(key, default)
+
+        api = MagicMock()
+        mock_tradeapi.return_value = api
+        ticker_entry = MagicMock(); ticker_entry.price = 25.0
+        api.get_latest_trade.return_value = ticker_entry
+        order = MagicMock(); order.id = "ord-untracked"
+        api.submit_order.return_value = order
+
+        # Create analysis for a symbol not present in TrackedCompany
+        analysis1 = Analysis.objects.create(
+            post=self.post,
+            symbol="LVS",  # ensure not in TrackedCompany in this test DB
+            direction="buy",
+            confidence=0.9,
+            reason="Duplicate guard test",
+        )
+
+        from core.tasks import execute_trade
+
+        # Simulate two concurrent executions
+        execute_trade(analysis1.id)
+        execute_trade(analysis1.id)
+
+        # Only one active trade should exist for LVS regardless of tracked_company being NULL
+        active = Trade.objects.filter(symbol="LVS", status__in=["pending", "open", "pending_close"]).count()
+        self.assertEqual(active, 1)
+
+        # Broker order should be submitted exactly once
+        api.submit_order.assert_called_once()
+
+    @patch("core.tasks.tradeapi.REST")
+    @patch("core.tasks.os.getenv")
     def test_trailing_stop_updates_and_triggers(self, mock_getenv, mock_tradeapi):
         """Trailing stop should move with favorable price and then trigger on reversal."""
         # Active config already has trailing enabled from setUp

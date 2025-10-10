@@ -569,6 +569,13 @@ class Trade(models.Model):
                 fields=['tracked_company'],
                 condition=models.Q(status__in=['open', 'pending', 'pending_close']),
                 name='unique_active_trade_per_company'
+            ),
+            # Fallback uniqueness when a trade is not linked to TrackedCompany yet
+            # Ensures no duplicate active trades per symbol if tracked_company is NULL
+            models.UniqueConstraint(
+                fields=['symbol'],
+                condition=models.Q(tracked_company__isnull=True, status__in=['open', 'pending', 'pending_close']),
+                name='unique_active_trade_per_symbol_when_untracked'
             )
         ]
 

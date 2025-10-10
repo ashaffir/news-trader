@@ -45,12 +45,18 @@
         <div class="card-body">
           <h6>Descriptions</h6>
           <ul class="small mb-0">
-            <li><strong>Drawdown Tolerance</strong>: Max adverse move over a short window to force an early exit.</li>
-            <li><strong>Profit Protect</strong>: Tighten trailing distance after a favorable move to secure gains.</li>
-            <li><strong>Equations</strong>:
+            <li><strong>Dynamic exit</strong>: Close the position when <code>signed_change_%</code> over the last
+              <code>dynamic_exit_window_minutes</code> is below <code>−dynamic_exit_drawdown_tolerance_pct</code>.
+              The sign is aligned to the trade direction (negative means adverse move).</li>
+            <li><strong>Profit protect</strong>: When a favorable move is detected —
+              <code>signed_change_%</code> over the last <code>profit_protect_window_minutes</code>
+              is at least <code>profit_protect_threshold_pct</code> — tighten the trailing stop to
+              <code>profit_protect_trailing_distance_pct</code>.</li>
+            <li><strong>Formulas</strong>:
               <div class="mt-1">
-                drawdown_% = 100 × (p_max_N − p_now) / p_max_N  (for long; invert for short)<br>
-                profit_trailing = entry × (1 − tightened_trail_%) when price_change_% ≥ threshold
+                signed_change_% = 100 × (p_now − p_<em>Nmin_ago</em>) / p_<em>Nmin_ago</em>  (auto‑signed by direction)<br>
+                Long trailing SL: <code>SL = highest_since_open × (1 − profit_protect_trailing_distance_pct / 100)</code><br>
+                Short trailing SL: <code>SL = lowest_since_open × (1 + profit_protect_trailing_distance_pct / 100)</code>
               </div>
             </li>
           </ul>
