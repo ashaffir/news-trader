@@ -25,6 +25,7 @@ from django.core.paginator import Paginator
 from .source_llm import analyze_news_source_with_llm, build_source_kwargs_from_llm_analysis
 from django.views.decorators.http import require_POST
 from django.contrib import messages
+from django.db import transaction
 from django.views.decorators.csrf import csrf_exempt
 from .utils.telegram import send_telegram_message
 from .utils.gating import get_gate
@@ -229,6 +230,7 @@ def flow_tracker_view(request):
                 "created_at": a.created_at,
                 "instrument": a.symbol,
                 "post_id": a.post_id,
+                "analysis_id": a.id,
                 "confidence": None if a.confidence is None else round(float(a.confidence), 4),
                 "price_change": None if price_change is None else round(float(price_change), 4),
                 "price_confirmation": None if price_change is None else (float(price_change) >= price_threshold),
@@ -2214,6 +2216,34 @@ def twitter_complete_login_api(request):
         logger.exception("[Twitter] twitter_complete_login_api error: %s", e)
         return JsonResponse({"success": False, "error": str(e)}, status=500)
 
+
+@staff_member_required
+@require_POST
+def delete_analyses_api(request):
+    try:
+        data = request.POST if request.content_type != 'application/json' else json.loads(request.body or '{}')
+        ids = data.get('ids')
+        if isinstance(ids, str):
+            try:
+                ids = json.loads(ids)
+            except Exception:
+                ids = [ids]
+        if not ids:
+            return JsonResponse({"success": False, "error": "No IDs provided"}, status=400)
+        # Ensure list of ints
+        try:
+            id_list = [int(x) for x in ids]
+        except Exception:
+            return JsonResponse({"success": False, "error": "Invalid IDs"}, status=400)
+
+        with transaction.atomic():
+            # Cascade delete will remove dependent trades via FK on Analysis.post? Trades link to Analysis FK with CASCADE on analysis field
+            deleted = Analysis.objects.filter(id__in=id_list).delete()
+        # deleted is tuple (count, details)
+        return JsonResponse({"success": True, "deleted_count": deleted[0]})
+    except Exception as e:
+        logger.exception("delete_analyses_api error: %s", e)
+        return JsonResponse({"success": False, "error": str(e)}, status=500)
 
 @staff_member_required
 @require_POST

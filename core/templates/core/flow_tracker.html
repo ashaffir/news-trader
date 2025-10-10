@@ -12,10 +12,19 @@
     <div class="col-auto"><strong>Profit Threshold</strong>: {{ active_config.profit_protect_threshold_pct }}</div>
   </div>
   {% endif %}
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <div></div>
+    <div>
+      <button id="deleteAllBtn" class="btn btn-sm btn-outline-danger">
+        <i class="fas fa-trash-alt me-1"></i>Delete All
+      </button>
+    </div>
+  </div>
   <div class="table-responsive">
     <table id="flowTable" class="table table-sm table-dark table-striped align-middle">
       <thead>
         <tr>
+          <th class="text-center" style="width:48px;">Actions</th>
           <th>Created</th>
           <th>Instrument</th>
           <th>Post ID</th>
@@ -36,7 +45,12 @@
       </thead>
       <tbody>
         {% for r in rows %}
-        <tr>
+        <tr data-analysis-id="{{ r.analysis_id }}">
+          <td class="text-center">
+            <button class="btn btn-sm btn-outline-danger btn-row-delete" title="Delete this item">
+              <i class="fas fa-trash"></i>
+            </button>
+          </td>
           <td>{{ r.created_at|date:"Y-m-d H:i" }}</td>
           <td>{{ r.instrument }}</td>
           <td><a href="/admin/core/post/{{ r.post_id }}/change/">{{ r.post_id }}</a></td>
@@ -66,11 +80,35 @@
   </div>
   <script>
     document.addEventListener('DOMContentLoaded', function() {
+      function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+          const cookies = document.cookie.split(';');
+          for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+              cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+              break;
+            }
+          }
+        }
+        return cookieValue;
+      }
+
+      async function deleteIds(ids){
+        const res = await fetch('/api/flow-tracker/delete/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
+          body: JSON.stringify({ ids })
+        });
+        return res.json();
+      }
+
       function initDT(){
         if (window.$ && $.fn && $.fn.DataTable) {
           if (!$.fn.DataTable.isDataTable('#flowTable')) {
             $('#flowTable').DataTable({
-              order: [[0, 'desc']],
+              order: [[1, 'desc']],
               pageLength: 25,
               lengthMenu: [25, 50, 100, 200],
               stateSave: true,
@@ -86,6 +124,52 @@
         var timer = setInterval(function(){
           if (initDT() || ++tries > 10) { clearInterval(timer); }
         }, 200);
+      }
+
+      // Row delete handler
+      document.querySelectorAll('.btn-row-delete').forEach(function(btn){
+        btn.addEventListener('click', async function(ev){
+          ev.preventDefault();
+          const tr = ev.currentTarget.closest('tr');
+          const id = tr ? tr.getAttribute('data-analysis-id') : null;
+          if (!id) return;
+          if (!confirm('Delete this item? This cannot be undone.')) return;
+          const result = await deleteIds([parseInt(id, 10)]);
+          if (result && result.success) {
+            if (window.$ && $.fn && $.fn.DataTable && $.fn.DataTable.isDataTable('#flowTable')) {
+              const dt = $('#flowTable').DataTable();
+              dt.row(tr).remove().draw(false);
+            } else {
+              tr.remove();
+            }
+          } else {
+            alert('Delete failed: ' + (result && result.error ? result.error : 'unknown error'));
+          }
+        });
+      });
+
+      // Delete All handler
+      const delAllBtn = document.getElementById('deleteAllBtn');
+      if (delAllBtn) {
+        delAllBtn.addEventListener('click', async function(){
+          const ids = Array.from(document.querySelectorAll('#flowTable tbody tr')).map(function(tr){
+            return parseInt(tr.getAttribute('data-analysis-id'), 10);
+          }).filter(Boolean);
+          if (!ids.length) return;
+          if (!confirm('Delete ALL items shown? This cannot be undone.')) return;
+          const result = await deleteIds(ids);
+          if (result && result.success) {
+            if (window.$ && $.fn && $.fn.DataTable && $.fn.DataTable.isDataTable('#flowTable')) {
+              const dt = $('#flowTable').DataTable();
+              dt.clear().draw(false);
+            } else {
+              const tbody = document.querySelector('#flowTable tbody');
+              if (tbody) tbody.innerHTML = '';
+            }
+          } else {
+            alert('Delete failed: ' + (result && result.error ? result.error : 'unknown error'));
+          }
+        });
       }
     });
   </script>

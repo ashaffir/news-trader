@@ -56,6 +56,8 @@ urlpatterns = [
     path('api/toggle-bot-status/', views.toggle_bot_status, name='api_toggle_bot_status'),
     path('api/trigger-backup/', views.trigger_backup_api, name='api_trigger_backup'),
     path('api/trigger-restore/', views.trigger_restore_api, name='api_trigger_restore'),
+    # Flow Tracker maintenance
+    path('api/flow-tracker/delete/', views.delete_analyses_api, name='api_flow_delete'),
     # Twitter/X integration
     path('api/twitter/begin-login/', views.twitter_begin_login_api, name='twitter_begin_login'),
     path('api/twitter/complete-login/', views.twitter_complete_login_api, name='twitter_complete_login'),
