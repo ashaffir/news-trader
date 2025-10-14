@@ -13,7 +13,21 @@
   </div>
   {% endif %}
   <div class="d-flex justify-content-between align-items-center mb-2">
-    <div></div>
+    <form id="flowFilters" class="d-flex align-items-center gap-2">
+      <div class="input-group input-group-sm" style="width: 240px;">
+        <label class="input-group-text" for="modeSelect">Mode</label>
+        <select id="modeSelect" name="mode" class="form-select">
+          <option value="all" {% if flow_mode == 'all' %}selected{% endif %}>All recent</option>
+          <option value="pending" {% if flow_mode == 'pending' %}selected{% endif %}>Pending at open</option>
+          <option value="overnight" {% if flow_mode == 'overnight' %}selected{% endif %}>Overnight cohort</option>
+        </select>
+      </div>
+      <div class="input-group input-group-sm" style="width: 200px;">
+        <label class="input-group-text" for="hoursInput">Hours</label>
+        <input id="hoursInput" name="hours" type="number" min="1" max="168" step="1" value="{{ flow_window_hours|default:24 }}" class="form-control" />
+      </div>
+      <button class="btn btn-sm btn-outline-light" type="submit">Apply</button>
+    </form>
     <div>
       <button id="deleteAllBtn" class="btn btn-sm btn-outline-danger">
         <i class="fas fa-trash-alt me-1"></i>Delete All
@@ -118,6 +132,21 @@
           return true;
         }
         return false;
+      }
+      // Filters submit
+      const filtersForm = document.getElementById('flowFilters');
+      if (filtersForm) {
+        filtersForm.addEventListener('submit', function(ev){
+          ev.preventDefault();
+          const params = new URLSearchParams(window.location.search);
+          const mode = document.getElementById('modeSelect').value;
+          const hours = document.getElementById('hoursInput').value;
+          if (mode) params.set('mode', mode);
+          if (hours) params.set('hours', hours);
+          // Navigate to updated URL to refresh server-rendered rows
+          const base = window.location.pathname;
+          window.location.assign(base + '?' + params.toString());
+        });
       }
       if (!initDT()) {
         var tries = 0;

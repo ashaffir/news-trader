@@ -72,12 +72,68 @@ def dashboard_view(request):
 def flow_tracker_view(request):
     """Render Flow Tracker page summarizing entry/exit signals per analysis."""
     try:
-        analyses = (
+        # Time-based window (default: last 24 hours). Override with ?hours=NN (1..168)
+        try:
+            hours_param = int(request.GET.get("hours") or 24)
+        except Exception:
+            hours_param = 24
+        hours_param = max(1, min(168, hours_param))
+        cutoff_dt = timezone.now() - timedelta(hours=hours_param)
+
+        # View mode alignment with processing logic
+        # mode=all (default when market open), mode=pending (default when closed), mode=overnight
+        mode_param = (request.GET.get("mode") or "").strip().lower()
+        try:
+            from .tasks import is_market_open_broker_aware
+            market_open_now = bool(is_market_open_broker_aware())
+        except Exception:
+            market_open_now = True
+        if mode_param not in {"all", "pending", "overnight"}:
+            mode_param = "pending" if not market_open_now else "all"
+
+        base_qs = (
             Analysis.objects
+            .filter(created_at__gte=cutoff_dt)
             .select_related("post", "trading_config_used")
             .prefetch_related("trades")
-            .order_by("-created_at")[:200]
         )
+
+        if mode_param == "pending":
+            # Mirror process_overnight_posts selection: overnight, not stale, within age window
+            try:
+                active_cfg = TradingConfig.objects.filter(is_active=True).first()
+                try:
+                    max_age_h = int(getattr(active_cfg, "overnight_max_age_hours", 12) or 12)
+                except Exception:
+                    max_age_h = 12
+            except Exception:
+                active_cfg = None
+                max_age_h = 12
+            overnight_cutoff = timezone.now() - timedelta(hours=max_age_h)
+            # Non-stale-at-open condition (De Morgan of process_overnight_posts stale check)
+            from django.db.models import Q
+            age_ok = (
+                (Q(post__published_at__isnull=True) | Q(post__published_at__gte=overnight_cutoff)) &
+                (Q(post__created_at__isnull=True) | Q(post__created_at__gte=overnight_cutoff))
+            )
+            analyses = (
+                base_qs.filter(
+                    post__overnight=True,
+                    post__is_stale=False,
+                )
+                .filter(age_ok)
+                .order_by("-created_at")
+            )
+        elif mode_param == "overnight":
+            # Show overnight cohort within the time window (regardless of staleness)
+            analyses = (
+                base_qs.filter(
+                    post__overnight=True,
+                )
+                .order_by("-created_at")
+            )
+        else:
+            analyses = base_qs.order_by("-created_at")
     except Exception:
         analyses = []
     rows = []
@@ -256,6 +312,8 @@ def flow_tracker_view(request):
         "rows": rows,
         "active_config": active_cfg,
         "bot_enabled": bot_enabled,
+        "flow_window_hours": hours_param if 'hours_param' in locals() else 24,
+        "flow_mode": mode_param if 'mode_param' in locals() else "all",
     }
     return render(request, "core/flow_tracker.html", context)
 
