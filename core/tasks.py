@@ -2,11 +2,14 @@ from celery import shared_task
 
 @shared_task
 def enter_confirmation_check(analysis_id: int):
-    """Evaluate entry confirmation and open trade only if both conditions pass.
+    """Evaluate entry confirmation and open a trade only if signals pass.
 
-    Conditions:
-      - Price: (price_change_N * sign(polarity)) > price_threshold
+    Decision:
+      - Price OR Volume must pass AND Freshness must pass.
+    Signals:
+      - Price: (price_change_N signed by direction) > price_threshold
       - Volume: volume_N / volume_MA >= volume_multiplier
+      - Freshness: exp(-delay/decay) >= freshness_threshold
     If market data is unavailable or insufficient, reject per policy.
     """
     try:

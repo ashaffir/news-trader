@@ -117,7 +117,7 @@ class TradingConfig(models.Model):
     # Entry confirmation (price and volume) configuration
     enter_confirmation_enabled = models.BooleanField(
         default=True,
-        help_text="Require price and volume confirmation before opening a position",
+        help_text="Require price OR volume confirmation (plus freshness) before opening a position",
     )
     enter_confirm_window_minutes = models.IntegerField(
         default=5,

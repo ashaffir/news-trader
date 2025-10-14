@@ -8,7 +8,7 @@ This document summarizes the current entry and exit logic used by the system. It
   - direction ∈ {buy, sell}
   - confidence ≥ `min_confidence_threshold`
   - `max_holding_time_hours` was computed
-- If `enter_confirmation_enabled` is true (default: true), the system waits for N minutes and checks both price/volume confirmations and freshness before opening a trade.
+- If `enter_confirmation_enabled` is true (default: true), the system waits for N minutes and checks Price OR Volume confirmations (plus Freshness) before opening a trade.
 
 ```mermaid
 flowchart TD
@@ -21,7 +21,7 @@ E -- No --> G[Pre-checks: hours & daily limit]
 G --> H[Create trade]
 H --> I[Trade open]
 E -- Yes --> F[Wait N_enter minutes]
-F --> J[Check price + volume]
+ F --> J[Check price OR volume]
 J --> K[Check freshness]
 K --> L{All pass}
 L -- No --> Z2[Reject]
