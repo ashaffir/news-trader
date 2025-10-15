@@ -147,7 +147,6 @@ class OvernightForm(_ConfigFormMixin, forms.ModelForm):
     class Meta:
         model = TradingConfig
         fields = [
-            "overnight_enabled",
             "overnight_reduce_sl_factor",
             "overnight_max_age_hours",
         ]

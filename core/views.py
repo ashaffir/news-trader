@@ -236,7 +236,7 @@ def flow_tracker_view(request):
                     # Clarify missing-data states
                     # 1) If final failure due to no data, mark explicitly as final
                     if status == "confirm_failed" and (getattr(a, "enter_failure_code", "") == "no_data" or (price_change is None or vol_ratio is None)) and not trade:
-                        progress = "No market data (final)"
+                        progress = "Insufficient market data — will retry if window active"
                         if progress_reason is None:
                             detail = (a.enter_failure_detail or "Window elapsed or insufficient bars/MA; not considered")
                             progress_reason = detail

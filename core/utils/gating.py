@@ -94,7 +94,8 @@ def get_gate(manual_test: bool = False, include_backlog: bool = True) -> Dict[st
     weekend = _is_weekend(now)
 
     bot_enabled = bool(getattr(cfg, "bot_enabled", False))
-    overnight_enabled = bool(getattr(cfg, "overnight_enabled", False))
+    # Overnight is always treated as enabled; the toggle is deprecated
+    overnight_enabled = True
 
     # Default OFF
     gate = GateState(
@@ -116,7 +117,7 @@ def get_gate(manual_test: bool = False, include_backlog: bool = True) -> Dict[st
         # Allow local/manual runs for diagnostics without opening trades
         gate.allow_scrape = True
         gate.allow_analysis = True
-        gate.allow_overnight_collection = overnight_enabled and not market_open
+        gate.allow_overnight_collection = True and not market_open
         gate.allow_overnight_processing = False
         gate.allow_trading = False
         gate.mode = "manual_test"
@@ -128,13 +129,13 @@ def get_gate(manual_test: bool = False, include_backlog: bool = True) -> Dict[st
 
     # When the bot is enabled
     if weekend:
-        # No trading on weekends; allow overnight collection/processing when enabled
+        # No trading on weekends; always allow overnight collection/processing
         gate.allow_trading = False
-        gate.allow_scrape = overnight_enabled  # allow scrapers to collect overnight posts only
-        gate.allow_analysis = overnight_enabled
-        gate.allow_overnight_collection = overnight_enabled
-        gate.allow_overnight_processing = overnight_enabled
-        gate.mode = "weekend_overnight" if overnight_enabled else "weekend_idle"
+        gate.allow_scrape = True  # collect overnight posts
+        gate.allow_analysis = True
+        gate.allow_overnight_collection = True
+        gate.allow_overnight_processing = True
+        gate.mode = "weekend_overnight"
         gate.reason = "weekend"
         return gate.to_dict()
 
@@ -142,7 +143,7 @@ def get_gate(manual_test: bool = False, include_backlog: bool = True) -> Dict[st
     if market_open:
         # Process overnight backlog first when market is open
         backlog_count = 0
-        if include_backlog and overnight_enabled:
+        if include_backlog:
             try:
                 # Count only items not yet handed off to confirmation. Once
                 # an analysis is in 'waiting_confirmation', we consider it
@@ -166,7 +167,7 @@ def get_gate(manual_test: bool = False, include_backlog: bool = True) -> Dict[st
                 backlog_count = 0
 
         gate.backlog_count = backlog_count
-        gate.allow_overnight_processing = overnight_enabled and backlog_count > 0
+        gate.allow_overnight_processing = backlog_count > 0
         gate.allow_scrape = backlog_count == 0
         gate.allow_analysis = True
         gate.allow_trading = True  # trading only during market hours by definition
@@ -175,15 +176,12 @@ def get_gate(manual_test: bool = False, include_backlog: bool = True) -> Dict[st
         return gate.to_dict()
 
     # Market closed on weekday
-    if overnight_enabled:
-        gate.allow_scrape = True
-        gate.allow_analysis = True
-        gate.allow_overnight_collection = True
-        gate.mode = "closed_overnight_collect"
-        gate.reason = "market_closed_collect_overnight"
-    else:
-        gate.mode = "closed_idle"
-        gate.reason = "market_closed"
+    # Market closed: always collect overnight
+    gate.allow_scrape = True
+    gate.allow_analysis = True
+    gate.allow_overnight_collection = True
+    gate.mode = "closed_overnight_collect"
+    gate.reason = "market_closed_collect_overnight"
     gate.allow_trading = False
     gate.allow_overnight_processing = False
     return gate.to_dict()

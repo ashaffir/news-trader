@@ -105,18 +105,29 @@ def enter_confirmation_check(analysis_id: int):
     except Exception:
         pass
 
-    # If still within the first confirmation window and no bars yet, reschedule instead of failing
+    # If data is missing, reschedule instead of failing. Continue retrying within
+    # the confirmation window AND for a bounded tail period afterwards to allow
+    # late-arriving market data at the open.
     try:
         window_end = detection_time + timedelta(minutes=n_minutes)
+        retry_tail_minutes = max(5, min(15, n_minutes))
+        tail_end = window_end + timedelta(minutes=retry_tail_minutes)
     except Exception:
         window_end = None
+        tail_end = None
     if signed_change is None and vol_ratio is None:
         try:
             now = timezone.now()
-            if window_end and now < window_end:
-                # Reschedule to the end of the window to wait for full N bars
-                delay_s = int((window_end - now).total_seconds()) + 5
-                enter_confirmation_check.apply_async(args=[analysis.id], countdown=max(5, delay_s))
+            if tail_end and now < tail_end:
+                # Near-term retry to pick up bars quickly
+                enter_confirmation_check.apply_async(args=[analysis.id], countdown=30)
+                # Schedule checkpoint at window end or tail end
+                if window_end and now < window_end:
+                    delay_s_final = int((window_end - now).total_seconds()) + 5
+                    enter_confirmation_check.apply_async(args=[analysis.id], countdown=max(10, delay_s_final))
+                else:
+                    delay_s_tail = int((tail_end - now).total_seconds()) + 5
+                    enter_confirmation_check.apply_async(args=[analysis.id], countdown=max(15, delay_s_tail))
                 try:
                     prev = analysis.enter_status
                     analysis.enter_status = "waiting_confirmation"
@@ -127,13 +138,13 @@ def enter_confirmation_check(analysis_id: int):
                 return
         except Exception:
             pass
-        # OR confirmation: only fail when both signals are missing and window elapsed
+        # Only fail when both signals are missing and the retry tail has elapsed
         send_dashboard_update(
             "trade_rejected",
             {
                 "analysis_id": analysis.id,
                 "symbol": analysis.symbol,
-                "reason": "Insufficient market data for entry confirmation",
+                "reason": "Insufficient market data for entry confirmation after retry tail",
                 "tag": "Rejected",
             },
         )

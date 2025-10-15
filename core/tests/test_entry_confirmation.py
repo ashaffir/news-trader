@@ -121,4 +121,16 @@ class EntryConfirmationTests(TestCase):
         types = [c.args[0] for c in mock_update.call_args_list]
         self.assertIn("trade_rejected", types)
 
+    @patch("core.tasks.enter_confirmation_check.apply_async")
+    @patch("core.tasks.compute_entry_confirmations")
+    @patch("core.tasks.is_market_open_broker_aware", return_value=True)
+    @patch("core.tasks.market_just_opened", return_value=True)
+    def test_no_data_reschedules_within_window(self, _just_open, _open_now, mock_compute, mock_apply):
+        # Simulate insufficient data early in window; should schedule retries
+        mock_compute.return_value = (None, None, None, None)
+        a = self._make_analysis("buy")
+        enter_confirmation_check(a.id)
+        # At least one retry should be scheduled
+        self.assertTrue(mock_apply.called)
+
 

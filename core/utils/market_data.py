@@ -145,9 +145,8 @@ def compute_entry_confirmations(
 
     if not window_bars or len(window_bars) < window_minutes:
         return None, None, None, None
-    if not prior_bars or len(prior_bars) < max(3, min(10, volume_ma_window // 2)):
-        # Require some reasonable history; maintain 4-tuple contract
-        return None, None, None, None
+    # Soften the volume MA requirement at the open: allow price signal even if MA history is short
+    insufficient_prior = not prior_bars or len(prior_bars) < max(3, min(10, volume_ma_window // 2))
 
     # Sort by timestamp just in case
     window_bars = sorted(window_bars, key=lambda b: b.timestamp)
@@ -164,12 +163,12 @@ def compute_entry_confirmations(
         signed_change = -raw_change_pct
 
     vol_n = sum(float(b.volume or 0.0) for b in window_bars[:window_minutes])
-    prior = prior_bars[-volume_ma_window:]
-    vol_ma = sum(float(b.volume or 0.0) for b in prior) / max(1, len(prior))
-    if vol_ma <= 0:
-        vol_ratio = None
-    else:
-        vol_ratio = vol_n / vol_ma
+    vol_ratio = None
+    if not insufficient_prior:
+        prior = prior_bars[-volume_ma_window:]
+        vol_ma = sum(float(b.volume or 0.0) for b in prior) / max(1, len(prior))
+        if vol_ma > 0:
+            vol_ratio = vol_n / vol_ma
 
     return signed_change, vol_ratio, vol_n, vol_ma
 
