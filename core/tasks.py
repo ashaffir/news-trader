@@ -3018,29 +3018,6 @@ def create_new_trade(analysis_id):
     # Validate symbol existence/tradability before proceeding
     try:
         from .utils.alpaca_assets import is_valid_tradable_symbol
-        ok, reason = is_valid_tradable_symbol(api, symbol)
-        if not ok:
-            logger.warning(f"Rejected manual trade for {symbol}: {reason}")
-            send_dashboard_update(
-                "trade_rejected",
-                {
-                    "symbol": symbol,
-                    "reason": f"Symbol invalid: {reason}",
-                    "tag": "Rejected",
-                },
-            )
-            return {"success": False, "error": f"Symbol invalid: {reason}"}
-    except Exception as _val_err:
-        logger.warning(f"Symbol validation failed for {symbol}: {_val_err}")
-        send_dashboard_update(
-            "trade_rejected",
-            {"symbol": symbol, "reason": "Symbol validation error", "tag": "Rejected"},
-        )
-        return {"success": False, "error": "Symbol validation error"}
-
-    # Validate symbol existence/tradability before proceeding
-    try:
-        from .utils.alpaca_assets import is_valid_tradable_symbol
         ok, reason = is_valid_tradable_symbol(api, analysis.symbol)
         if not ok:
             logger.warning(f"Rejected new trade for {analysis.symbol}: {reason}")
